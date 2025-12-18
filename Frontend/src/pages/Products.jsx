@@ -1,55 +1,183 @@
-import React, { useEffect, useState } from "react";
+
+import React, { useEffect, useMemo, useState } from "react";
 import API from "../services/api";
 import toast from "react-hot-toast";
+import {
+  Search,
+  Plus,
+  RefreshCw,
+  Pencil,
+  Trash2,
+  Package,
+  Tag,
+  X,
+} from "lucide-react";
 
-export default function Products() {
+export function Products() {
   const [products, setProducts] = useState([]);
-  const [form, setForm] = useState({ name: "", price: "" });
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const fetch = async () => {
+  const emptyForm = {
+    name: "",
+    sku: "",
+    category: "",
+    price: "",
+    tax: "",
+    stock: "",
+    status: "Active",
+    description: "",
+  };
+
+  const [form, setForm] = useState(emptyForm);
+
+  /* Fetch Products */
+  const fetchProducts = async () => {
     try {
+      setLoading(true);
       const { data } = await API.get("/products");
       setProducts(data);
-    } catch (err) {
+    } catch {
       toast.error("Failed to load products");
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => { fetch(); }, []);
+  useEffect(() => {
+    fetchProducts();
+  }, []);
 
-  const create = async (e) => {
+  /* Save Product */
+  const saveProduct = async (e) => {
     e.preventDefault();
     try {
-      await API.post("/products", { ...form, price: Number(form.price) });
-      toast.success("Product created");
-      setForm({ name: "", price: "" });
-      fetch();
+      const payload = {
+        ...form,
+        price: Number(form.price),
+        tax: Number(form.tax),
+        stock: Number(form.stock),
+      };
+
+      if (form._id) {
+        await API.put(`/products/${form._id}`, payload);
+        toast.success("Product updated");
+      } else {
+        await API.post("/products", payload);
+        toast.success("Product created");
+      }
+
+      setDrawerOpen(false);
+      setForm(emptyForm);
+      fetchProducts();
     } catch (err) {
-      toast.error(err.response?.data?.message || "Create failed");
+      toast.error(err.response?.data?.message || "Save failed");
     }
   };
 
+  /* Delete Product */
+  const deleteProduct = async (id) => {
+    if (!confirm("Delete this product?") ) return;
+    try {
+      await API.delete(`/products/${id}`);
+      toast.success("Product deleted");
+      fetchProducts();
+    } catch {
+      toast.error("Delete failed");
+    }
+  };
+
+  const filteredProducts = useMemo(() => {
+    return products.filter((p) =>
+      `${p.name} ${p.sku} ${p.category}`
+        .toLowerCase()
+        .includes(search.toLowerCase())
+    );
+  }, [products, search]);
+
   return (
-    <div>
-      <h2 className="mb-4 text-xl font-semibold">Products</h2>
-
-      <form onSubmit={create} className="grid grid-cols-1 gap-2 mb-4 md:grid-cols-3">
-        <input value={form.name} onChange={(e)=>setForm({...form, name:e.target.value})} placeholder="Name" className="p-2 border rounded"/>
-        <input value={form.price} onChange={(e)=>setForm({...form, price:e.target.value})} placeholder="Price" className="p-2 border rounded"/>
-        <button className="px-4 py-2 text-white bg-green-600 rounded">Create</button>
-      </form>
-
-      <div className="space-y-2">
-        {products.map(p => (
-          <div key={p._id} className="flex items-center justify-between p-3 bg-white rounded shadow">
-            <div>
-              <div className="font-semibold">{p.name}</div>
-              <div className="text-sm text-slate-500">₹{p.price}</div>
-            </div>
-            <div className="text-sm text-slate-400">{p.sku || "-"}</div>
-          </div>
-        ))}
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Products</h1>
+          <p className="text-sm text-slate-500">Manage product catalog, pricing & inventory</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={fetchProducts} className="flex items-center gap-2 px-4 py-2 text-sm border rounded-xl"><RefreshCw size={16}/> Refresh</button>
+          <button onClick={() => { setForm(emptyForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 text-sm text-white rounded-xl bg-slate-900"><Plus size={16}/> Add Product</button>
+        </div>
       </div>
+
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name, SKU or category" className="w-full py-2 pl-10 pr-3 text-sm border rounded-xl" />
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto bg-white border shadow-sm rounded-2xl">
+        <table className="min-w-full text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-4 py-3 text-left">Product</th>
+              <th className="px-4 py-3">SKU</th>
+              <th className="px-4 py-3">Category</th>
+              <th className="px-4 py-3">Price</th>
+              <th className="px-4 py-3">Stock</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && <tr><td colSpan="7" className="px-4 py-6 text-center text-slate-500">Loading...</td></tr>}
+            {!loading && filteredProducts.length === 0 && <tr><td colSpan="7" className="px-4 py-6 text-center text-slate-500">No products found</td></tr>}
+            {filteredProducts.map((p) => (
+              <tr key={p._id} className="border-t hover:bg-slate-50">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2 font-medium"><Package size={14}/> {p.name}</div>
+                  <div className="max-w-xs text-xs truncate text-slate-500">{p.description}</div>
+                </td>
+                <td className="px-4 py-3">{p.sku || "—"}</td>
+                <td className="px-4 py-3">{p.category || "—"}</td>
+                <td className="px-4 py-3">₹{p.price}</td>
+                <td className="px-4 py-3">{p.stock ?? "—"}</td>
+                <td className="px-4 py-3">
+                  <span className={`rounded-lg px-2 py-1 text-xs ${p.status === "Active" ? "bg-green-100 text-green-700" : "bg-slate-100"}`}>{p.status}</span>
+                </td>
+                <td className="flex gap-2 px-4 py-3">
+                  <button onClick={() => { setForm(p); setDrawerOpen(true); }}><Pencil size={16}/></button>
+                  <button onClick={() => deleteProduct(p._id)}><Trash2 size={16} className="text-red-600"/></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Drawer */}
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
+          <form onSubmit={saveProduct} className="w-full max-w-md p-6 space-y-3 bg-white">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{form._id ? "Edit Product" : "New Product"}</h2>
+              <X onClick={() => setDrawerOpen(false)} className="cursor-pointer" />
+            </div>
+
+            {Object.keys(emptyForm).map((key) => (
+              key !== "description" ? (
+                <input key={key} value={form[key]} onChange={(e)=>setForm({...form,[key]:e.target.value})} placeholder={key.toUpperCase()} className="w-full p-2 border rounded" />
+              ) : (
+                <textarea key={key} value={form.description} onChange={(e)=>setForm({...form,description:e.target.value})} placeholder="Description" className="w-full p-2 border rounded" />
+              )
+            ))}
+
+            <button className="w-full py-2 text-white rounded bg-slate-900">Save Product</button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
+export default Products;

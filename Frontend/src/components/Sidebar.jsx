@@ -21,11 +21,11 @@ export default function Sidebar({ open }) {
       <div className="flex items-center justify-center h-16 border-b border-slate-700">
         <div className="flex items-center gap-2">
           <div className="flex items-center justify-center w-8 h-8 font-bold text-white bg-indigo-600 rounded-lg">
-            Z
+            R
           </div>
           {open && (
             <span className="text-lg font-semibold tracking-wide">
-              ZohoCRM
+              ReadyTechCRM
             </span>
           )}
         </div>
@@ -38,7 +38,7 @@ export default function Sidebar({ open }) {
         <SideItem to="/clients" icon={<UserCheck size={18} />} label="Clients" open={open} />
         <SideItem to="/users" icon={<Users size={18} />} label="Users" open={open} />
         <SideItem to="/products" icon={<Package size={18} />} label="Products" open={open} />
-        <SideItem to="/admins" icon={<Shield size={18} />} label="Admins" open={open} />
+        <SideItem to="/auditlogs" icon={<Shield size={18} />} label="Audit Logs" open={open} />
       </nav>
 
       {/* Footer */}

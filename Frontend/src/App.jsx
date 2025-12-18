@@ -1,15 +1,13 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import DashboardLayout from "./pages/Dashboard";
-
+import DashboardLayout from "./pages/DashboardLayout";
+import DashboardPage from "./pages/DashboardPage";
 import Clients from "./pages/Clients";
 import Products from "./pages/Products";
 import Leads from "./pages/Leads";
 import Users from "./pages/Users";
 import AuditLogs from "./pages/AuditLogs";
-
+import Login from "./pages/Login";
+import Register from "./pages/Register";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 export default function App() {
@@ -20,32 +18,19 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* Default */}
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Navigate to="/dashboard" replace />
-            </ProtectedRoute>
-          }
-        />
+        {/* Protected Layout */}
+        <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="clients" element={<Clients />} />
+          <Route path="products" element={<Products />} />
+          <Route path="leads" element={<Leads />} />
+          <Route path="users" element={<Users />} />
+          <Route path="auditlogs" element={<AuditLogs />} />
+        </Route>
 
-        {/* Protected */}
-        <Route
-  path="/dashboard"
-  element={
-    <ProtectedRoute>
-      <DashboardLayout />
-    </ProtectedRoute>
-  }
-/>
-
-
-        <Route path="/clients" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>} />
-        <Route path="/products" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>} />
-        <Route path="/leads" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>} />
-        <Route path="/users" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>} />
-        <Route path="/auditlogs" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>} />
+        {/* Redirect unknown paths */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Router>
   );
