@@ -20,19 +20,27 @@ import role from "./middlewares/role.js";
 const app = express();
 
 // ===================== Global Middlewares =====================
-app.use(helmet()); // Security headers
-app.use(cors({
-  origin: "http://localhost:5173",
-  credentials: true,
-}));
+app.use(helmet());
+app.use(
+  cors({
+    origin: true,        // ✅ allow ALL origins
+    credentials: true,   // ✅ allow cookies / auth headers
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+// ✅ Handle preflight requests
+app.options("*", cors());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
 // ===================== Routes =====================
-app.use("/api/auth", authRoutes); // Auth routes
+app.use("/api/auth", authRoutes);
 
-// Protected routes (JWT + Role based)
+// Protected routes
 app.use("/api/admin", auth, role("admin"), adminRoutes);
 app.use("/api/products", auth, productsRoutes);
 app.use("/api/clients", auth, clientsRoutes);
@@ -41,7 +49,9 @@ app.use("/api/auditlogs", auth, role("admin"), auditRoutes);
 app.use("/api/user", auth, userRoutes);
 
 // ===================== Health Check =====================
-app.get("/api/health", (req, res) => res.json({ ok: true, timestamp: new Date() }));
+app.get("/api/health", (req, res) =>
+  res.json({ ok: true, timestamp: new Date() })
+);
 
 // ===================== 404 Handler =====================
 app.use((req, res) => {

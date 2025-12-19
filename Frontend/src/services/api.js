@@ -1,7 +1,11 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: "http://localhost:5000/api",
+  baseURL:
+    import.meta.env.MODE === "development"
+      ? "http://localhost:5000/api"
+      : "https://readytech-crm-dashboard.onrender.com/api",
+  withCredentials: true, // important if you use cookies
 });
 
 // Add Authorization header for every request

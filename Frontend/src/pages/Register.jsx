@@ -5,17 +5,26 @@ import API from "../services/api";
 
 export default function Register() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "user" });
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "user",
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    setForm((prev) => ({
+      ...prev,
+      [e.target.name]: e.target.value,
+    }));
   };
 
   const handleRegister = async (e) => {
     e.preventDefault();
-    if (!form.name || !form.email || !form.password || !form.role) {
+
+    if (!form.name || !form.email || !form.password) {
       setError("All fields are required");
       return;
     }
@@ -26,15 +35,15 @@ export default function Register() {
     try {
       await API.post("/auth/register", form);
 
-      // Redirect to login page after successful registration
+      // ✅ Go to login after success
       navigate("/login", { replace: true });
     } catch (err) {
-      console.error(err);
-      if (err.response) {
-        setError(err.response.data.message || "Registration failed");
-      } else {
-        setError("Network error. Try again later.");
-      }
+      console.error("REGISTER ERROR:", err);
+
+      setError(
+        err.response?.data?.message ||
+          "Registration failed. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -49,8 +58,12 @@ export default function Register() {
           </div>
         </div>
 
-        <h2 className="text-2xl font-bold text-center text-slate-800">Create your account</h2>
-        <p className="mt-1 text-sm text-center text-slate-500">Start managing your business</p>
+        <h2 className="text-2xl font-bold text-center text-slate-800">
+          Create your account
+        </h2>
+        <p className="mt-1 text-sm text-center text-slate-500">
+          Start managing your business
+        </p>
 
         {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
 
@@ -94,7 +107,7 @@ export default function Register() {
             />
           </div>
 
-          {/* Role Selection */}
+          {/* Role */}
           <div className="relative">
             <Shield size={16} className="absolute top-3 left-3 text-slate-400" />
             <select

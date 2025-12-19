@@ -12,6 +12,7 @@ export default function Login() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+
     if (!email || !password) {
       setError("Email and password are required");
       return;
@@ -21,20 +22,23 @@ export default function Login() {
     setError("");
 
     try {
-      const res = await API.post("/auth/login", { email, password });
+      const { data } = await API.post("/auth/login", {
+        email,
+        password,
+      });
 
-      // Save JWT token in localStorage
-      localStorage.setItem("token", res.data.token);
+      // ✅ Save JWT
+      localStorage.setItem("token", data.token);
 
-      // Redirect to dashboard
+      // ✅ Redirect after login
       navigate("/dashboard", { replace: true });
     } catch (err) {
-      console.error(err);
-      if (err.response) {
-        setError(err.response.data.message || "Login failed");
-      } else {
-        setError("Network error. Try again later.");
-      }
+      console.error("LOGIN ERROR:", err);
+
+      setError(
+        err.response?.data?.message ||
+          "Unable to login. Please check your credentials."
+      );
     } finally {
       setLoading(false);
     }
@@ -49,8 +53,12 @@ export default function Login() {
           </div>
         </div>
 
-        <h2 className="text-2xl font-bold text-center text-slate-800">Sign in to CRM</h2>
-        <p className="mt-1 text-sm text-center text-slate-500">Manage your business smarter</p>
+        <h2 className="text-2xl font-bold text-center text-slate-800">
+          Sign in to CRM
+        </h2>
+        <p className="mt-1 text-sm text-center text-slate-500">
+          Manage your business smarter
+        </p>
 
         {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
 
