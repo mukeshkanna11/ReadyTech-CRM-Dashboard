@@ -9,6 +9,8 @@ import AuditLogs from "./pages/AuditLogs";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ProtectedRoute from "./components/ProtectedRoute";
+import WhyReadyTech from "./pages/WhyReadyTech";
+import ContactPage from "./pages/ContactPage";  
 
 export default function App() {
   return (
@@ -27,6 +29,9 @@ export default function App() {
           <Route path="leads" element={<Leads />} />
           <Route path="users" element={<Users />} />
           <Route path="auditlogs" element={<AuditLogs />} />
+          <Route path="why-readytech" element={<WhyReadyTech />} />
+          <Route path="/contact" element={<ContactPage />} />
+
         </Route>
 
         {/* Redirect unknown paths */}
