@@ -1,186 +1,222 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import {
-  Sun,
-  Moon,
-  TrendingUp,
   Users,
-  Target,
-  Zap,
-  Activity,
-  Calendar,
-  ArrowUpRight,
   Layers,
+  Globe,
+  Brain,
+  TrendingUp,
+  Target,
+  ShieldCheck,
+  BarChart3,
+  Star,
+  UserCog,
 } from "lucide-react";
 
 export default function DashboardPage() {
-  const navigate = useNavigate();
+  const [role, setRole] = useState("Admin");
+  const [testimonial, setTestimonial] = useState(0);
 
-  /* ================= THEME ================= */
-  const [darkMode, setDarkMode] = useState(
-    localStorage.getItem("theme") === "dark"
-  );
+  const testimonials = [
+    "Ready Tech Solutions transformed our business digitally with excellent support.",
+    "Professional team, on-time delivery & scalable solutions. Highly recommended.",
+    "Their AI & CRM solutions helped us improve productivity & ROI significantly.",
+  ];
 
   useEffect(() => {
-    const root = document.documentElement;
-    darkMode ? root.classList.add("dark") : root.classList.remove("dark");
-    localStorage.setItem("theme", darkMode ? "dark" : "light");
-  }, [darkMode]);
-
-  /* ================= AUTH ================= */
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) navigate("/login");
-  }, [navigate]);
+    const interval = setInterval(() => {
+      setTestimonial((prev) => (prev + 1) % testimonials.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
-    <div className="min-h-screen px-4 py-6 bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800 text-slate-900 dark:text-white">
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-[#eef2ff] via-[#f8fafc] to-[#ecfeff] p-4 md:p-6">
+      {/* BACKGROUND DECOR */}
+      <div className="absolute rounded-full -top-32 -left-32 w-96 h-96 bg-blue-300/30 blur-3xl" />
+      <div className="absolute rounded-full top-1/3 -right-32 w-96 h-96 bg-cyan-300/30 blur-3xl" />
 
-      {/* ================= TOP BAR ================= */}
-      <div className="flex items-center justify-between mx-auto mb-6 max-w-7xl">
-        <h1 className="text-xl font-bold tracking-wide">
-          ReadyTech <span className="text-indigo-500">CRM</span>
-        </h1>
-
-        <button
-          onClick={() => setDarkMode(!darkMode)}
-          className="p-2 transition rounded-xl bg-white/60 dark:bg-slate-800 backdrop-blur hover:scale-105"
-        >
-          {darkMode ? <Sun /> : <Moon />}
-        </button>
-      </div>
-
-      {/* ================= HERO FLOATING BANNER ================= */}
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative max-w-7xl mx-auto overflow-hidden rounded-[2.5rem] bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white"
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.2),transparent_60%)]" />
-
-        <div className="relative grid items-center gap-10 px-10 py-14 md:grid-cols-2">
+      {/* CONTENT */}
+      <div className="relative z-10">
+        {/* HEADER */}
+        <div className="flex flex-col gap-3 mb-6 md:flex-row md:justify-between md:items-center">
           <div>
-            <h2 className="text-4xl font-bold leading-tight">
-              Build smarter <br />
-              sell faster 🚀
-            </h2>
-
-            <p className="max-w-md mt-4 text-indigo-100">
-              All-in-one CRM to track leads, automate workflows,
-              analyze performance and scale your business.
+            <h1 className="text-2xl font-bold text-gray-900 md:text-3xl">
+              Ready Tech Solutions CRM
+            </h1>
+            <p className="mt-1 text-sm text-gray-600">
+              Smart IT • AI • Business Growth Platform
             </p>
-
-            <div className="flex gap-4 mt-6">
-              <button
-                onClick={() => navigate("/contact")}
-                className="px-6 py-3 font-semibold text-indigo-700 transition bg-white rounded-xl hover:scale-105"
-              >
-                Get Started Free
-              </button>
-
-              <button
-                onClick={() => navigate("/why-readytech")}
-                className="px-6 py-3 transition border border-white rounded-xl hover:bg-white hover:text-indigo-700"
-              >
-                Why ReadyTech?
-              </button>
-            </div>
           </div>
 
-          {/* Floating Illustration */}
-          <motion.div
-            animate={{ y: [0, -10, 0] }}
-            transition={{ repeat: Infinity, duration: 4 }}
-            className="hidden md:block"
-          >
-            <img
-              src="https://illustrations.popsy.co/white/business-analytics.svg"
-              alt="CRM Illustration"
-              className="w-full drop-shadow-2xl"
-            />
-          </motion.div>
+          {/* ROLE SWITCH */}
+          <div className="flex items-center gap-2 px-3 py-2 text-sm shadow bg-white/80 backdrop-blur rounded-xl">
+            <UserCog className="text-blue-600" />
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="font-medium bg-transparent outline-none"
+            >
+              <option>Admin</option>
+              <option>Sales</option>
+            </select>
+          </div>
         </div>
-      </motion.div>
 
-      {/* ================= FLOATING STATS ================= */}
-      <div className="grid grid-cols-2 gap-6 mx-auto mt-12 max-w-7xl sm:grid-cols-4">
-        {[
-          { icon: <Users />, label: "Active Users", value: "12,480" },
-          { icon: <TrendingUp />, label: "Monthly Growth", value: "+38%" },
-          { icon: <Target />, label: "Deals Closed", value: "2,940" },
-          { icon: <Zap />, label: "Automation Rate", value: "91%" },
-        ].map((item, i) => (
-          <motion.div
-            key={i}
-            whileHover={{ y: -6 }}
-            className="p-6 shadow-lg bg-white/70 dark:bg-slate-800/60 backdrop-blur rounded-2xl"
-          >
-            <div className="mb-3 text-indigo-500">{item.icon}</div>
-            <p className="text-2xl font-bold">{item.value}</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              {item.label}
+        {/* TOP METRICS */}
+        <div className="grid grid-cols-2 gap-4 mb-6 md:grid-cols-4">
+          <Metric icon={<Users />} label="Clients" value="150+" />
+          <Metric icon={<Layers />} label="Projects" value="300+" />
+          <Metric icon={<ShieldCheck />} label="Success Rate" value="95%" />
+          <Metric icon={<Globe />} label="Industries" value="10+" />
+        </div>
+
+        {/* MAIN GRID */}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          {/* LIVE PROJECT SUCCESS */}
+          <Card>
+            <Title icon={<TrendingUp />}>Live Project Success</Title>
+            <Progress label="On-Time Delivery" value={92} />
+            <Progress label="Client Satisfaction" value={95} />
+            <Progress label="System Stability" value={98} />
+          </Card>
+
+          {/* LEAD FUNNEL */}
+          <Card>
+            <Title icon={<Target />}>Lead Funnel</Title>
+            <Funnel stage="Leads" value="320" />
+            <Funnel stage="Qualified" value="180" />
+            <Funnel stage="Proposals" value="95" />
+            <Funnel stage="Converted" value="60" />
+          </Card>
+
+          {/* ROI */}
+          <Card>
+            <Title icon={<BarChart3 />}>ROI & Growth</Title>
+            <div className="mt-4 text-center">
+              <div className="text-4xl font-bold text-green-600">+42%</div>
+              <p className="mt-1 text-xs text-gray-500">
+                Average ROI in first 6 months
+              </p>
+            </div>
+          </Card>
+
+          {/* AI CHATBOT */}
+          <Card className="lg:col-span-2">
+            <Title icon={<Brain />}>AI Chatbot Demo</Title>
+            <div className="p-4 text-sm border bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl">
+              <p className="mb-2">
+                🤖 <strong>AI Bot:</strong> Hello! How can I help your business grow?
+              </p>
+              <ul className="ml-4 space-y-1 text-gray-600 list-disc">
+                <li>CRM Automation</li>
+                <li>AI Chatbots</li>
+                <li>Custom Software</li>
+                <li>Digital Marketing</li>
+              </ul>
+            </div>
+          </Card>
+
+          {/* TESTIMONIAL */}
+          <Card>
+            <Title icon={<Star />}>Client Testimonials</Title>
+            <p className="text-sm italic text-gray-700 transition-all">
+              “{testimonials[testimonial]}”
             </p>
-          </motion.div>
-        ))}
+            <p className="mt-3 text-xs text-gray-500">
+              ⭐⭐⭐⭐⭐ Verified Client
+            </p>
+          </Card>
+
+          {/* ROLE BASED */}
+          <Card className="lg:col-span-3">
+            <Title icon={<UserCog />}>{role} Dashboard View</Title>
+            {role === "Admin" ? (
+              <div className="grid gap-3 text-sm md:grid-cols-4">
+                <Badge text="System Analytics" />
+                <Badge text="User Management" />
+                <Badge text="Revenue Tracking" />
+                <Badge text="AI Optimization" />
+              </div>
+            ) : (
+              <div className="grid gap-3 text-sm md:grid-cols-4">
+                <Badge text="Lead Tracking" />
+                <Badge text="Deal Conversion" />
+                <Badge text="Client Follow-ups" />
+                <Badge text="Sales Insights" />
+              </div>
+            )}
+          </Card>
+        </div>
       </div>
+    </div>
+  );
+}
 
-      {/* ================= INSIGHTS SECTION ================= */}
-      <div className="grid grid-cols-1 gap-6 mx-auto max-w-7xl mt-14 md:grid-cols-3">
-        <motion.div
-          whileHover={{ scale: 1.02 }}
-          className="p-6 shadow bg-white/70 dark:bg-slate-800/60 backdrop-blur rounded-2xl"
-        >
-          <Activity className="mb-3 text-indigo-500" />
-          <h3 className="font-semibold">Live Activity</h3>
-          <p className="mt-2 text-sm text-slate-500">
-            Track calls, emails, meetings and tasks in real time.
-          </p>
-        </motion.div>
+/* ---------------- COMPONENTS ---------------- */
 
-        <motion.div
-          whileHover={{ scale: 1.02 }}
-          className="p-6 shadow bg-white/70 dark:bg-slate-800/60 backdrop-blur rounded-2xl"
-        >
-          <Calendar className="mb-3 text-indigo-500" />
-          <h3 className="font-semibold">Smart Scheduling</h3>
-          <p className="mt-2 text-sm text-slate-500">
-            Auto reminders and calendar sync for your sales team.
-          </p>
-        </motion.div>
+function Card({ children, className = "" }) {
+  return (
+    <div
+      className={`bg-white/80 backdrop-blur-xl rounded-2xl p-5 shadow hover:shadow-lg transition ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
 
-        <motion.div
-          whileHover={{ scale: 1.02 }}
-          className="p-6 shadow bg-white/70 dark:bg-slate-800/60 backdrop-blur rounded-2xl"
-        >
-          <Layers className="mb-3 text-indigo-500" />
-          <h3 className="font-semibold">Unified Workspace</h3>
-          <p className="mt-2 text-sm text-slate-500">
-            Deals, contacts, pipelines & analytics in one place.
-          </p>
-        </motion.div>
+function Title({ icon, children }) {
+  return (
+    <div className="flex items-center gap-2 mb-4 text-sm font-semibold text-gray-800">
+      <span className="text-blue-600">{icon}</span>
+      {children}
+    </div>
+  );
+}
+
+function Metric({ icon, label, value }) {
+  return (
+    <div className="flex items-center gap-4 p-4 transition shadow bg-white/90 backdrop-blur rounded-2xl hover:shadow-md">
+      <div className="p-3 text-blue-600 bg-blue-100 rounded-xl">
+        {icon}
       </div>
+      <div>
+        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-lg font-bold text-gray-800">{value}</p>
+      </div>
+    </div>
+  );
+}
 
-      {/* ================= FINAL CTA ================= */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        whileInView={{ opacity: 1 }}
-        className="max-w-7xl p-10 mx-auto mt-16 text-center text-white bg-indigo-600 rounded-[2rem]"
-      >
-        <h3 className="text-3xl font-bold">
-          Scale your business with confidence
-        </h3>
-        <p className="mt-2 text-indigo-100">
-          No credit card • Free forever plan • Enterprise ready
-        </p>
+function Progress({ label, value }) {
+  return (
+    <div className="mb-3">
+      <div className="flex justify-between mb-1 text-xs">
+        <span>{label}</span>
+        <span>{value}%</span>
+      </div>
+      <div className="h-2 overflow-hidden bg-gray-200 rounded-full">
+        <div
+          className="h-2 bg-gradient-to-r from-green-400 to-green-600"
+          style={{ width: `${value}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
-        <button
-          onClick={() => navigate("/contact")}
-          className="inline-flex items-center gap-2 px-8 py-4 mt-6 font-semibold text-indigo-700 transition bg-white rounded-xl hover:scale-105"
-        >
-          Start Now <ArrowUpRight />
-        </button>
-      </motion.div>
+function Funnel({ stage, value }) {
+  return (
+    <div className="flex justify-between py-1 text-sm">
+      <span>{stage}</span>
+      <span className="font-semibold">{value}</span>
+    </div>
+  );
+}
+
+function Badge({ text }) {
+  return (
+    <div className="px-3 py-2 font-medium text-center bg-slate-100 rounded-xl">
+      {text}
     </div>
   );
 }

@@ -1,139 +1,108 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
-import { isAdmin, getUser } from "../utils/auth";
-import {
-  User,
-  Lock,
-  Bell,
-  Palette,
-  Settings,
-  Shield,
-  Trash2,
-  Moon,
-  Sun
-} from "lucide-react";
+import { Sun, Moon, ShieldCheck, Mail, Bell, Link } from "lucide-react";
 
 export default function SettingsPage() {
+  const [darkMode, setDarkMode] = useState(false);
 
-  const user = getUser();
-  const admin = isAdmin();
+  return (
+    <div className="max-w-5xl p-4 mx-auto space-y-6 md:p-6">
 
-  const [darkMode, setDarkMode] = useState(
-    localStorage.getItem("theme") === "dark"
+      {/* Page Title */}
+      <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Settings</h1>
+
+      {/* Notifications Section */}
+      <CardSection title="Notifications">
+        <SettingToggle title="Email Notifications" desc="Receive updates via email" />
+        <SettingToggle title="Push Notifications" desc="Receive alerts in real-time" />
+        <SettingToggle title="Security Alerts" desc="Login & access alerts" />
+      </CardSection>
+
+      {/* Appearance Section */}
+      <CardSection title="Appearance">
+        <SettingToggle
+          title="Dark Mode"
+          desc="Reduce eye strain at night"
+          toggleValue={darkMode}
+          setToggle={setDarkMode}
+          iconOn={<Moon size={16} />}
+          iconOff={<Sun size={16} />}
+        />
+      </CardSection>
+
+      {/* Security Section */}
+      <CardSection title="Security">
+        <SettingToggle
+          title="Two-Factor Authentication"
+          desc="Extra layer of account security"
+        />
+        <SettingToggle
+          title="Password Change Reminders"
+          desc="Receive reminders to update password"
+        />
+      </CardSection>
+
+      {/* Integrations Section */}
+      <CardSection title="Integrations">
+        <SettingToggle
+          title="CRM API Access"
+          desc="Enable API for external integrations"
+          icon={<Link size={16} />}
+        />
+        <SettingToggle
+          title="Third-Party Apps"
+          desc="Connect with external apps like Slack, Google Workspace"
+        />
+      </CardSection>
+
+    </div>
   );
+}
 
-  const toggleTheme = () => {
-    const t = !darkMode;
-    setDarkMode(t);
-    document.documentElement.classList.toggle("dark", t);
-    localStorage.setItem("theme", t ? "dark" : "light");
+/* ---------- SETTING TOGGLE COMPONENT ---------- */
+function SettingToggle({ title, desc, toggleValue, setToggle, icon, iconOn, iconOff }) {
+  const isControlled = toggleValue !== undefined && setToggle !== undefined;
+  const [localToggle, setLocalToggle] = useState(false);
+
+  const active = isControlled ? toggleValue : localToggle;
+
+  const handleToggle = () => {
+    if (isControlled) setToggle(!toggleValue);
+    else setLocalToggle(!localToggle);
   };
 
   return (
-    <div className={darkMode ? "dark" : ""}>
-      <div className="min-h-screen bg-slate-100 dark:bg-slate-900">
-
-        {/* HEADER */}
-        <header className="flex justify-between px-6 py-4 bg-white shadow dark:bg-slate-800">
-          <h1 className="text-xl font-bold text-indigo-600">
-            Settings ({user.role.toUpperCase()})
-          </h1>
-
-          <button onClick={toggleTheme}>
-            {darkMode ? <Sun /> : <Moon />}
-          </button>
-        </header>
-
-        <div className="max-w-6xl px-4 py-10 mx-auto space-y-8">
-
-          {/* PROFILE – ALL USERS */}
-          <Section title="Profile" icon={<User />}>
-            <Input label="Name" defaultValue={user.name} />
-            <Input label="Email" defaultValue="admin@readytechsolutions.com" />
-          </Section>
-
-          {/* SECURITY – ADMIN & MANAGER */}
-          {(admin || user.role === "manager") && (
-            <Section title="Security" icon={<Lock />}>
-              <Input label="Change Password" type="password" />
-              <Toggle label="Two Factor Authentication" />
-            </Section>
-          )}
-
-          {/* NOTIFICATIONS – ALL */}
-          <Section title="Notifications" icon={<Bell />}>
-            <Toggle label="Email Alerts" />
-            <Toggle label="WhatsApp Alerts" />
-          </Section>
-
-          {/* APPEARANCE – ALL */}
-          <Section title="Appearance" icon={<Palette />}>
-            <Toggle label="Dark Mode" checked={darkMode} onChange={toggleTheme} />
-          </Section>
-
-          {/* CRM SETTINGS – ADMIN ONLY */}
-          {admin && (
-            <Section title="CRM Settings" icon={<Settings />}>
-              <Toggle label="Auto Lead Assignment" />
-              <Toggle label="AI Lead Scoring" />
-            </Section>
-          )}
-
-          {/* DANGER ZONE – ADMIN ONLY */}
-          {admin && (
-            <Section title="Danger Zone" icon={<Shield />}>
-              <button className="flex gap-2 px-4 py-2 text-white bg-red-600 rounded-lg">
-                <Trash2 /> Delete Entire CRM
-              </button>
-            </Section>
-          )}
-
+    <div className="flex items-center justify-between p-3 transition bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">
+      <div className="flex items-center gap-3">
+        {icon && <div className="text-indigo-600">{icon}</div>}
+        <div className="flex flex-col">
+          <p className="font-medium text-slate-800 dark:text-white">{title}</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{desc}</p>
         </div>
       </div>
+      <button
+        onClick={handleToggle}
+        className={`w-12 h-6 relative rounded-full transition-colors focus:outline-none ${
+          active ? "bg-indigo-600" : "bg-gray-300 dark:bg-slate-600"
+        }`}
+      >
+        <span
+          className={`absolute left-0 top-0 w-6 h-6 bg-white rounded-full shadow transform transition-transform ${
+            active ? "translate-x-6" : "translate-x-0"
+          } flex items-center justify-center text-indigo-600`}
+        >
+          {active && iconOn ? iconOn : !active && iconOff ? iconOff : ""}
+        </span>
+      </button>
     </div>
   );
 }
 
-/* ---------- COMPONENTS ---------- */
-
-function Section({ title, icon, children }) {
+/* ---------- CARD SECTION ---------- */
+function CardSection({ title, children }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="p-6 space-y-4 bg-white shadow dark:bg-slate-800 rounded-xl"
-    >
-      <h2 className="flex items-center gap-2 font-bold text-indigo-600">
-        {icon} {title}
-      </h2>
-      {children}
-    </motion.div>
-  );
-}
-
-function Input({ label, type = "text", defaultValue }) {
-  return (
-    <div>
-      <label className="text-sm">{label}</label>
-      <input
-        type={type}
-        defaultValue={defaultValue}
-        className="w-full p-3 rounded-lg bg-slate-100 dark:bg-slate-900"
-      />
+    <div className="p-4 space-y-3 bg-white shadow dark:bg-slate-900 rounded-2xl">
+      <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</h2>
+      <div className="space-y-2">{children}</div>
     </div>
-  );
-}
-
-function Toggle({ label, checked, onChange }) {
-  return (
-    <label className="flex items-center justify-between">
-      <span>{label}</span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onChange}
-        className="accent-indigo-600"
-      />
-    </label>
   );
 }

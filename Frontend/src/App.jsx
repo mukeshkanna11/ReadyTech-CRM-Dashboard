@@ -12,6 +12,8 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import WhyReadyTech from "./pages/WhyReadyTech";
 import ContactPage from "./pages/ContactPage";  
 import SettingsPage from "./pages/SettingsPage";
+import Notifications from "./pages/Notifications";
+import ProfilePage from "./pages/ProfilePage";
 export default function App() {
   return (
     <Router>
@@ -32,6 +34,8 @@ export default function App() {
           <Route path="why-readytech" element={<WhyReadyTech />} />
           <Route path="/contact" element={<ContactPage />} />
 <Route path="/settings" element={<SettingsPage />} />
+<Route path="/notifications" element={<Notifications />} />
+<Route path="/profile" element={<ProfilePage />} />
         </Route>
 
         {/* Redirect unknown paths */}
