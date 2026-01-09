@@ -21,40 +21,42 @@ const app = express();
 
 // ===================== Global Middlewares =====================
 app.use(helmet());
+
 app.use(
   cors({
-    origin: true,        // ✅ allow ALL origins
-    credentials: true,   // ✅ allow cookies / auth headers
+    origin: true, // allow all origins (ok for dev)
+    credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-// ✅ Handle preflight requests
+// Handle preflight
 app.options("*", cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
-// ===================== Routes =====================
+// ===================== Public Routes =====================
 app.use("/api/auth", authRoutes);
 
-// Protected routes
+// ===================== Protected Routes =====================
 app.use("/api/admin", auth, role("admin"), adminRoutes);
 app.use("/api/products", auth, productsRoutes);
 app.use("/api/clients", auth, clientsRoutes);
 app.use("/api/leads", auth, leadsRoutes);
-app.use("/api/auditlogs", auth, role("admin"), auditRoutes);
+app.use("/api/audit", auth, role("admin"), auditRoutes);
 app.use("/api/user", auth, userRoutes);
 
 // ===================== Health Check =====================
-app.get("/api/health", (req, res) =>
-  res.json({ ok: true, timestamp: new Date() })
-);
+app.get("/api/health", (req, res) => {
+  res.json({ ok: true, timestamp: new Date() });
+});
 
 // ===================== 404 Handler =====================
 app.use((req, res) => {
+  console.error("❌ Route not found:", req.method, req.originalUrl);
   res.status(404).json({ message: "Route not found" });
 });
 

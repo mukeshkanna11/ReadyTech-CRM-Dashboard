@@ -3,26 +3,72 @@ import User from "../models/User.js";
 
 const router = express.Router();
 
-// Admin summary
-router.get("/summary", async (req, res) => {
+/* =========================================================
+   GET ALL USERS
+   GET /api/admin/users
+========================================================= */
+router.get("/users", async (req, res, next) => {
+  try {
+    const users = await User.find().select("-passwordHash");
+    res.json(users);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* =========================================================
+   ADMIN SUMMARY
+   GET /api/admin/summary
+========================================================= */
+router.get("/summary", async (req, res, next) => {
   try {
     const totalUsers = await User.countDocuments();
     const totalAdmins = await User.countDocuments({ role: "admin" });
-    const totalClients = 10; // example
-    const totalProducts = 5; // example
-    const totalLeads = 15;   // example
+
+    // Replace with real models later
+    const totalClients = 10;
+    const totalProducts = 5;
+    const totalLeads = 15;
 
     const recentLeads = [
       { client: "Client A", source: "Email" },
       { client: "Client B", source: "Website" },
     ];
 
-    const tasks = ["Check new leads", "Update client info"];
+    const tasks = [
+      "Check new leads",
+      "Update client information",
+    ];
 
-    res.json({ totalUsers, totalAdmins, totalClients, totalProducts, totalLeads, recentLeads, tasks });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Internal server error" });
+    res.json({
+      totalUsers,
+      totalAdmins,
+      totalClients,
+      totalProducts,
+      totalLeads,
+      recentLeads,
+      tasks,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* =========================================================
+   GET SINGLE USER (OPTIONAL)
+   GET /api/admin/users/:id
+========================================================= */
+router.get("/users/:id", async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id).select("-passwordHash");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(user);
+  } catch (err) {
+    next(err);
   }
 });
 
