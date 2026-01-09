@@ -17,6 +17,70 @@ router.get("/users", async (req, res, next) => {
 });
 
 /* =========================================================
+   GET SINGLE USER
+   GET /api/admin/users/:id
+========================================================= */
+router.get("/users/:id", async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id).select("-passwordHash");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* =========================================================
+   UPDATE USER
+   PUT /api/admin/users/:id
+========================================================= */
+router.put("/users/:id", async (req, res, next) => {
+  try {
+    const { name, role, isActive } = req.body;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...(name !== undefined && { name }),
+        ...(role !== undefined && { role }),
+        ...(isActive !== undefined && { isActive }),
+      },
+      { new: true, runValidators: true }
+    ).select("-passwordHash");
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(updatedUser);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* =========================================================
+   DELETE USER
+   DELETE /api/admin/users/:id
+========================================================= */
+router.delete("/users/:id", async (req, res, next) => {
+  try {
+    const deletedUser = await User.findByIdAndDelete(req.params.id);
+
+    if (!deletedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({ message: "User deleted successfully" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* =========================================================
    ADMIN SUMMARY
    GET /api/admin/summary
 ========================================================= */
@@ -49,24 +113,6 @@ router.get("/summary", async (req, res, next) => {
       recentLeads,
       tasks,
     });
-  } catch (err) {
-    next(err);
-  }
-});
-
-/* =========================================================
-   GET SINGLE USER (OPTIONAL)
-   GET /api/admin/users/:id
-========================================================= */
-router.get("/users/:id", async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.id).select("-passwordHash");
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.json(user);
   } catch (err) {
     next(err);
   }
