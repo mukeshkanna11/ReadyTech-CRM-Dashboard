@@ -19,48 +19,48 @@ import role from "./middlewares/role.js";
 
 const app = express();
 
-// ===================== Global Middlewares =====================
+/* ===================== Global Middlewares ===================== */
 app.use(helmet());
 
 app.use(
   cors({
-    origin: true, // allow all origins (ok for dev)
+    origin: true, // OK for development
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-// Handle preflight
+// Preflight
 app.options("*", cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
-// ===================== Public Routes =====================
+/* ===================== Public Routes ===================== */
 app.use("/api/auth", authRoutes);
 
-// ===================== Protected Routes =====================
+/* ===================== Protected Routes ===================== */
 app.use("/api/admin", auth, role("admin"), adminRoutes);
 app.use("/api/products", auth, productsRoutes);
 app.use("/api/clients", auth, clientsRoutes);
-app.use("/api/leads", auth, leadsRoutes);
+app.use("/api/leads", auth, leadsRoutes); // ✅ THIS IS CORRECT
 app.use("/api/audit", auth, role("admin"), auditRoutes);
 app.use("/api/user", auth, userRoutes);
 
-// ===================== Health Check =====================
+/* ===================== Health Check ===================== */
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, timestamp: new Date() });
 });
 
-// ===================== 404 Handler =====================
+/* ===================== 404 Handler (LAST ROUTE) ===================== */
 app.use((req, res) => {
   console.error("❌ Route not found:", req.method, req.originalUrl);
   res.status(404).json({ message: "Route not found" });
 });
 
-// ===================== Global Error Handler =====================
+/* ===================== Global Error Handler ===================== */
 app.use((err, req, res, next) => {
   console.error("❌ ERROR STACK:", err.stack);
   res.status(err.status || 500).json({
