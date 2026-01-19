@@ -2,7 +2,7 @@ import express from "express";
 import mongoose from "mongoose";
 import Lead from "../models/Lead.js";
 import AuditLog from "../models/AuditLog.js";
-
+import Opportunity from "../models/Opportunity.js";
 const router = express.Router();
 
 /* =========================================================
@@ -170,6 +170,58 @@ router.delete("/:id", async (req, res) => {
   } catch (error) {
     console.error("Lead delete error:", error);
     res.status(500).json({ message: "Failed to delete lead" });
+  }
+});
+
+
+
+
+
+
+/* =========================================================
+   CONVERT LEAD TO OPPORTUNITY
+   POST /api/leads/:id/convert
+========================================================= */
+router.post("/:id/convert", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, value } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid lead ID" });
+    }
+
+    const lead = await Lead.findById(id);
+    if (!lead) {
+      return res.status(404).json({ message: "Lead not found" });
+    }
+
+    // Prevent double conversion
+    if (lead.status === "Converted") {
+      return res.status(400).json({ message: "Lead already converted" });
+    }
+
+    // Create Opportunity
+    const opportunity = await Opportunity.create({
+      title: title || `${lead.name} Opportunity`,
+      lead: lead._id,
+      value: value || 0,
+      assignedTo: lead.owner,
+      department: lead.department || "Salesforce",
+    });
+
+    // Update Lead
+    lead.status = "Converted";
+    await lead.save();
+
+    res.json({
+      message: "Lead converted successfully",
+      lead,
+      opportunity,
+    });
+  } catch (error) {
+    console.error("Lead convert error:", error);
+    res.status(500).json({ message: "Failed to convert lead" });
   }
 });
 

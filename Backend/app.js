@@ -4,16 +4,18 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 
-// Routes
+/* ===================== Routes ===================== */
 import authRoutes from "./routes/auth.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import productsRoutes from "./routes/products.routes.js";
 import clientsRoutes from "./routes/clients.routes.js";
 import leadsRoutes from "./routes/leads.routes.js";
+import opportunityRoutes from "./routes/Opportunities.routes.js";
+import activityRoutes from "./routes/Activities.routes.js";
 import auditRoutes from "./routes/audit.routes.js";
 import userRoutes from "./routes/user.routes.js";
 
-// Middlewares
+/* ===================== Middlewares ===================== */
 import auth from "./middlewares/auth.js";
 import role from "./middlewares/role.js";
 
@@ -24,14 +26,13 @@ app.use(helmet());
 
 app.use(
   cors({
-    origin: true, // OK for development
+    origin: true, // allow frontend (Netlify / localhost)
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-// Preflight
 app.options("*", cors());
 
 app.use(express.json());
@@ -45,16 +46,24 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", auth, role("admin"), adminRoutes);
 app.use("/api/products", auth, productsRoutes);
 app.use("/api/clients", auth, clientsRoutes);
-app.use("/api/leads", auth, leadsRoutes); // ✅ THIS IS CORRECT
+
+/* 🔥 Salesforce CRM MODULE 🔥 */
+app.use("/api/leads", auth, leadsRoutes);
+app.use("/api/opportunities", auth, opportunityRoutes);
+app.use("/api/activities", auth, activityRoutes);
+
 app.use("/api/audit", auth, role("admin"), auditRoutes);
 app.use("/api/user", auth, userRoutes);
 
 /* ===================== Health Check ===================== */
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true, timestamp: new Date() });
+  res.json({
+    ok: true,
+    timestamp: new Date(),
+  });
 });
 
-/* ===================== 404 Handler (LAST ROUTE) ===================== */
+/* ===================== 404 Handler ===================== */
 app.use((req, res) => {
   console.error("❌ Route not found:", req.method, req.originalUrl);
   res.status(404).json({ message: "Route not found" });
