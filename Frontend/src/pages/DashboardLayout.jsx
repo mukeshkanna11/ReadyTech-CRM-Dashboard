@@ -16,6 +16,7 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
+import { Cloud } from "lucide-react";
 
 /* =========================================================
    DASHBOARD LAYOUT
@@ -67,13 +68,17 @@ function Sidebar({ open }) {
   };
 
   const menuItems = [
-    { name: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
-    { name: "Users", to: "/users", icon: Users },
-    { name: "Clients", to: "/clients", icon: UserCheck },
-    { name: "Products", to: "/products", icon: Package },
-    { name: "Leads", to: "/leads", icon: BarChart3 },
-    { name: "Audit Logs", to: "/auditlogs", icon: Shield },
-  ];
+  { name: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
+  { name: "Users", to: "/users", icon: Users },
+  { name: "Clients", to: "/clients", icon: UserCheck },
+  { name: "Products", to: "/products", icon: Package },
+  { name: "Leads", to: "/leads", icon: BarChart3 },
+
+  // 🔥 SALESFORCE MODULE
+  { name: "Salesforce", to: "/salesforce", icon: Cloud },
+
+  { name: "Audit Logs", to: "/auditlogs", icon: Shield },
+];
 
   return (
     <aside
