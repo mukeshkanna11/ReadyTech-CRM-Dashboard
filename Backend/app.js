@@ -11,7 +11,7 @@ import productsRoutes from "./routes/products.routes.js";
 import clientsRoutes from "./routes/clients.routes.js";
 import leadsRoutes from "./routes/leads.routes.js";
 import opportunityRoutes from "./routes/opportunities.routes.js";
-import activityRoutes from "./routes/Activities.routes.js";
+import activityRoutes from "./routes/activities.routes.js";
 import auditRoutes from "./routes/audit.routes.js";
 import userRoutes from "./routes/user.routes.js";
 
