@@ -14,6 +14,12 @@ import opportunityRoutes from "./routes/opportunities.routes.js";
 import activityRoutes from "./routes/activities.routes.js";
 import auditRoutes from "./routes/audit.routes.js";
 import userRoutes from "./routes/user.routes.js";
+import inventoryRoutes from "./routes/inventory.routes.js";
+import vendorRoutes from "./routes/vendors.routes.js";
+import purchaseRoutes from "./routes/purchase.routes.js";
+import salesRoutes from "./routes/sales.routes.js";
+import warehouseRoutes from "./routes/warehouse.routes.js";
+
 
 /* ===================== Middlewares ===================== */
 import auth from "./middlewares/auth.js";
@@ -46,6 +52,12 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", auth, role("admin"), adminRoutes);
 app.use("/api/products", auth, productsRoutes);
 app.use("/api/clients", auth, clientsRoutes);
+app.use("/api/inventory", inventoryRoutes);
+app.use("/api/vendors", vendorRoutes);
+app.use("/api/purchase", purchaseRoutes);
+app.use("/api/sales", salesRoutes);
+app.use("/api/warehouses", warehouseRoutes);
+
 
 /* 🔥 Salesforce CRM MODULE 🔥 */
 app.use("/api/leads", auth, leadsRoutes);

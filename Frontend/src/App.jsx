@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 /* ================== LAYOUT ================== */
 import DashboardLayout from "./pages/DashboardLayout";
 
-/* ================== CORE PAGES ================== */
+/* ================== CORE CRM PAGES ================== */
 import DashboardPage from "./pages/DashboardPage";
 import Clients from "./pages/Clients";
 import Products from "./pages/Products";
@@ -29,6 +29,14 @@ import LeadsTab from "./components/LeadsTab";
 import OpportunitiesTab from "./components/OpportunitiesTab";
 import ActivitiesTab from "./components/ActivitiesTab";
 
+/* ================== ERP / STOCKS ================== */
+import StockProducts from "./pages/Stcoks/Products";
+import Warehouses from "./pages/Stcoks/Warehouses";
+import Vendors from "./pages/Stcoks/Vendors";
+import PurchaseOrders from "./pages/Stcoks/PurchaseOrders";
+import SalesOrders from "./pages/Stcoks/SalesOrders";
+import Inventory from "./pages/Stcoks/Inventory";
+
 /* ================== PROTECTION ================== */
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -53,7 +61,7 @@ export default function App() {
           {/* Default redirect */}
           <Route index element={<Navigate to="dashboard" replace />} />
 
-          {/* ===== MAIN CRM PAGES ===== */}
+          {/* ===== MAIN CRM ===== */}
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="clients" element={<Clients />} />
           <Route path="products" element={<Products />} />
@@ -63,14 +71,22 @@ export default function App() {
 
           {/* ===== SALESFORCE MODULE ===== */}
           <Route path="salesforce" element={<SalesforceModule />}>
-            {/* Default tab redirect */}
             <Route index element={<Navigate to="leads" replace />} />
-
-            {/* Tabs as separate routes */}
             <Route path="dashboard" element={<SalesforceDashboard />} />
             <Route path="leads" element={<LeadsTab />} />
             <Route path="opportunities" element={<OpportunitiesTab />} />
             <Route path="activities" element={<ActivitiesTab />} />
+          </Route>
+
+          {/* ===== ERP / STOCKS MODULE ===== */}
+          <Route path="stocks">
+            <Route index element={<Navigate to="products" replace />} />
+            <Route path="products" element={<StockProducts />} />
+            <Route path="warehouses" element={<Warehouses />} />
+            <Route path="vendors" element={<Vendors />} />
+            <Route path="purchase-orders" element={<PurchaseOrders />} />
+            <Route path="sales-orders" element={<SalesOrders />} />
+            <Route path="inventory" element={<Inventory />} />
           </Route>
 
           {/* ===== SETTINGS & INFO ===== */}

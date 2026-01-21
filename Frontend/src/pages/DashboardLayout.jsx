@@ -13,8 +13,11 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  Moon,
-  Sun,
+  Warehouse,
+  ShoppingCart,
+  ClipboardList,
+  Layers,
+  Truck,
 } from "lucide-react";
 import { Cloud } from "lucide-react";
 
@@ -23,62 +26,39 @@ import { Cloud } from "lucide-react";
 ========================================================= */
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [dark, setDark] = useState(false);
 
   return (
-    <div className={dark ? "dark" : ""}>
-      <div className="flex min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 dark:from-slate-900 dark:to-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200">
+      <Sidebar open={sidebarOpen} />
 
-        {/* SIDEBAR */}
-        <Sidebar open={sidebarOpen} />
+      <div
+        className={`flex flex-col flex-1 transition-all duration-300 ${
+          sidebarOpen ? "ml-64" : "ml-20"
+        }`}
+      >
+        <Topbar onMenu={() => setSidebarOpen(!sidebarOpen)} />
 
-        {/* MAIN AREA */}
-        <div
-          className={`flex flex-col flex-1 transition-all duration-300 ${
-            sidebarOpen ? "ml-64" : "ml-20"
-          }`}
-        >
-          <Topbar
-            onMenu={() => setSidebarOpen(!sidebarOpen)}
-            dark={dark}
-            setDark={setDark}
-          />
-
-          <main className="flex-1 p-4 overflow-y-auto md:p-6">
-            <Outlet />
-          </main>
-        </div>
-
-        {/* FLOATING AI BUTTON */}
-        <AIAssistant />
+        <main className="flex-1 p-4 overflow-y-auto md:p-6">
+          <Outlet />
+        </main>
       </div>
+
+      <AIAssistant />
     </div>
   );
 }
 
 /* =========================================================
-   SIDEBAR
+   SIDEBAR (ZOHO STYLE)
 ========================================================= */
 function Sidebar({ open }) {
   const navigate = useNavigate();
+  const [erpOpen, setErpOpen] = useState(true);
 
-  const handleLogout = () => {
+  const logout = () => {
     localStorage.removeItem("token");
     navigate("/login");
   };
-
-  const menuItems = [
-  { name: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
-  { name: "Users", to: "/users", icon: Users },
-  { name: "Clients", to: "/clients", icon: UserCheck },
-  { name: "Products", to: "/products", icon: Package },
-  { name: "Leads", to: "/leads", icon: BarChart3 },
-
-  // 🔥 SALESFORCE MODULE
-  { name: "Salesforce", to: "/salesforce", icon: Cloud },
-
-  { name: "Audit Logs", to: "/auditlogs", icon: Shield },
-];
 
   return (
     <aside
@@ -95,45 +75,65 @@ function Sidebar({ open }) {
       </div>
 
       {/* MENU */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
-        {menuItems.map(({ name, to, icon: Icon }) => (
-          <NavLink
-            key={name}
-            to={to}
-            className={({ isActive }) =>
-              `flex items-center gap-4 px-3 py-3 rounded-xl transition-all
-              ${
-                isActive
-                  ? "bg-white/20 shadow-[0_0_15px_rgba(255,255,255,0.5)]"
-                  : "text-indigo-200 hover:bg-white/10"
-              }
-              ${!open && "justify-center"}`
-            }
-            title={!open ? name : ""}
-          >
-            <Icon size={20} />
-            {open && <span className="text-sm">{name}</span>}
-          </NavLink>
-        ))}
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-hidden">
+        <NavItem open={open} to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
+        <NavItem open={open} to="/users" icon={Users} label="Users" />
+        <NavItem open={open} to="/clients" icon={UserCheck} label="Clients" />
+        <NavItem open={open} to="/products" icon={Package} label="CRM Products" />
+        <NavItem open={open} to="/leads" icon={BarChart3} label="Leads" />
+        <NavItem open={open} to="/salesforce" icon={Cloud} label="Salesforce" />
+        <NavItem open={open} to="/auditlogs" icon={Shield} label="Audit Logs" />
+
+        {/* ===== ERP MODULE ===== */}
+        {open && (
+          <div className="mt-6">
+            <button
+              onClick={() => setErpOpen(!erpOpen)}
+              className="flex items-center w-full gap-3 px-3 py-2 text-xs tracking-wider text-indigo-200 uppercase rounded-lg hover:bg-white/10"
+            >
+              <Layers size={16} />
+              <span>ERP / Inventory</span>
+              <ChevronDown
+                size={14}
+                className={`ml-auto transition-transform ${
+                  erpOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            <div
+              className={`overflow-hidden transition-all duration-300 ${
+                erpOpen ? "max-h-[420px]" : "max-h-0"
+              }`}
+            >
+              <div className="pl-4 mt-2 ml-3 space-y-1 border-l border-white/20">
+                <NavSubItem to="/stocks/products" icon={Package} label="Products" />
+                <NavSubItem to="/stocks/warehouses" icon={Warehouse} label="Warehouses" />
+                <NavSubItem to="/stocks/vendors" icon={Truck} label="Vendors" />
+                <NavSubItem
+                  to="/stocks/purchase-orders"
+                  icon={ClipboardList}
+                  label="Purchase Orders"
+                />
+                <NavSubItem
+                  to="/stocks/sales-orders"
+                  icon={ShoppingCart}
+                  label="Sales Orders"
+                />
+                <NavSubItem to="/stocks/inventory" icon={Layers} label="Inventory" />
+              </div>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* FOOTER */}
       <div className="p-3 border-t border-white/10">
-        <NavLink
-          to="/settings"
-          className={`flex items-center gap-4 px-3 py-3 rounded-xl
-          text-indigo-200 hover:bg-white/10
-          ${!open && "justify-center"}`}
-        >
-          <Settings size={20} />
-          {open && "Settings"}
-        </NavLink>
-
+        <NavItem open={open} to="/settings" icon={Settings} label="Settings" />
         <button
-          onClick={handleLogout}
+          onClick={logout}
           className={`flex items-center gap-4 w-full px-3 py-3 rounded-xl
-          text-red-300 hover:bg-red-500/20
-          ${!open && "justify-center"}`}
+          text-red-300 hover:bg-red-500/20 ${!open && "justify-center"}`}
         >
           <LogOut size={20} />
           {open && "Logout"}
@@ -144,77 +144,82 @@ function Sidebar({ open }) {
 }
 
 /* =========================================================
+   NAV ITEMS
+========================================================= */
+function NavItem({ to, icon: Icon, label, open }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `flex items-center gap-4 px-3 py-3 rounded-xl transition-all
+        ${isActive
+          ? "bg-white/20 shadow-[0_0_12px_rgba(255,255,255,0.4)]"
+          : "text-indigo-200 hover:bg-white/10"}
+        ${!open && "justify-center"}`
+      }
+    >
+      <Icon size={20} />
+      {open && <span className="text-sm">{label}</span>}
+    </NavLink>
+  );
+}
+
+function NavSubItem({ to, icon: Icon, label }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition
+        ${isActive
+          ? "bg-white/20 text-white"
+          : "text-indigo-200 hover:bg-white/10"}`
+      }
+    >
+      <Icon size={16} />
+      {label}
+    </NavLink>
+  );
+}
+
+/* =========================================================
    TOPBAR
 ========================================================= */
-function Topbar({ onMenu, dark, setDark }) {
-  const [profileOpen, setProfileOpen] = useState(false);
+function Topbar({ onMenu }) {
   const navigate = useNavigate();
-
-  const handleProfileNav = (path) => {
-    setProfileOpen(false);
-    if (path === "logout") {
-      localStorage.removeItem("token");
-      navigate("/login");
-    } else {
-      navigate(path);
-    }
-  };
+  const [profileOpen, setProfileOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-30 border-b bg-white/80 dark:bg-slate-900/80 backdrop-blur dark:border-slate-800">
+    <header className="sticky top-0 z-30 border-b bg-white/80 backdrop-blur">
       <div className="flex items-center justify-between h-16 px-4 md:px-6">
+        <button onClick={onMenu} className="p-2 rounded-lg hover:bg-slate-100">
+          <Menu size={22} />
+        </button>
 
-        {/* LEFT */}
         <div className="flex items-center gap-3">
-          <button
-            onClick={onMenu}
-            className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-          >
-            <Menu size={22} />
-          </button>
-
-          <div className="flex-col hidden leading-tight md:flex">
-            <span className="text-sm font-semibold dark:text-white">
-              CRM Dashboard
-            </span>
-            <span className="text-xs text-slate-500">
-              Business Growth Panel
-            </span>
-          </div>
-        </div>
-
-        {/* RIGHT */}
-        <div className="flex items-center gap-3">
-
-          
-
-          {/* NOTIFICATIONS */}
           <button
             onClick={() => navigate("/notifications")}
-            className="relative p-2 transition rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="relative p-2 rounded-lg hover:bg-slate-100"
           >
-            <Bell size={18} className="text-slate-600 dark:text-white" />
+            <Bell size={18} />
             <span className="absolute w-2 h-2 bg-red-500 rounded-full top-1 right-1 animate-pulse" />
           </button>
 
-          {/* PROFILE DROPDOWN */}
           <div className="relative">
             <button
               onClick={() => setProfileOpen(!profileOpen)}
-              className="flex items-center gap-2 p-1 transition rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="flex items-center gap-2 p-1 rounded-lg hover:bg-slate-100"
             >
-              <div className="flex items-center justify-center w-8 h-8 font-bold text-white bg-indigo-600 rounded-full">
+              <div className="flex items-center justify-center w-8 h-8 text-white bg-indigo-600 rounded-full">
                 A
               </div>
-              <ChevronDown size={14} className={`transition-transform ${profileOpen ? "rotate-180" : ""}`} />
+              <ChevronDown size={14} />
             </button>
 
             {profileOpen && (
-              <div className="absolute right-0 z-50 p-2 mt-2 bg-white border shadow-xl w-44 dark:bg-slate-800 rounded-xl border-slate-200 dark:border-slate-700">
-                <DropdownItem label="My Profile" onClick={() => handleProfileNav("/profile")} />
-                <DropdownItem label="Settings" onClick={() => handleProfileNav("/settings")} />
-                <div className="h-px my-1 bg-slate-200 dark:bg-slate-700" />
-                <DropdownItem label="Logout" danger onClick={() => handleProfileNav("logout")} />
+              <div className="absolute right-0 z-50 w-40 p-2 mt-2 bg-white border shadow-xl rounded-xl">
+                <DropdownItem label="Profile" onClick={() => navigate("/profile")} />
+                <DropdownItem label="Settings" onClick={() => navigate("/settings")} />
+                <DropdownItem label="Logout" danger onClick={() => navigate("/login")} />
               </div>
             )}
           </div>
@@ -232,10 +237,7 @@ function DropdownItem({ label, onClick, danger }) {
     <button
       onClick={onClick}
       className={`w-full text-left px-4 py-2 text-sm rounded-lg transition
-        ${danger
-          ? "text-red-500 hover:bg-red-500/10"
-          : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"}
-      `}
+      ${danger ? "text-red-500 hover:bg-red-100" : "hover:bg-slate-100"}`}
     >
       {label}
     </button>
@@ -243,13 +245,13 @@ function DropdownItem({ label, onClick, danger }) {
 }
 
 /* =========================================================
-   FLOATING AI ASSISTANT
+   AI ASSISTANT
 ========================================================= */
 function AIAssistant() {
   return (
     <button
       title="AI Assistant"
-      className="fixed z-40 flex items-center justify-center text-white transition bg-indigo-600 rounded-full shadow-xl bottom-6 right-6 w-14 h-14 hover:scale-105"
+      className="fixed z-40 flex items-center justify-center text-white bg-indigo-600 rounded-full shadow-xl bottom-6 right-6 w-14 h-14 hover:scale-105"
     >
       <Brain />
     </button>
