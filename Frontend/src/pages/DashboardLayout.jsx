@@ -49,7 +49,7 @@ export default function DashboardLayout() {
 }
 
 /* =========================================================
-   SIDEBAR (ZOHO STYLE)
+   SIDEBAR
 ========================================================= */
 function Sidebar({ open }) {
   const navigate = useNavigate();
@@ -75,7 +75,7 @@ function Sidebar({ open }) {
       </div>
 
       {/* MENU */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-hidden">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-visible">
         <NavItem open={open} to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <NavItem open={open} to="/users" icon={Users} label="Users" />
         <NavItem open={open} to="/clients" icon={UserCheck} label="Clients" />
@@ -84,8 +84,9 @@ function Sidebar({ open }) {
         <NavItem open={open} to="/salesforce" icon={Cloud} label="Salesforce" />
         <NavItem open={open} to="/auditlogs" icon={Shield} label="Audit Logs" />
 
-        {/* ===== ERP MODULE ===== */}
-        {open && (
+        {/* ================= ERP MODULE ================= */}
+        {open ? (
+          /* EXPANDED MODE */
           <div className="mt-6">
             <button
               onClick={() => setErpOpen(!erpOpen)}
@@ -107,20 +108,27 @@ function Sidebar({ open }) {
               }`}
             >
               <div className="pl-4 mt-2 ml-3 space-y-1 border-l border-white/20">
-                <NavSubItem to="/stocks/products" icon={Package} label="Products" />
-                <NavSubItem to="/stocks/warehouses" icon={Warehouse} label="Warehouses" />
-                <NavSubItem to="/stocks/vendors" icon={Truck} label="Vendors" />
-                <NavSubItem
-                  to="/stocks/purchase-orders"
-                  icon={ClipboardList}
-                  label="Purchase Orders"
-                />
-                <NavSubItem
-                  to="/stocks/sales-orders"
-                  icon={ShoppingCart}
-                  label="Sales Orders"
-                />
-                <NavSubItem to="/stocks/inventory" icon={Layers} label="Inventory" />
+                <ERPLinks />
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* COLLAPSED MODE → HOVER FLYOUT */
+          <div className="relative mt-4 group">
+            <button className="flex items-center justify-center w-full p-3 rounded-xl hover:bg-white/10">
+              <Layers size={20} />
+            </button>
+
+            <div
+              className="absolute top-0 z-50 invisible transition-all duration-200 opacity-0 left-full group-hover:visible group-hover:opacity-100"
+            >
+              <div className="w-56 p-3 ml-3 bg-indigo-900 border shadow-2xl border-white/10 rounded-xl">
+                <p className="mb-2 text-xs tracking-wider text-indigo-300 uppercase">
+                  ERP / Inventory
+                </p>
+                <div className="space-y-1">
+                  <ERPLinks />
+                </div>
               </div>
             </div>
           </div>
@@ -129,7 +137,7 @@ function Sidebar({ open }) {
 
       {/* FOOTER */}
       <div className="p-3 border-t border-white/10">
-        <NavItem open={open} to="/settings" icon={Settings} label="Settings" />
+        {/* <NavItem open={open} to="/settings" icon={Settings} label="Settings" /> */}
         <button
           onClick={logout}
           className={`flex items-center gap-4 w-full px-3 py-3 rounded-xl
@@ -144,6 +152,22 @@ function Sidebar({ open }) {
 }
 
 /* =========================================================
+   ERP LINKS (REUSABLE)
+========================================================= */
+function ERPLinks() {
+  return (
+    <>
+      <NavSubItem to="/stocks/products" icon={Package} label="Products" />
+      <NavSubItem to="/stocks/warehouses" icon={Warehouse} label="Warehouses" />
+      <NavSubItem to="/stocks/vendors" icon={Truck} label="Vendors" />
+      <NavSubItem to="/stocks/purchase-orders" icon={ClipboardList} label="Purchase Orders" />
+      <NavSubItem to="/stocks/sales-orders" icon={ShoppingCart} label="Sales Orders" />
+      <NavSubItem to="/stocks/inventory" icon={Layers} label="Inventory" />
+    </>
+  );
+}
+
+/* =========================================================
    NAV ITEMS
 ========================================================= */
 function NavItem({ to, icon: Icon, label, open }) {
@@ -152,9 +176,11 @@ function NavItem({ to, icon: Icon, label, open }) {
       to={to}
       className={({ isActive }) =>
         `flex items-center gap-4 px-3 py-3 rounded-xl transition-all
-        ${isActive
-          ? "bg-white/20 shadow-[0_0_12px_rgba(255,255,255,0.4)]"
-          : "text-indigo-200 hover:bg-white/10"}
+        ${
+          isActive
+            ? "bg-white/20 shadow-[0_0_12px_rgba(255,255,255,0.4)]"
+            : "text-indigo-200 hover:bg-white/10"
+        }
         ${!open && "justify-center"}`
       }
     >
@@ -170,9 +196,11 @@ function NavSubItem({ to, icon: Icon, label }) {
       to={to}
       className={({ isActive }) =>
         `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition
-        ${isActive
-          ? "bg-white/20 text-white"
-          : "text-indigo-200 hover:bg-white/10"}`
+        ${
+          isActive
+            ? "bg-white/20 text-white"
+            : "text-indigo-200 hover:bg-white/10"
+        }`
       }
     >
       <Icon size={16} />
