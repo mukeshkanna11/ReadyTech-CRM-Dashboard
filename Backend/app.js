@@ -27,12 +27,12 @@ import role from "./middlewares/role.js";
 const app = express();
 
 /* ======================================================
-   TRUST PROXY (RENDER)
+   TRUST PROXY (FOR RENDER/NETLIFY/PROXY)
 ====================================================== */
 app.set("trust proxy", 1);
 
 /* ======================================================
-   SECURITY
+   SECURITY HEADERS
 ====================================================== */
 app.use(
   helmet({
@@ -41,22 +41,28 @@ app.use(
 );
 
 /* ======================================================
-   CORS (FIXED FOR DEPLOYMENT)
+   CORS SETUP
+   ✅ Fully supports dev & production
 ====================================================== */
 const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:3000",
-  "https://readytechcrm.netlify.app",
+  "http://localhost:5173", // Vite dev
+  "http://localhost:3000", // React dev fallback
+  "https://readytechcrm.netlify.app", // Production front
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
+      // Allow requests like Postman (no origin)
       if (!origin) return callback(null, true);
+
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      return callback(null, false);
+
+      return callback(
+        new Error("CORS policy: This origin is not allowed")
+      );
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -64,7 +70,7 @@ app.use(
   })
 );
 
-// ✅ IMPORTANT: Allow preflight requests
+// Preflight for all routes
 app.options("*", cors());
 
 /* ======================================================
@@ -74,7 +80,7 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 /* ======================================================
-   LOGGING
+   LOGGER
 ====================================================== */
 app.use(morgan("dev"));
 
@@ -86,7 +92,11 @@ app.use("/api/auth", authRoutes);
 /* ======================================================
    PROTECTED ROUTES
 ====================================================== */
+// Admin routes
 app.use("/api/admin", auth, role("admin"), adminRoutes);
+app.use("/api/audit", auth, role("admin"), auditRoutes);
+
+// CRM & ERP routes
 app.use("/api/products", auth, productsRoutes);
 app.use("/api/clients", auth, clientsRoutes);
 app.use("/api/inventory", auth, inventoryRoutes);
@@ -95,13 +105,12 @@ app.use("/api/purchase", auth, purchaseRoutes);
 app.use("/api/sales", auth, salesRoutes);
 app.use("/api/warehouses", auth, warehouseRoutes);
 
-/* 🔥 CRM MODULE 🔥 */
+// CRM Modules
 app.use("/api/leads", auth, leadsRoutes);
 app.use("/api/opportunities", auth, opportunityRoutes);
 app.use("/api/activities", auth, activityRoutes);
 
-/* 🔐 ADMIN / USER */
-app.use("/api/audit", auth, role("admin"), auditRoutes);
+// User profile
 app.use("/api/user", auth, userRoutes);
 
 /* ======================================================
@@ -116,7 +125,7 @@ app.get("/api/health", (req, res) => {
 });
 
 /* ======================================================
-   404 HANDLER (JSON ONLY)
+   404 HANDLER
 ====================================================== */
 app.use((req, res) => {
   res.status(404).json({
@@ -128,14 +137,23 @@ app.use((req, res) => {
 });
 
 /* ======================================================
-   GLOBAL ERROR HANDLER (JSON ONLY)
+   GLOBAL ERROR HANDLER
 ====================================================== */
 app.use((err, req, res, next) => {
   console.error("❌ GLOBAL ERROR:", err);
 
+  // If it's a CORS error, return 403
+  if (err.message && err.message.startsWith("CORS")) {
+    return res.status(403).json({
+      success: false,
+      message: err.message,
+    });
+  }
+
   res.status(err.status || 500).json({
     success: false,
     message: err.message || "Internal Server Error",
+    stack: process.env.NODE_ENV === "production" ? undefined : err.stack,
     time: new Date().toISOString(),
   });
 });
