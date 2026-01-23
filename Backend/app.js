@@ -27,7 +27,7 @@ import role from "./middlewares/role.js";
 const app = express();
 
 /* ======================================================
-   TRUST PROXY (RENDER)
+   TRUST PROXY (RENDER / CLOUD)
 ====================================================== */
 app.set("trust proxy", 1);
 
@@ -41,36 +41,31 @@ app.use(
 );
 
 /* ======================================================
-   CORS (NETLIFY + LOCAL SAFE)
+   CORS (NETLIFY + LOCAL)
 ====================================================== */
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
-  "https://readytechcrm.netlify.app/", // 🔴 replace with YOUR Netlify domain
+  "https://readytechcrm.netlify.app", // ✅ NO trailing slash
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow Postman / curl
+      // Allow Postman / server-to-server
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.error("❌ Blocked by CORS:", origin);
-        callback(new Error("Not allowed by CORS"));
+        return callback(null, true);
       }
+
+      console.error("❌ CORS BLOCKED:", origin);
+      return callback(new Error("Not allowed by CORS"));
     },
-    credentials: false, // 🔒 TRUE only if using cookies
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    optionsSuccessStatus: 200,
   })
 );
-
-// Preflight
-app.options("*", cors());
 
 /* ======================================================
    BODY PARSERS
@@ -116,7 +111,7 @@ app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     service: "ReadyTech CRM API",
-    timestamp: new Date().toISOString(),
+    time: new Date().toISOString(),
   });
 });
 
@@ -133,12 +128,12 @@ app.use((req, res) => {
 });
 
 /* ======================================================
-   GLOBAL ERROR HANDLER
+   GLOBAL ERROR HANDLER (JSON ONLY)
 ====================================================== */
 app.use((err, req, res, next) => {
   console.error("❌ GLOBAL ERROR:", err);
 
-  // CORS errors
+  // CORS error
   if (err.message === "Not allowed by CORS") {
     return res.status(403).json({
       success: false,
@@ -146,10 +141,10 @@ app.use((err, req, res, next) => {
     });
   }
 
-  res.status(err.status || 500).json({
+  return res.status(err.status || 500).json({
     success: false,
     message: err.message || "Internal Server Error",
-    timestamp: new Date().toISOString(),
+    time: new Date().toISOString(),
   });
 });
 

@@ -4,7 +4,16 @@ import User from "../models/User.js";
 
 const auth = async (req, res, next) => {
   try {
-    // 1️⃣ Get token from headers
+    /* ======================================================
+       🚨 BYPASS CORS PREFLIGHT
+    ====================================================== */
+    if (req.method === "OPTIONS") {
+      return next();
+    }
+
+    /* ======================================================
+       GET TOKEN
+    ====================================================== */
     const authHeader =
       req.headers.authorization || req.headers["x-auth-token"];
 
@@ -15,7 +24,6 @@ const auth = async (req, res, next) => {
       });
     }
 
-    // 2️⃣ Extract token
     const token = authHeader.startsWith("Bearer ")
       ? authHeader.split(" ")[1]
       : authHeader;
@@ -27,7 +35,9 @@ const auth = async (req, res, next) => {
       });
     }
 
-    // 3️⃣ Verify token (DO NOT IGNORE EXPIRY)
+    /* ======================================================
+       VERIFY TOKEN
+    ====================================================== */
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -41,7 +51,9 @@ const auth = async (req, res, next) => {
       });
     }
 
-    // 4️⃣ Validate payload
+    /* ======================================================
+       VALIDATE PAYLOAD
+    ====================================================== */
     if (!decoded?.id) {
       return res.status(401).json({
         success: false,
@@ -49,8 +61,12 @@ const auth = async (req, res, next) => {
       });
     }
 
-    // 5️⃣ Load user
-    const user = await User.findById(decoded.id).select("-passwordHash");
+    /* ======================================================
+       LOAD USER
+    ====================================================== */
+    const user = await User.findById(decoded.id)
+      .select("-passwordHash")
+      .lean();
 
     if (!user) {
       return res.status(401).json({
@@ -59,14 +75,15 @@ const auth = async (req, res, next) => {
       });
     }
 
-    // 6️⃣ Attach user
+    /* ======================================================
+       ATTACH USER
+    ====================================================== */
     req.user = user;
 
     next();
   } catch (error) {
     console.error("🔐 AUTH MIDDLEWARE ERROR:", error);
 
-    // 7️⃣ ALWAYS JSON (NO HTML EVER)
     return res.status(401).json({
       success: false,
       message: "Authentication failed",
