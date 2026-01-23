@@ -12,14 +12,13 @@ export default function Products() {
   // 🛑 Prevent double fetch in React StrictMode
   const fetchedOnce = useRef(false);
 
-  /* ================= FETCH PRODUCTS (HARDENED) ================= */
+  /* ================= FETCH PRODUCTS ================= */
   const fetchProducts = async () => {
     try {
       setLoading(true);
-
       const res = await API.get("/products");
 
-      // ✅ SAFELY NORMALIZE RESPONSE
+      // ✅ Normalize API response
       const list =
         Array.isArray(res?.data?.data)
           ? res.data.data
@@ -33,12 +32,13 @@ export default function Products() {
 
       if (err.response?.status === 401) {
         toast.error("Session expired. Please login again.");
-        setProducts([]);
       } else if (err.code === "ERR_NETWORK") {
-        toast.error("Network error. Please check connection.");
+        toast.error("Network error. Check your connection.");
       } else {
         toast.error("Failed to fetch products");
       }
+
+      setProducts([]);
     } finally {
       setLoading(false);
     }
@@ -96,7 +96,6 @@ export default function Products() {
   /* ================= SEARCH ================= */
   const filteredProducts = useMemo(() => {
     if (!search) return products;
-
     return products.filter((p) =>
       p.name?.toLowerCase().includes(search.toLowerCase())
     );
@@ -104,24 +103,19 @@ export default function Products() {
 
   /* ================= KPI ================= */
   const totalProducts = products.length;
-
   const lastAdded =
     products.length > 0 && products[products.length - 1]?.createdAt
-      ? new Date(
-          products[products.length - 1].createdAt
-        ).toLocaleDateString()
+      ? new Date(products[products.length - 1].createdAt).toLocaleDateString()
       : "-";
 
   /* ================= UI ================= */
   return (
     <div className="space-y-6">
       {/* HEADER */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Products</h1>
-          <p className="text-sm text-slate-500">
-            Manage inventory products
-          </p>
+          <p className="text-sm text-slate-500">Manage inventory products</p>
         </div>
 
         <button
@@ -134,20 +128,10 @@ export default function Products() {
         </button>
       </div>
 
-      {/* KPI */}
+      {/* KPI CARDS */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard
-          title="Total Products"
-          value={totalProducts}
-          icon={Package}
-          color="indigo"
-        />
-        <StatCard
-          title="Last Added"
-          value={lastAdded}
-          icon={Plus}
-          color="emerald"
-        />
+        <StatCard title="Total Products" value={totalProducts} icon={Package} color="indigo" />
+        <StatCard title="Last Added" value={lastAdded} icon={Plus} color="emerald" />
       </div>
 
       {/* ADD + SEARCH */}
@@ -195,13 +179,9 @@ export default function Products() {
             </thead>
             <tbody>
               {filteredProducts.map((p) => (
-                <tr key={p._id} className="border-t">
+                <tr key={p._id} className="border-t hover:bg-slate-50">
                   <Td>{p.name}</Td>
-                  <Td>
-                    {p.createdAt
-                      ? new Date(p.createdAt).toLocaleDateString()
-                      : "-"}
-                  </Td>
+                  <Td>{p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "-"}</Td>
                   <Td>
                     <button
                       onClick={() => deleteProduct(p._id)}
@@ -221,7 +201,6 @@ export default function Products() {
 }
 
 /* ================= SHARED COMPONENTS ================= */
-
 function StatCard({ title, value, icon: Icon, color }) {
   const colors = {
     indigo: "bg-indigo-100 text-indigo-600",

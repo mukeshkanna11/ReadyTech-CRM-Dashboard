@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import API from "../services/api";
 import toast from "react-hot-toast";
 import {
@@ -30,16 +30,18 @@ export default function Products() {
 
   const [form, setForm] = useState(emptyForm);
 
-  /* ============================
+  // 🛑 Prevent double fetch in React StrictMode
+  const fetchedOnce = useRef(false);
+
+  /* ===========================
      FETCH PRODUCTS (SAFE)
-  ============================ */
+  =========================== */
   const fetchProducts = async () => {
     try {
       setLoading(true);
-
       const res = await API.get("/products");
 
-      // ✅ ALWAYS normalize response
+      // ✅ Normalize API response safely
       const list = Array.isArray(res.data?.data)
         ? res.data.data
         : Array.isArray(res.data)
@@ -52,6 +54,8 @@ export default function Products() {
 
       if (err.response?.status === 401) {
         toast.error("Session expired. Please login again.");
+      } else if (err.code === "ERR_NETWORK") {
+        toast.error("Network error. Check your connection.");
       } else {
         toast.error("Failed to load products");
       }
@@ -63,42 +67,46 @@ export default function Products() {
   };
 
   useEffect(() => {
+    if (fetchedOnce.current) return;
+    fetchedOnce.current = true;
+
     fetchProducts();
   }, []);
 
-  /* ============================
+  /* ===========================
      SAVE PRODUCT
-  ============================ */
+  =========================== */
   const saveProduct = async (e) => {
     e.preventDefault();
 
     try {
       const payload = {
         ...form,
-        price: Number(form.price),
-        tax: Number(form.tax),
-        stock: Number(form.stock),
+        price: Number(form.price) || 0,
+        tax: Number(form.tax) || 0,
+        stock: Number(form.stock) || 0,
       };
 
       if (form._id) {
         await API.put(`/products/${form._id}`, payload);
-        toast.success("Product updated");
+        toast.success("Product updated successfully");
       } else {
         await API.post("/products", payload);
-        toast.success("Product created");
+        toast.success("Product created successfully");
       }
 
       setDrawerOpen(false);
       setForm(emptyForm);
       fetchProducts();
     } catch (err) {
+      console.error("SAVE PRODUCT ERROR:", err);
       toast.error(err.response?.data?.message || "Save failed");
     }
   };
 
-  /* ============================
+  /* ===========================
      DELETE PRODUCT
-  ============================ */
+  =========================== */
   const deleteProduct = async (id) => {
     if (!window.confirm("Delete this product?")) return;
 
@@ -106,39 +114,37 @@ export default function Products() {
       await API.delete(`/products/${id}`);
       toast.success("Product deleted");
       fetchProducts();
-    } catch {
+    } catch (err) {
+      console.error("DELETE PRODUCT ERROR:", err);
       toast.error("Delete failed");
     }
   };
 
-  /* ============================
-     FILTER
-  ============================ */
+  /* ===========================
+     FILTER PRODUCTS
+  =========================== */
   const filteredProducts = useMemo(() => {
     return products.filter((p) =>
-      `${p.name} ${p.sku} ${p.category}`
-        .toLowerCase()
-        .includes(search.toLowerCase())
+      `${p.name} ${p.sku} ${p.category}`.toLowerCase().includes(search.toLowerCase())
     );
   }, [products, search]);
 
-  /* ============================
+  /* ===========================
      UI
-  ============================ */
+  =========================== */
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Products</h1>
-          <p className="text-sm text-slate-500">
-            Manage product catalog, pricing & inventory
-          </p>
+          <p className="text-sm text-slate-500">Manage product catalog, pricing & inventory</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchProducts}
-            className="flex items-center gap-2 px-4 py-2 text-sm border rounded-xl"
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 text-sm border rounded-xl disabled:opacity-60"
           >
             <RefreshCw size={16} /> Refresh
           </button>
@@ -182,8 +188,8 @@ export default function Products() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan="7" className="px-4 py-6 text-center">
-                  Loading...
+                <td colSpan="7" className="px-4 py-6 text-center text-slate-500">
+                  Loading products...
                 </td>
               </tr>
             )}
@@ -229,7 +235,7 @@ export default function Products() {
         </table>
       </div>
 
-      {/* Drawer */}
+      {/* Drawer Form */}
       {drawerOpen && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
           <form
@@ -237,13 +243,8 @@ export default function Products() {
             className="w-full max-w-md p-6 space-y-3 bg-white"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
-                {form._id ? "Edit Product" : "New Product"}
-              </h2>
-              <X
-                onClick={() => setDrawerOpen(false)}
-                className="cursor-pointer"
-              />
+              <h2 className="text-lg font-semibold">{form._id ? "Edit Product" : "New Product"}</h2>
+              <X onClick={() => setDrawerOpen(false)} className="cursor-pointer" />
             </div>
 
             {Object.keys(emptyForm).map((key) =>
@@ -251,9 +252,7 @@ export default function Products() {
                 <input
                   key={key}
                   value={form[key]}
-                  onChange={(e) =>
-                    setForm({ ...form, [key]: e.target.value })
-                  }
+                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
                   placeholder={key.toUpperCase()}
                   className="w-full p-2 border rounded"
                 />
@@ -261,16 +260,18 @@ export default function Products() {
                 <textarea
                   key={key}
                   value={form.description}
-                  onChange={(e) =>
-                    setForm({ ...form, description: e.target.value })
-                  }
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
                   placeholder="Description"
                   className="w-full p-2 border rounded"
                 />
               )
             )}
 
-            <button className="w-full py-2 text-white rounded bg-slate-900">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2 text-white rounded bg-slate-900 disabled:opacity-60"
+            >
               Save Product
             </button>
           </form>

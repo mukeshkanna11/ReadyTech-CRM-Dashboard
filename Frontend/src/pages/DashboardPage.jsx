@@ -24,7 +24,7 @@ import {
 
 /* =========================================================
    FULL FEATURED ZOHO-STYLE ERP DASHBOARD
-   — Updated Color Palette & Modern Design
+   — Fully Fixed & Updated
 ========================================================= */
 
 export default function DashboardPage() {
@@ -48,51 +48,78 @@ export default function DashboardPage() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [salesOrders, setSalesOrders] = useState([]);
 
-  /* ========================================================= */
-
+  /* ==================== SAFE FETCH ==================== */
   const safeFetch = async (url) => {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const text = await res.text();
     try {
-      return JSON.parse(text);
-    } catch {
-      throw new Error(`Invalid JSON from ${url}`);
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        console.warn(`Invalid JSON from ${url}:`, text);
+        return null;
+      }
+    } catch (err) {
+      console.error("Network error:", err);
+      return null;
     }
   };
 
+  /* ==================== DASHBOARD DATA ==================== */
   const fetchDashboard = async () => {
     try {
       setLoading(true);
 
-      const [
-        products,
-        salesOrdersData,
-        purchaseOrdersData,
-        inventorySummary,
-      ] = await Promise.all([
-        safeFetch("/api/products"),
-        safeFetch("/api/sales"),
-        safeFetch("/api/purchase"),
-        safeFetch("/api/inventory/summary"),
-      ]);
+      const [products, salesData, purchaseData, inventorySummary] =
+        await Promise.all([
+          safeFetch("/api/products"),
+          safeFetch("/api/sales"),
+          safeFetch("/api/purchase"),
+          safeFetch("/api/inventory/summary"),
+        ]);
 
-      setProductsList(products || []);
-      setPurchaseOrders(purchaseOrdersData || []);
-      setSalesOrders(Array.isArray(salesOrdersData) ? salesOrdersData : []);
+      // FIX: handle API returning { data: [...] } or array
+      const productsArr = Array.isArray(products)
+        ? products
+        : Array.isArray(products?.data)
+        ? products.data
+        : [];
+
+      const salesArr = Array.isArray(salesData)
+        ? salesData
+        : Array.isArray(salesData?.data)
+        ? salesData.data
+        : [];
+
+      const purchaseArr = Array.isArray(purchaseData)
+        ? purchaseData
+        : Array.isArray(purchaseData?.data)
+        ? purchaseData.data
+        : [];
+
+      let inventoryArr = Array.isArray(inventorySummary)
+        ? inventorySummary
+        : Array.isArray(inventorySummary?.data)
+        ? inventorySummary.data
+        : [];
+
+      setProductsList(productsArr);
+      setSalesOrders(salesArr);
+      setPurchaseOrders(purchaseArr);
 
       /* ---------- COUNTS ---------- */
       setCounts({
-        products: products?.length || 0,
-        salesOrders: salesOrdersData?.length || 0,
-        purchaseOrders: purchaseOrdersData?.length || 0,
+        products: productsArr.length,
+        salesOrders: salesArr.length,
+        purchaseOrders: purchaseArr.length,
         users: 38, // static or fetch from API
       });
 
       /* ---------- INVENTORY CHART ---------- */
-      const stock = (inventorySummary || []).map((i) => {
-        const product = products.find((p) => p._id === i._id?.product);
+      const stock = inventoryArr.map((i) => {
+        const product = productsArr.find((p) => p._id === i._id?.product);
         return {
           name: product?.name || `P-${i._id?.product || "?"}`,
           qty: (i.inQty || 0) - (i.outQty || 0),
@@ -102,7 +129,8 @@ export default function DashboardPage() {
 
       /* ---------- SALES TREND ---------- */
       const monthly = {};
-      (salesOrdersData || []).forEach((o) => {
+      salesArr.forEach((o) => {
+        if (!o.createdAt) return;
         const m = new Date(o.createdAt).toLocaleString("default", { month: "short" });
         monthly[m] = (monthly[m] || 0) + (o.totalAmount || 0);
       });
@@ -111,8 +139,8 @@ export default function DashboardPage() {
         Object.keys(monthly).map((m) => ({ month: m, revenue: monthly[m] }))
       );
     } catch (err) {
-      console.error(err);
-      setError(err.message);
+      console.error("Dashboard fetch error:", err);
+      setError("Failed to load dashboard data.");
     } finally {
       setLoading(false);
     }
@@ -125,6 +153,7 @@ export default function DashboardPage() {
   if (loading) return <div className="p-6 text-sm text-slate-500">Loading dashboard…</div>;
   if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
 
+  /* ==================== DERIVED DATA ==================== */
   const lowStockProducts = stockData.filter((s) => s.qty < 10);
   const topStockProducts = [...stockData].sort((a, b) => b.qty - a.qty).slice(0, 5);
 
@@ -139,61 +168,40 @@ export default function DashboardPage() {
 
   return (
     <div className="relative min-h-screen p-6 space-y-6 overflow-hidden bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200">
+
       {/* Floating Background */}
       <div className="absolute rounded-full -top-32 -left-32 w-96 h-96 bg-gradient-to-br from-blue-200/20 to-blue-400/20 blur-3xl" />
       <div className="absolute rounded-full top-1/4 -right-32 w-96 h-96 bg-gradient-to-br from-purple-200/20 to-purple-400/20 blur-3xl" />
 
-    {/* WELCOME BANNER */}
-<div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 via-blue-500 to-cyan-400 p-[1px] shadow-lg">
-  <div className="relative flex flex-col gap-4 p-6 rounded-2xl bg-white/10 backdrop-blur-md md:flex-row md:items-center md:justify-between">
+      {/* WELCOME BANNER */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 via-blue-500 to-cyan-400 p-[1px] shadow-lg">
+        <div className="relative flex flex-col gap-4 p-6 rounded-2xl bg-white/10 backdrop-blur-md md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold text-white">ReadyTechSolutions</h2>
+            <p className="max-w-xl mt-1 text-sm text-blue-100">
+              “Clarity drives growth. Stay in control of your operations, inventory, and sales — all in one place.”
+            </p>
+            <div className="flex flex-wrap gap-2 mt-4 text-xs">
+              <span className="px-3 py-1 text-white rounded-full bg-white/20">ERP Active</span>
+              <span className="px-3 py-1 text-white rounded-full bg-white/20">Inventory Synced</span>
+              <span className="px-3 py-1 text-white rounded-full bg-white/20">Sales Tracking Live</span>
+            </div>
+          </div>
 
-    {/* LEFT CONTENT */}
-    <div>
-      <h2 className="text-2xl font-semibold text-white">
-        ReadyTechSolutions
-      </h2>
-
-      <p className="max-w-xl mt-1 text-sm text-blue-100">
-        “Clarity drives growth. Stay in control of your operations, inventory,
-        and sales — all in one place.”
-      </p>
-
-      {/* STATUS PILLS */}
-      <div className="flex flex-wrap gap-2 mt-4 text-xs">
-        <span className="px-3 py-1 text-white rounded-full bg-white/20">
-          ERP Active
-        </span>
-        <span className="px-3 py-1 text-white rounded-full bg-white/20">
-          Inventory Synced
-        </span>
-        <span className="px-3 py-1 text-white rounded-full bg-white/20">
-          Sales Tracking Live
-        </span>
-      </div>
-    </div>
-
-    {/* RIGHT VISUAL */}
-    <div className="relative flex items-center gap-4">
-      <div className="hidden h-20 w-[1px] bg-white/20 md:block" />
-
-      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/15">
-        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-white/30">
-          📊
-        </div>
-        <div>
-          <p className="text-xs text-blue-100">Today</p>
-          <p className="text-sm font-semibold text-white">
-            {new Date().toLocaleDateString("en-IN", {
-              weekday: "short",
-              day: "numeric",
-              month: "short",
-            })}
-          </p>
+          <div className="relative flex items-center gap-4">
+            <div className="hidden h-20 w-[1px] bg-white/20 md:block" />
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/15">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-white/30">📊</div>
+              <div>
+                <p className="text-xs text-blue-100">Today</p>
+                <p className="text-sm font-semibold text-white">
+                  {new Date().toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
-</div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -214,9 +222,8 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Charts Section */}
+      {/* Charts */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        {/* Revenue Trend */}
         <div className="p-6 bg-white border rounded-xl shadow-lg xl:col-span-2 h-[320px]">
           <h3 className="mb-4 text-lg font-semibold text-slate-800">Revenue Trend</h3>
           <ResponsiveContainer width="100%" height="100%">
@@ -230,7 +237,6 @@ export default function DashboardPage() {
           </ResponsiveContainer>
         </div>
 
-        {/* Stock Levels */}
         <div className="p-6 bg-white border rounded-xl shadow-lg h-[320px]">
           <h3 className="mb-4 text-lg font-semibold text-slate-800">Stock Levels</h3>
           <ResponsiveContainer width="100%" height="100%">
@@ -245,9 +251,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Top Products & Low Stock */}
+      {/* Top & Low Stock Products */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {/* Top Products */}
         <div className="p-6 bg-white border shadow-lg rounded-xl">
           <h3 className="mb-4 text-lg font-semibold text-slate-800">Top Products by Stock</h3>
           <ul className="divide-y divide-gray-200">
@@ -260,7 +265,6 @@ export default function DashboardPage() {
           </ul>
         </div>
 
-        {/* Low Stock Alerts */}
         <div className="p-6 bg-white border shadow-lg rounded-xl">
           <h3 className="mb-4 text-lg font-semibold text-slate-800">Low Stock Alerts</h3>
           <ul className="divide-y divide-red-100">
@@ -273,64 +277,11 @@ export default function DashboardPage() {
           </ul>
         </div>
       </div>
-
-      {/* Latest Purchase Orders */}
-      <div className="p-6 overflow-x-auto bg-white border shadow-lg rounded-xl">
-        <h3 className="mb-4 text-lg font-semibold text-slate-800">Latest Purchase Orders</h3>
-        <table className="min-w-full text-sm divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-2 text-left">PO Number</th>
-              <th className="px-4 py-2 text-left">Vendor</th>
-              <th className="px-4 py-2 text-left">Items</th>
-              <th className="px-4 py-2 text-left">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {purchaseOrders.slice(-5).map((po) => (
-              <tr key={po._id} className="cursor-pointer hover:bg-gray-100">
-                <td className="px-4 py-2">{po.poNumber}</td>
-                <td className="px-4 py-2">{po.vendor?.name}</td>
-                <td className="px-4 py-2">{po.items.length}</td>
-                <td className="px-4 py-2">
-                  <span className={`px-2 py-1 rounded-full text-xs ${
-                    po.status === "RECEIVED"
-                      ? "bg-green-100 text-green-800"
-                      : "bg-yellow-100 text-yellow-800"
-                  }`}>{po.status}</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Role Tools */}
-      <div className="p-6 bg-white border shadow-lg rounded-xl">
-        <h3 className="mb-4 text-lg font-semibold text-slate-800">{role} Tools</h3>
-        <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-          {role === "Admin" ? (
-            <>
-              <Tool label="User Management" />
-              <Tool label="Inventory Valuation" />
-              <Tool label="Reports" />
-              <Tool label="Audit Logs" />
-            </>
-          ) : (
-            <>
-              <Tool label="Leads" />
-              <Tool label="Opportunities" />
-              <Tool label="Follow-ups" />
-              <Tool label="Sales Performance" />
-            </>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
 
-/* ========================================================= */
+/* ==================== TOOL COMPONENT ==================== */
 function Tool({ label }) {
   return (
     <div className="px-4 py-3 font-medium text-center transition rounded-lg cursor-pointer bg-slate-100 text-slate-700 hover:bg-slate-200">
