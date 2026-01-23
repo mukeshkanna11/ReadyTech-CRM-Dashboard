@@ -6,75 +6,85 @@ import Warehouse from "../models/Warehouse.model.js";
 /* ================================
    STOCK IN
 ================================ */
-export const stockIn = async (req, res) => {
+export const stockIn = async (req, res, next) => {
   try {
     const { product, warehouse, quantity, reference } = req.body;
+
+    if (!product || !warehouse || !quantity) {
+      return res.status(400).json({ success: false, message: "Missing required fields" });
+    }
 
     // Validate product
     const productExists = await Product.findById(product);
     if (!productExists) {
-      return res.status(400).json({ message: "Invalid product ID" });
+      return res.status(400).json({ success: false, message: "Invalid product ID" });
     }
 
     // Validate warehouse
     const warehouseExists = await Warehouse.findById(warehouse);
     if (!warehouseExists) {
-      return res.status(400).json({ message: "Invalid warehouse ID" });
+      return res.status(400).json({ success: false, message: "Invalid warehouse ID" });
     }
 
     const stock = await Inventory.create({
       product,
       warehouse,
-      inQty: quantity,
-      type: "PURCHASE", // matches enum in Inventory model
-      reference,
+      inQty: Number(quantity),
+      type: "PURCHASE",
+      reference: reference || null,
       createdBy: req.user.id,
     });
 
-    res.json({ success: true, stock });
+    return res.json({ success: true, data: stock });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("❌ STOCK IN ERROR:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
 /* ================================
    STOCK OUT
 ================================ */
-export const stockOut = async (req, res) => {
+export const stockOut = async (req, res, next) => {
   try {
     const { product, warehouse, quantity, reference } = req.body;
+
+    if (!product || !warehouse || !quantity) {
+      return res.status(400).json({ success: false, message: "Missing required fields" });
+    }
 
     // Validate product
     const productExists = await Product.findById(product);
     if (!productExists) {
-      return res.status(400).json({ message: "Invalid product ID" });
+      return res.status(400).json({ success: false, message: "Invalid product ID" });
     }
 
     // Validate warehouse
     const warehouseExists = await Warehouse.findById(warehouse);
     if (!warehouseExists) {
-      return res.status(400).json({ message: "Invalid warehouse ID" });
+      return res.status(400).json({ success: false, message: "Invalid warehouse ID" });
     }
 
     const stock = await Inventory.create({
       product,
       warehouse,
-      outQty: quantity,
-      type: "SALE", // matches enum in Inventory model
-      reference,
+      outQty: Number(quantity),
+      type: "SALE",
+      reference: reference || null,
       createdBy: req.user.id,
     });
 
-    res.json({ success: true, stock });
+    return res.json({ success: true, data: stock });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("❌ STOCK OUT ERROR:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
 /* ================================
    GET ALL INVENTORY
 ================================ */
-export const getInventory = async (req, res) => {
+export const getInventory = async (req, res, next) => {
   try {
     const inventory = await Inventory.find()
       .populate("product", "name sku price")
@@ -82,16 +92,17 @@ export const getInventory = async (req, res) => {
       .populate("createdBy", "name email")
       .sort({ createdAt: -1 });
 
-    res.json(inventory);
+    return res.json({ success: true, data: inventory });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("❌ GET INVENTORY ERROR:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
 /* ================================
    GET STOCK SUMMARY
 ================================ */
-export const getStockSummary = async (req, res) => {
+export const getStockSummary = async (req, res, next) => {
   try {
     const summary = await Inventory.aggregate([
       {
@@ -131,8 +142,9 @@ export const getStockSummary = async (req, res) => {
       },
     ]);
 
-    res.json(summary);
+    return res.json({ success: true, data: summary });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("❌ GET STOCK SUMMARY ERROR:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };

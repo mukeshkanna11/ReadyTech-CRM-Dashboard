@@ -22,10 +22,25 @@ export default function Inventory() {
     try {
       setLoading(true);
       const res = await API.get("/inventory/summary"); // Backend route
-      setStocks(res.data || []);
+
+      // ✅ NORMALIZE RESPONSE
+      const list = Array.isArray(res.data?.data)
+        ? res.data.data
+        : Array.isArray(res.data)
+        ? res.data
+        : [];
+
+      setStocks(list);
     } catch (err) {
       console.error("Inventory fetch error", err);
-      toast.error("Failed to fetch inventory");
+
+      if (err.response?.status === 401) {
+        toast.error("Session expired. Please login again.");
+      } else {
+        toast.error("Failed to fetch inventory");
+      }
+
+      setStocks([]);
     } finally {
       setLoading(false);
     }
@@ -47,7 +62,7 @@ export default function Inventory() {
       fetchInventory();
     } catch (err) {
       console.error(err);
-      toast.error("Failed to add stock");
+      toast.error(err.response?.data?.message || "Failed to add stock");
     }
   };
 
@@ -62,14 +77,14 @@ export default function Inventory() {
       fetchInventory();
     } catch (err) {
       console.error(err);
-      toast.error("Failed to remove stock");
+      toast.error(err.response?.data?.message || "Failed to remove stock");
     }
   };
 
   /* ================= KPIs ================= */
   const totalProducts = stocks.length;
-  const totalQuantity = stocks.reduce((sum, s) => sum + (s.quantity || 0), 0);
-  const lowStockCount = stocks.filter((s) => s.quantity < 10).length;
+  const totalQuantity = stocks.reduce((sum, s) => sum + (s.available ?? 0), 0);
+  const lowStockCount = stocks.filter((s) => (s.available ?? 0) < 10).length;
 
   /* ================= SEARCH ================= */
   const filteredStocks = useMemo(() => {
@@ -144,20 +159,21 @@ export default function Inventory() {
                 </tr>
               </thead>
               <tbody>
-                {filteredStocks.map((s) => {
-                  const isLow = s.quantity < 10;
+                {filteredStocks.map((s, idx) => {
+                  const availableQty = s.available ?? 0;
+                  const isLow = availableQty < 10;
                   const lastTx = s.lastTransaction || {};
 
                   return (
                     <tr
-                      key={s._id}
+                      key={s._id || idx}
                       className="border-t hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
                     >
                       <Td>{s.product?.name || "-"}</Td>
                       <Td>{s.warehouse?.name || "-"}</Td>
                       <Td className="font-bold">
                         <span className={isLow ? "text-red-600" : "text-emerald-600"}>
-                          {s.quantity}
+                          {availableQty}
                         </span>
                       </Td>
                       <Td>
