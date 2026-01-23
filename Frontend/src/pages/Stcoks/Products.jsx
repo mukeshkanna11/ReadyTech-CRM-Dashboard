@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Package, Plus, Trash2, Edit, Search, RefreshCcw } from "lucide-react";
+import { Package, Plus, Trash2, Search, RefreshCcw } from "lucide-react";
 import API from "../../services/api";
 import toast from "react-hot-toast";
 
@@ -9,20 +9,30 @@ export default function Products() {
   const [name, setName] = useState("");
   const [search, setSearch] = useState("");
 
-  /* ================= FETCH PRODUCTS ================= */
+  /* ================= FETCH PRODUCTS (SAFE) ================= */
   const fetchProducts = async () => {
     try {
       setLoading(true);
+
       const res = await API.get("/products");
 
-      if (!Array.isArray(res.data)) {
-        throw new Error("Invalid API response");
-      }
+      // ✅ NORMALIZE RESPONSE
+      const list = Array.isArray(res.data?.data)
+        ? res.data.data
+        : Array.isArray(res.data)
+        ? res.data
+        : [];
 
-      setProducts(res.data);
+      setProducts(list);
     } catch (err) {
       console.error("Fetch products error:", err);
-      toast.error("Failed to fetch products");
+
+      if (err.response?.status === 401) {
+        toast.error("Session expired. Please login again.");
+      } else {
+        toast.error("Failed to fetch products");
+      }
+
       setProducts([]);
     } finally {
       setLoading(false);
@@ -44,7 +54,7 @@ export default function Products() {
       fetchProducts();
     } catch (err) {
       console.error("Add product error:", err);
-      toast.error("Failed to add product");
+      toast.error(err.response?.data?.message || "Failed to add product");
     }
   };
 
@@ -71,6 +81,7 @@ export default function Products() {
 
   /* ================= KPI ================= */
   const totalProducts = products.length;
+
   const lastAdded =
     products.length > 0 && products[products.length - 1]?.createdAt
       ? new Date(products[products.length - 1].createdAt).toLocaleDateString()
@@ -99,8 +110,18 @@ export default function Products() {
 
       {/* KPI */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard title="Total Products" value={totalProducts} icon={Package} color="indigo" />
-        <StatCard title="Last Added" value={lastAdded} icon={Plus} color="emerald" />
+        <StatCard
+          title="Total Products"
+          value={totalProducts}
+          icon={Package}
+          color="indigo"
+        />
+        <StatCard
+          title="Last Added"
+          value={lastAdded}
+          icon={Plus}
+          color="emerald"
+        />
       </div>
 
       {/* ADD + SEARCH */}
@@ -150,7 +171,11 @@ export default function Products() {
               {filteredProducts.map((p) => (
                 <tr key={p._id} className="border-t">
                   <Td>{p.name}</Td>
-                  <Td>{new Date(p.createdAt).toLocaleDateString()}</Td>
+                  <Td>
+                    {p.createdAt
+                      ? new Date(p.createdAt).toLocaleDateString()
+                      : "-"}
+                  </Td>
                   <Td>
                     <button
                       onClick={() => deleteProduct(p._id)}
