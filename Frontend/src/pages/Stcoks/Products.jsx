@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Package, Plus, Trash2, Search, RefreshCcw } from "lucide-react";
 import API from "../../services/api";
 import toast from "react-hot-toast";
@@ -9,43 +9,54 @@ export default function Products() {
   const [name, setName] = useState("");
   const [search, setSearch] = useState("");
 
-  /* ================= FETCH PRODUCTS (SAFE) ================= */
+  // 🛑 Prevent double fetch in React StrictMode
+  const fetchedOnce = useRef(false);
+
+  /* ================= FETCH PRODUCTS (HARDENED) ================= */
   const fetchProducts = async () => {
     try {
       setLoading(true);
 
       const res = await API.get("/products");
 
-      // ✅ NORMALIZE RESPONSE
-      const list = Array.isArray(res.data?.data)
-        ? res.data.data
-        : Array.isArray(res.data)
-        ? res.data
-        : [];
+      // ✅ SAFELY NORMALIZE RESPONSE
+      const list =
+        Array.isArray(res?.data?.data)
+          ? res.data.data
+          : Array.isArray(res?.data)
+          ? res.data
+          : [];
 
       setProducts(list);
     } catch (err) {
-      console.error("Fetch products error:", err);
+      console.error("❌ Fetch products error:", err);
 
       if (err.response?.status === 401) {
         toast.error("Session expired. Please login again.");
+        setProducts([]);
+      } else if (err.code === "ERR_NETWORK") {
+        toast.error("Network error. Please check connection.");
       } else {
         toast.error("Failed to fetch products");
       }
-
-      setProducts([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (fetchedOnce.current) return;
+    fetchedOnce.current = true;
+
     fetchProducts();
   }, []);
 
   /* ================= ADD PRODUCT ================= */
   const addProduct = async () => {
-    if (!name.trim()) return toast.error("Enter product name");
+    if (!name.trim()) {
+      toast.error("Enter product name");
+      return;
+    }
 
     try {
       await API.post("/products", { name: name.trim() });
@@ -53,8 +64,13 @@ export default function Products() {
       setName("");
       fetchProducts();
     } catch (err) {
-      console.error("Add product error:", err);
-      toast.error(err.response?.data?.message || "Failed to add product");
+      console.error("❌ Add product error:", err);
+
+      if (err.response?.status === 401) {
+        toast.error("Session expired. Please login again.");
+      } else {
+        toast.error(err.response?.data?.message || "Failed to add product");
+      }
     }
   };
 
@@ -67,13 +83,20 @@ export default function Products() {
       toast.success("Product deleted");
       fetchProducts();
     } catch (err) {
-      console.error("Delete product error:", err);
-      toast.error("Failed to delete product");
+      console.error("❌ Delete product error:", err);
+
+      if (err.response?.status === 401) {
+        toast.error("Session expired. Please login again.");
+      } else {
+        toast.error("Failed to delete product");
+      }
     }
   };
 
   /* ================= SEARCH ================= */
   const filteredProducts = useMemo(() => {
+    if (!search) return products;
+
     return products.filter((p) =>
       p.name?.toLowerCase().includes(search.toLowerCase())
     );
@@ -84,7 +107,9 @@ export default function Products() {
 
   const lastAdded =
     products.length > 0 && products[products.length - 1]?.createdAt
-      ? new Date(products[products.length - 1].createdAt).toLocaleDateString()
+      ? new Date(
+          products[products.length - 1].createdAt
+        ).toLocaleDateString()
       : "-";
 
   /* ================= UI ================= */
@@ -101,7 +126,8 @@ export default function Products() {
 
         <button
           onClick={fetchProducts}
-          className="flex items-center gap-2 px-4 py-2 text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-60"
         >
           <RefreshCcw size={16} />
           Refresh
@@ -179,7 +205,7 @@ export default function Products() {
                   <Td>
                     <button
                       onClick={() => deleteProduct(p._id)}
-                      className="text-red-500"
+                      className="text-red-500 hover:text-red-600"
                     >
                       <Trash2 size={16} />
                     </button>

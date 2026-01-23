@@ -27,7 +27,7 @@ import role from "./middlewares/role.js";
 const app = express();
 
 /* ======================================================
-   TRUST PROXY (RENDER / CLOUD)
+   TRUST PROXY (RENDER)
 ====================================================== */
 app.set("trust proxy", 1);
 
@@ -41,31 +41,31 @@ app.use(
 );
 
 /* ======================================================
-   CORS (NETLIFY + LOCAL)
+   CORS (FIXED FOR DEPLOYMENT)
 ====================================================== */
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
-  "https://readytechcrm.netlify.app", // ✅ NO trailing slash
+  "https://readytechcrm.netlify.app",
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow Postman / server-to-server
       if (!origin) return callback(null, true);
-
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-
-      console.error("❌ CORS BLOCKED:", origin);
-      return callback(new Error("Not allowed by CORS"));
+      return callback(null, false);
     },
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// ✅ IMPORTANT: Allow preflight requests
+app.options("*", cors());
 
 /* ======================================================
    BODY PARSERS
@@ -95,7 +95,7 @@ app.use("/api/purchase", auth, purchaseRoutes);
 app.use("/api/sales", auth, salesRoutes);
 app.use("/api/warehouses", auth, warehouseRoutes);
 
-/* 🔥 SALESFORCE CRM MODULE 🔥 */
+/* 🔥 CRM MODULE 🔥 */
 app.use("/api/leads", auth, leadsRoutes);
 app.use("/api/opportunities", auth, opportunityRoutes);
 app.use("/api/activities", auth, activityRoutes);
@@ -105,7 +105,7 @@ app.use("/api/audit", auth, role("admin"), auditRoutes);
 app.use("/api/user", auth, userRoutes);
 
 /* ======================================================
-   HEALTH CHECK (NO AUTH)
+   HEALTH CHECK
 ====================================================== */
 app.get("/api/health", (req, res) => {
   res.json({
@@ -133,15 +133,7 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error("❌ GLOBAL ERROR:", err);
 
-  // CORS error
-  if (err.message === "Not allowed by CORS") {
-    return res.status(403).json({
-      success: false,
-      message: "CORS policy blocked this request",
-    });
-  }
-
-  return res.status(err.status || 500).json({
+  res.status(err.status || 500).json({
     success: false,
     message: err.message || "Internal Server Error",
     time: new Date().toISOString(),
