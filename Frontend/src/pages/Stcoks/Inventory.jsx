@@ -5,12 +5,13 @@ import {
   AlertTriangle,
   Search,
   RefreshCcw,
+  Plus,
+  Minus,
+  Clock,
 } from "lucide-react";
 import API from "../../services/api";
+import { toast } from "react-hot-toast";
 
-/* ======================================================
-   INVENTORY PAGE
-====================================================== */
 export default function Inventory() {
   const [stocks, setStocks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,10 +21,11 @@ export default function Inventory() {
   const fetchInventory = async () => {
     try {
       setLoading(true);
-      const res = await API.get("/inventory");
+      const res = await API.get("/inventory/summary"); // Backend route
       setStocks(res.data || []);
     } catch (err) {
       console.error("Inventory fetch error", err);
+      toast.error("Failed to fetch inventory");
     } finally {
       setLoading(false);
     }
@@ -33,15 +35,41 @@ export default function Inventory() {
     fetchInventory();
   }, []);
 
+  /* ================= STOCK IN / OUT ================= */
+  const handleStockIn = async (stock, qty = 1) => {
+    try {
+      await API.post("/inventory/stock-in", {
+        product: stock.product._id,
+        warehouse: stock.warehouse._id,
+        quantity: qty,
+      });
+      toast.success(`Added ${qty} to stock`);
+      fetchInventory();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to add stock");
+    }
+  };
+
+  const handleStockOut = async (stock, qty = 1) => {
+    try {
+      await API.post("/inventory/stock-out", {
+        product: stock.product._id,
+        warehouse: stock.warehouse._id,
+        quantity: qty,
+      });
+      toast.success(`Removed ${qty} from stock`);
+      fetchInventory();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to remove stock");
+    }
+  };
+
   /* ================= KPIs ================= */
   const totalProducts = stocks.length;
-
+  const totalQuantity = stocks.reduce((sum, s) => sum + (s.quantity || 0), 0);
   const lowStockCount = stocks.filter((s) => s.quantity < 10).length;
-
-  const totalQuantity = stocks.reduce(
-    (sum, item) => sum + (item.quantity || 0),
-    0
-  );
 
   /* ================= SEARCH ================= */
   const filteredStocks = useMemo(() => {
@@ -52,9 +80,6 @@ export default function Inventory() {
     );
   }, [stocks, search]);
 
-  /* ======================================================
-     UI
-  ====================================================== */
   return (
     <div className="space-y-6">
       {/* ================= HEADER ================= */}
@@ -79,39 +104,18 @@ export default function Inventory() {
 
       {/* ================= KPI CARDS ================= */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard
-          title="Total Products"
-          value={totalProducts}
-          icon={Package}
-          color="indigo"
-        />
-        <StatCard
-          title="Total Stock Qty"
-          value={totalQuantity}
-          icon={Warehouse}
-          color="emerald"
-        />
-        <StatCard
-          title="Low Stock Alerts"
-          value={lowStockCount}
-          icon={AlertTriangle}
-          color="red"
-        />
+        <StatCard title="Total Products" value={totalProducts} icon={Package} color="indigo" />
+        <StatCard title="Total Stock Qty" value={totalQuantity} icon={Warehouse} color="emerald" />
+        <StatCard title="Low Stock Alerts" value={lowStockCount} icon={AlertTriangle} color="red" />
       </div>
 
       {/* ================= TABLE CARD ================= */}
       <div className="bg-white border shadow rounded-xl dark:bg-slate-900 dark:border-slate-800">
-        {/* TABLE HEADER */}
         <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b dark:border-slate-800">
-          <h2 className="font-semibold text-slate-700 dark:text-white">
-            Stock Details
-          </h2>
+          <h2 className="font-semibold text-slate-700 dark:text-white">Stock Details</h2>
 
           <div className="relative">
-            <Search
-              size={16}
-              className="absolute text-slate-400 left-3 top-2.5"
-            />
+            <Search size={16} className="absolute text-slate-400 left-3 top-2.5" />
             <input
               type="text"
               placeholder="Search product or warehouse..."
@@ -122,7 +126,6 @@ export default function Inventory() {
           </div>
         </div>
 
-        {/* TABLE */}
         {loading ? (
           <LoadingState />
         ) : filteredStocks.length === 0 ? (
@@ -136,11 +139,14 @@ export default function Inventory() {
                   <Th>Warehouse</Th>
                   <Th>Quantity</Th>
                   <Th>Status</Th>
+                  <Th>Last Transaction</Th>
+                  <Th>Actions</Th>
                 </tr>
               </thead>
               <tbody>
                 {filteredStocks.map((s) => {
                   const isLow = s.quantity < 10;
+                  const lastTx = s.lastTransaction || {};
 
                   return (
                     <tr
@@ -150,11 +156,7 @@ export default function Inventory() {
                       <Td>{s.product?.name || "-"}</Td>
                       <Td>{s.warehouse?.name || "-"}</Td>
                       <Td className="font-bold">
-                        <span
-                          className={
-                            isLow ? "text-red-600" : "text-emerald-600"
-                          }
-                        >
+                        <span className={isLow ? "text-red-600" : "text-emerald-600"}>
                           {s.quantity}
                         </span>
                       </Td>
@@ -164,6 +166,23 @@ export default function Inventory() {
                         ) : (
                           <StatusBadge color="green" text="In Stock" />
                         )}
+                      </Td>
+                      <Td className="flex items-center gap-1 text-xs text-slate-500">
+                        <Clock size={14} /> {lastTx.type || "-"} ({lastTx.qty || "-"})
+                      </Td>
+                      <Td className="flex gap-2">
+                        <button
+                          onClick={() => handleStockIn(s, 1)}
+                          className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white rounded bg-emerald-600 hover:bg-emerald-700"
+                        >
+                          <Plus size={12} /> IN
+                        </button>
+                        <button
+                          onClick={() => handleStockOut(s, 1)}
+                          className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
+                        >
+                          <Minus size={12} /> OUT
+                        </button>
                       </Td>
                     </tr>
                   );
@@ -180,14 +199,12 @@ export default function Inventory() {
 /* ======================================================
    REUSABLE COMPONENTS
 ====================================================== */
-
 function StatCard({ title, value, icon: Icon, color }) {
   const colors = {
     indigo: "bg-indigo-100 text-indigo-600",
     emerald: "bg-emerald-100 text-emerald-600",
     red: "bg-red-100 text-red-600",
   };
-
   return (
     <div className="flex items-center gap-4 p-4 bg-white border shadow rounded-xl dark:bg-slate-900 dark:border-slate-800">
       <div className={`p-3 rounded-xl ${colors[color]}`}>
@@ -195,9 +212,7 @@ function StatCard({ title, value, icon: Icon, color }) {
       </div>
       <div>
         <p className="text-sm text-slate-500">{title}</p>
-        <p className="text-xl font-bold text-slate-800 dark:text-white">
-          {value}
-        </p>
+        <p className="text-xl font-bold text-slate-800 dark:text-white">{value}</p>
       </div>
     </div>
   );
@@ -208,22 +223,11 @@ function StatusBadge({ color, text }) {
     red: "bg-red-100 text-red-600",
     green: "bg-emerald-100 text-emerald-600",
   };
-
-  return (
-    <span
-      className={`px-3 py-1 text-xs font-semibold rounded-full ${styles[color]}`}
-    >
-      {text}
-    </span>
-  );
+  return <span className={`px-3 py-1 text-xs font-semibold rounded-full ${styles[color]}`}>{text}</span>;
 }
 
 function Th({ children }) {
-  return (
-    <th className="p-3 font-semibold text-left text-slate-600 dark:text-slate-300">
-      {children}
-    </th>
-  );
+  return <th className="p-3 font-semibold text-left text-slate-600 dark:text-slate-300">{children}</th>;
 }
 
 function Td({ children, className = "" }) {
@@ -231,17 +235,9 @@ function Td({ children, className = "" }) {
 }
 
 function LoadingState() {
-  return (
-    <div className="p-6 text-center text-slate-500">
-      Loading inventory data...
-    </div>
-  );
+  return <div className="p-6 text-center text-slate-500">Loading inventory data...</div>;
 }
 
 function EmptyState() {
-  return (
-    <div className="p-6 text-center text-slate-500">
-      No inventory records found.
-    </div>
-  );
+  return <div className="p-6 text-center text-slate-500">No inventory records found.</div>;
 }
