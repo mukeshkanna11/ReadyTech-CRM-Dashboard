@@ -1,13 +1,22 @@
 import express from "express";
-import { createSalesOrder, getSalesOrders } from "../controllers/sales.controller.js";
+import {
+  createSalesOrder,
+  getSalesOrders,
+  approveSalesOrder,
+  deliverSalesOrder,
+} from "../controllers/sales.controller.js";
 import auth from "../middlewares/auth.js";
 
 const router = express.Router();
 
-// Create new sales order
+/* ===============================
+   SALES ORDERS ROUTES
+================================ */
 router.post("/", auth, createSalesOrder);
-
-// Get all sales orders
 router.get("/", auth, getSalesOrders);
+
+// 🔥 Workflow actions
+router.post("/:id/approve", auth, approveSalesOrder);
+router.post("/:id/deliver", auth, deliverSalesOrder);
 
 export default router;

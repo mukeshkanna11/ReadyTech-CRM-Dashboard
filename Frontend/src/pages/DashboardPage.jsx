@@ -143,20 +143,57 @@ export default function DashboardPage() {
       <div className="absolute rounded-full -top-32 -left-32 w-96 h-96 bg-gradient-to-br from-blue-200/20 to-blue-400/20 blur-3xl" />
       <div className="absolute rounded-full top-1/4 -right-32 w-96 h-96 bg-gradient-to-br from-purple-200/20 to-purple-400/20 blur-3xl" />
 
-      {/* Welcome Banner */}
-      <div className="flex items-center justify-between p-6 text-white shadow-lg rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-400">
+    {/* WELCOME BANNER */}
+<div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 via-blue-500 to-cyan-400 p-[1px] shadow-lg">
+  <div className="relative flex flex-col gap-4 p-6 rounded-2xl bg-white/10 backdrop-blur-md md:flex-row md:items-center md:justify-between">
+
+    {/* LEFT CONTENT */}
+    <div>
+      <h2 className="text-2xl font-semibold text-white">
+        ReadyTechSolutions
+      </h2>
+
+      <p className="max-w-xl mt-1 text-sm text-blue-100">
+        “Clarity drives growth. Stay in control of your operations, inventory,
+        and sales — all in one place.”
+      </p>
+
+      {/* STATUS PILLS */}
+      <div className="flex flex-wrap gap-2 mt-4 text-xs">
+        <span className="px-3 py-1 text-white rounded-full bg-white/20">
+          ERP Active
+        </span>
+        <span className="px-3 py-1 text-white rounded-full bg-white/20">
+          Inventory Synced
+        </span>
+        <span className="px-3 py-1 text-white rounded-full bg-white/20">
+          Sales Tracking Live
+        </span>
+      </div>
+    </div>
+
+    {/* RIGHT VISUAL */}
+    <div className="relative flex items-center gap-4">
+      <div className="hidden h-20 w-[1px] bg-white/20 md:block" />
+
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/15">
+        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-white/30">
+          📊
+        </div>
         <div>
-          <h2 className="text-2xl font-bold">Welcome Back, {role}</h2>
-          <p className="mt-1 text-sm opacity-90">
-            Manage your ERP, Inventory & Sales effortlessly
+          <p className="text-xs text-blue-100">Today</p>
+          <p className="text-sm font-semibold text-white">
+            {new Date().toLocaleDateString("en-IN", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+            })}
           </p>
         </div>
-        <img
-          src="https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
-          alt="ERP Banner"
-          className="w-20 h-20 opacity-90"
-        />
       </div>
+    </div>
+  </div>
+</div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
