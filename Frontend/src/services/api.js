@@ -2,28 +2,31 @@ import axios from "axios";
 import { toast } from "react-hot-toast";
 
 /* ======================================================
-   BASE URL
+   BASE URL (ENV-FIRST, FAIL SAFE)
 ====================================================== */
-const BASE_URL =
-  import.meta.env.MODE === "development"
-    ? "http://localhost:5000/api"
-    : "https://readytech-crm-dashboard.onrender.com/api";
+const BASE_URL = import.meta.env.VITE_API_URL;
+
+if (!BASE_URL) {
+  console.error(
+    "❌ VITE_API_URL is missing. Check Netlify / .env configuration"
+  );
+}
 
 /* ======================================================
    AXIOS INSTANCE
 ====================================================== */
 const API = axios.create({
-  baseURL: BASE_URL,
-  withCredentials: true, // enable only if cookies are used
+  baseURL: BASE_URL, // e.g. https://readytech-crm-backend.onrender.com
+  timeout: 15000,
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",
   },
+  withCredentials: false, // set true ONLY if using cookies
 });
 
 /* ======================================================
    REQUEST INTERCEPTOR
-   Attach JWT token automatically
 ====================================================== */
 API.interceptors.request.use(
   (config) => {
@@ -39,15 +42,28 @@ API.interceptors.request.use(
 );
 
 /* ======================================================
-   RESPONSE INTERCEPTOR
-   Global error handling (Enterprise Safe)
+   RESPONSE INTERCEPTOR (ENTERPRISE SAFE)
 ====================================================== */
 API.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // 🔒 Guard: backend must return JSON
+    const contentType = response.headers["content-type"];
+
+    if (
+      contentType &&
+      !contentType.includes("application/json")
+    ) {
+      console.error("❌ Non-JSON response received:", response);
+      throw new Error("Invalid JSON response from server");
+    }
+
+    return response;
+  },
 
   (error) => {
+    // 🌐 Network / CORS / Server down
     if (!error.response) {
-      toast.error("Network error. Please check your connection.");
+      toast.error("Server unreachable. Please try again later.");
       return Promise.reject(error);
     }
 
@@ -55,7 +71,6 @@ API.interceptors.response.use(
 
     switch (status) {
       case 401:
-        // Prevent infinite loop
         if (!window.location.pathname.includes("/login")) {
           toast.error("Session expired. Please login again.");
           localStorage.removeItem("token");
@@ -64,11 +79,11 @@ API.interceptors.response.use(
         break;
 
       case 403:
-        toast.error("You don’t have permission to perform this action.");
+        toast.error("Access denied.");
         break;
 
       case 404:
-        toast.error("Requested resource not found.");
+        toast.error("API endpoint not found.");
         break;
 
       case 422:
@@ -82,7 +97,7 @@ API.interceptors.response.use(
         break;
 
       default:
-        toast.error(data?.message || "Something went wrong.");
+        toast.error(data?.message || "Unexpected error occurred.");
     }
 
     return Promise.reject(error);

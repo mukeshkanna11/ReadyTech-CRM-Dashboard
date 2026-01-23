@@ -20,73 +20,136 @@ import purchaseRoutes from "./routes/purchase.routes.js";
 import salesRoutes from "./routes/sales.routes.js";
 import warehouseRoutes from "./routes/warehouse.routes.js";
 
-
 /* ===================== Middlewares ===================== */
 import auth from "./middlewares/auth.js";
 import role from "./middlewares/role.js";
 
 const app = express();
 
-/* ===================== Global Middlewares ===================== */
-app.use(helmet());
+/* ======================================================
+   TRUST PROXY (RENDER)
+====================================================== */
+app.set("trust proxy", 1);
 
+/* ======================================================
+   SECURITY
+====================================================== */
 app.use(
-  cors({
-    origin: true, // allow frontend (Netlify / localhost)
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+  helmet({
+    crossOriginResourcePolicy: false,
   })
 );
 
+/* ======================================================
+   CORS (NETLIFY + LOCAL SAFE)
+====================================================== */
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://readytechcrm.netlify.app/", // 🔴 replace with YOUR Netlify domain
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // allow Postman / curl
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.error("❌ Blocked by CORS:", origin);
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: false, // 🔒 TRUE only if using cookies
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    optionsSuccessStatus: 200,
+  })
+);
+
+// Preflight
 app.options("*", cors());
 
-app.use(express.json());
+/* ======================================================
+   BODY PARSERS
+====================================================== */
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+/* ======================================================
+   LOGGING
+====================================================== */
 app.use(morgan("dev"));
 
-/* ===================== Public Routes ===================== */
+/* ======================================================
+   PUBLIC ROUTES
+====================================================== */
 app.use("/api/auth", authRoutes);
 
-/* ===================== Protected Routes ===================== */
+/* ======================================================
+   PROTECTED ROUTES
+====================================================== */
 app.use("/api/admin", auth, role("admin"), adminRoutes);
 app.use("/api/products", auth, productsRoutes);
 app.use("/api/clients", auth, clientsRoutes);
-app.use("/api/inventory", inventoryRoutes);
-app.use("/api/vendors", vendorRoutes);
-app.use("/api/purchase", purchaseRoutes);
-app.use("/api/sales", salesRoutes);
-app.use("/api/warehouses", warehouseRoutes);
+app.use("/api/inventory", auth, inventoryRoutes);
+app.use("/api/vendors", auth, vendorRoutes);
+app.use("/api/purchase", auth, purchaseRoutes);
+app.use("/api/sales", auth, salesRoutes);
+app.use("/api/warehouses", auth, warehouseRoutes);
 
-
-/* 🔥 Salesforce CRM MODULE 🔥 */
+/* 🔥 SALESFORCE CRM MODULE 🔥 */
 app.use("/api/leads", auth, leadsRoutes);
 app.use("/api/opportunities", auth, opportunityRoutes);
 app.use("/api/activities", auth, activityRoutes);
 
+/* 🔐 ADMIN / USER */
 app.use("/api/audit", auth, role("admin"), auditRoutes);
 app.use("/api/user", auth, userRoutes);
 
-/* ===================== Health Check ===================== */
+/* ======================================================
+   HEALTH CHECK (NO AUTH)
+====================================================== */
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
-    timestamp: new Date(),
+    service: "ReadyTech CRM API",
+    timestamp: new Date().toISOString(),
   });
 });
 
-/* ===================== 404 Handler ===================== */
+/* ======================================================
+   404 HANDLER (JSON ONLY)
+====================================================== */
 app.use((req, res) => {
-  console.error("❌ Route not found:", req.method, req.originalUrl);
-  res.status(404).json({ message: "Route not found" });
+  res.status(404).json({
+    success: false,
+    message: "API route not found",
+    method: req.method,
+    path: req.originalUrl,
+  });
 });
 
-/* ===================== Global Error Handler ===================== */
+/* ======================================================
+   GLOBAL ERROR HANDLER
+====================================================== */
 app.use((err, req, res, next) => {
-  console.error("❌ ERROR STACK:", err.stack);
+  console.error("❌ GLOBAL ERROR:", err);
+
+  // CORS errors
+  if (err.message === "Not allowed by CORS") {
+    return res.status(403).json({
+      success: false,
+      message: "CORS policy blocked this request",
+    });
+  }
+
   res.status(err.status || 500).json({
+    success: false,
     message: err.message || "Internal Server Error",
-    timestamp: new Date(),
+    timestamp: new Date().toISOString(),
   });
 });
 
