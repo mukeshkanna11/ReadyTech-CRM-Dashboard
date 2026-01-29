@@ -38,7 +38,7 @@ export default function UltimateDashboard() {
       const sales = Array.from({ length: 80 }, (_, i) => ({
         createdAt: new Date(Date.now() - i * 86400000),
         totalAmount: Math.floor(Math.random() * 1500 + 100),
-        category: ["Electronics", "Furniture", "Clothing"][i % 3],
+        category: ["Mobile", "Watches", "Desktop"][i % 3],
         customer: `Customer ${i % 10 + 1}`
       }));
       const orders = Array.from({ length: 10 }, (_, i) => ({
