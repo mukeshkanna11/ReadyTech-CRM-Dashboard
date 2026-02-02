@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import API from "../services/api";
 import toast from "react-hot-toast";
-import { Search, Filter, Download, RefreshCw } from "lucide-react";
+import {
+  Search,
+  Download,
+  RefreshCw,
+  ShieldCheck,
+  Activity,
+  Users,
+  AlertTriangle,
+} from "lucide-react";
 
 export default function AuditLogs() {
   const [logs, setLogs] = useState([]);
@@ -25,11 +33,13 @@ export default function AuditLogs() {
     fetchLogs();
   }, []);
 
+  /* ================= FILTERED DATA ================= */
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
       const text = `${log.action} ${log.user?.name || log.user}`.toLowerCase();
       const matchesSearch = text.includes(search.toLowerCase());
-      const matchesAction = actionFilter === "ALL" || log.action === actionFilter;
+      const matchesAction =
+        actionFilter === "ALL" || log.action === actionFilter;
       return matchesSearch && matchesAction;
     });
   }, [logs, search, actionFilter]);
@@ -38,33 +48,66 @@ export default function AuditLogs() {
     return ["ALL", ...new Set(logs.map((l) => l.action))];
   }, [logs]);
 
+  /* ================= KPI DATA ================= */
+  const stats = useMemo(() => {
+    return {
+      total: logs.length,
+      users: new Set(logs.map((l) => l.user?.email)).size,
+      security: logs.filter((l) =>
+        ["LOGIN", "LOGOUT", "PASSWORD_CHANGE"].includes(l.action)
+      ).length,
+      critical: logs.filter((l) =>
+        ["DELETE", "ROLE_CHANGE"].includes(l.action)
+      ).length,
+    };
+  }, [logs]);
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Audit Logs</h1>
-          <p className="text-sm text-slate-500">
-            Track user activities, security events, and system changes
-          </p>
-        </div>
+      {/* ================= HEADER ================= */}
+      <div className="flex flex-col gap-4 p-6 text-white bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">
+              Audit & Security Logs
+            </h1>
+            <p className="text-sm text-slate-300">
+              Complete visibility into user activity, security events, and system changes
+            </p>
+          </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={fetchLogs}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-white rounded-xl bg-slate-900 hover:bg-slate-800"
-          >
-            <RefreshCw size={16} /> Refresh
-          </button>
-          <button
-            className="flex items-center gap-2 px-4 py-2 text-sm border rounded-xl hover:bg-slate-50"
-          >
-            <Download size={16} /> Export
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={fetchLogs}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white/10 hover:bg-white/20 rounded-xl"
+            >
+              <RefreshCw size={16} /> Refresh
+            </button>
+            <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white text-slate-900 rounded-xl hover:bg-slate-100">
+              <Download size={16} /> Export
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Filters */}
+      {/* ================= KPI CARDS ================= */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard icon={Activity} label="Total Events" value={stats.total} />
+        <KpiCard icon={Users} label="Active Users" value={stats.users} />
+        <KpiCard
+          icon={ShieldCheck}
+          label="Security Actions"
+          value={stats.security}
+        />
+        <KpiCard
+          icon={AlertTriangle}
+          label="Critical Changes"
+          value={stats.critical}
+          danger
+        />
+      </div>
+
+      {/* ================= FILTERS ================= */}
       <div className="grid gap-3 md:grid-cols-3">
         <div className="relative">
           <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
@@ -90,8 +133,8 @@ export default function AuditLogs() {
         </select>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto bg-white border shadow-sm rounded-2xl">
+      {/* ================= TABLE ================= */}
+      <div className="overflow-hidden bg-white border shadow-sm rounded-2xl">
         <table className="min-w-full text-sm">
           <thead className="text-left bg-slate-50">
             <tr>
@@ -99,22 +142,22 @@ export default function AuditLogs() {
               <th className="px-4 py-3">User</th>
               <th className="px-4 py-3">Action</th>
               <th className="px-4 py-3">Module</th>
-              <th className="px-4 py-3">IP Address</th>
+              <th className="px-4 py-3">IP</th>
               <th className="px-4 py-3">Details</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan="6" className="px-4 py-6 text-center text-slate-500">
-                  Loading logs...
+                <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
+                  Loading audit events...
                 </td>
               </tr>
             )}
 
             {!loading && filteredLogs.length === 0 && (
               <tr>
-                <td colSpan="6" className="px-4 py-6 text-center text-slate-500">
+                <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
                   No audit records found
                 </td>
               </tr>
@@ -126,18 +169,23 @@ export default function AuditLogs() {
                   {new Date(log.createdAt).toLocaleString()}
                 </td>
                 <td className="px-4 py-3">
-                  <div className="font-medium">{log.user?.name || "System"}</div>
-                  <div className="text-xs text-slate-500">{log.user?.email}</div>
+                  <div className="font-medium text-slate-800">
+                    {log.user?.name || "System"}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {log.user?.email}
+                  </div>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="px-2 py-1 text-xs font-medium rounded-lg bg-slate-100">
+                  <span className="px-2 py-1 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700">
                     {log.action}
                   </span>
                 </td>
                 <td className="px-4 py-3">{log.module || "—"}</td>
                 <td className="px-4 py-3">{log.ip || "—"}</td>
                 <td className="max-w-sm px-4 py-3 truncate text-slate-600">
-                  {log.description || JSON.stringify(log.details || {})}
+                  {log.description ||
+                    JSON.stringify(log.details || {})}
                 </td>
               </tr>
             ))}
@@ -145,9 +193,30 @@ export default function AuditLogs() {
         </table>
       </div>
 
-      {/* Footer info */}
-      <div className="text-xs text-slate-500">
-        Audit logs are immutable and retained for compliance & security review.
+      {/* ================= INFO SECTION ================= */}
+      <div className="p-4 text-sm border bg-slate-50 rounded-xl text-slate-600">
+        <strong>Security Notice:</strong> Audit logs are immutable records used for
+        compliance, forensic analysis, and security reviews. Any suspicious activity
+        should be investigated immediately.
+      </div>
+    </div>
+  );
+}
+
+/* ================= KPI CARD ================= */
+function KpiCard({ icon: Icon, label, value, danger }) {
+  return (
+    <div className="flex items-center gap-4 p-4 bg-white border shadow-sm rounded-2xl">
+      <div
+        className={`p-3 rounded-xl ${
+          danger ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-700"
+        }`}
+      >
+        <Icon size={20} />
+      </div>
+      <div>
+        <p className="text-sm text-slate-500">{label}</p>
+        <p className="text-2xl font-bold text-slate-800">{value}</p>
       </div>
     </div>
   );

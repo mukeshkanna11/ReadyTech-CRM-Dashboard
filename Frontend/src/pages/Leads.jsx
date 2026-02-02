@@ -13,6 +13,11 @@ import {
   Activity,
   X,
   Filter,
+  Users,
+  TrendingUp,
+  CheckCircle,
+  Sparkles,
+  ArrowRight,
 } from "lucide-react";
 
 const PAGE_SIZE = 8;
@@ -41,7 +46,7 @@ export default function Leads() {
 
   const [page, setPage] = useState(1);
 
-  /* ================= FETCH LEADS ================= */
+  /* ================= FETCH ================= */
   const fetchLeads = async () => {
     try {
       setLoading(true);
@@ -59,7 +64,7 @@ export default function Leads() {
     fetchLeads();
   }, []);
 
-  /* ================= SAVE LEAD ================= */
+  /* ================= SAVE ================= */
   const saveLead = async (e) => {
     e.preventDefault();
     try {
@@ -70,30 +75,27 @@ export default function Leads() {
         await API.post("/leads", form);
         toast.success("Lead created");
       }
-
       setDrawerOpen(false);
       setForm(EMPTY_FORM);
-      setPage(1);
       fetchLeads();
     } catch {
       toast.error("Save failed");
     }
   };
 
-  /* ================= DELETE LEAD ================= */
+  /* ================= DELETE ================= */
   const deleteLead = async (id) => {
     if (!window.confirm("Delete this lead?")) return;
     try {
       await API.delete(`/leads/${id}`);
       toast.success("Lead deleted");
-      setPage(1);
       fetchLeads();
     } catch {
       toast.error("Delete failed");
     }
   };
 
-  /* ================= FILTER + SEARCH ================= */
+  /* ================= FILTER ================= */
   const filteredLeads = useMemo(() => {
     return leads
       .filter((l) =>
@@ -117,47 +119,65 @@ export default function Leads() {
     setPage(1);
   }, [search, statusFilter]);
 
+  /* ================= KPI ================= */
+  const totalLeads = leads.length;
+  const newLeads = leads.filter((l) => l.status === "New").length;
+  const qualifiedLeads = leads.filter((l) => l.status === "Qualified").length;
+
   /* ================= UI ================= */
   return (
-    <div className="space-y-6">
-      {/* HEADER */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Leads</h1>
-          <p className="text-sm text-slate-500">
-            Capture, track and convert leads
-          </p>
-        </div>
+    <div className="p-6 space-y-8 bg-gradient-to-b from-slate-100 to-slate-50">
 
-        <div className="flex gap-2">
+      {/* HERO HEADER */}
+      <div className="relative p-8 overflow-hidden text-white rounded-3xl bg-gradient-to-r from-slate-900 to-slate-800">
+        <Sparkles className="absolute right-6 top-6 opacity-20" size={120} />
+        <h1 className="text-3xl font-bold">Lead Management</h1>
+        <p className="max-w-2xl mt-2 text-slate-300">
+          Centralize, nurture, and convert potential customers into revenue
+          using <b>ReadyTech CRM</b>. Track every interaction from first contact
+          to deal closure.
+        </p>
+
+        <div className="flex gap-3 mt-6">
           <button
             onClick={fetchLeads}
-            className="flex items-center gap-2 px-4 py-2 text-sm border rounded-xl"
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-white/10 hover:bg-white/20 rounded-xl"
           >
             <RefreshCw size={16} /> Refresh
           </button>
-
           <button
             onClick={() => {
               setForm(EMPTY_FORM);
               setDrawerOpen(true);
             }}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-white rounded-xl bg-slate-900"
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-white text-slate-900 rounded-xl"
           >
-            <Plus size={16} /> Add Lead
+            <Plus size={16} /> Add New Lead
           </button>
         </div>
       </div>
 
-      {/* SEARCH + FILTER */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+      {/* KPI CARDS */}
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+        <Kpi title="Total Leads" value={totalLeads} icon={Users} accent="blue" />
+        <Kpi title="New Leads" value={newLeads} icon={TrendingUp} accent="amber" />
+        <Kpi
+          title="Qualified Leads"
+          value={qualifiedLeads}
+          icon={CheckCircle}
+          accent="green"
+        />
+      </div>
+
+      {/* SEARCH & FILTER */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="relative w-full max-w-md">
-          <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
+          <Search className="absolute left-4 top-3 text-slate-400" size={18} />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search leads"
-            className="w-full py-2 pl-10 pr-3 text-sm border rounded-xl"
+            placeholder="Search leads by name, email, phone..."
+            className="w-full py-3 pr-4 text-sm bg-white border shadow-sm pl-11 rounded-2xl"
           />
         </div>
 
@@ -166,7 +186,7 @@ export default function Leads() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 text-sm border rounded-xl"
+            className="px-4 py-3 text-sm bg-white border rounded-2xl"
           >
             <option>All</option>
             <option>New</option>
@@ -178,31 +198,25 @@ export default function Leads() {
       </div>
 
       {/* TABLE */}
-      <div className="overflow-x-auto bg-white border rounded-2xl">
+      <div className="overflow-hidden bg-white border shadow-sm rounded-3xl">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-50">
+          <thead className="bg-slate-50 text-slate-600">
             <tr>
-              <th className="px-4 py-3 text-left">Lead</th>
-              <th className="px-4 py-3">Contact</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Actions</th>
+              <th className="px-6 py-4 text-left">Lead</th>
+              <th className="px-6 py-4">Contact</th>
+              <th className="px-6 py-4">Status</th>
+              <th className="px-6 py-4">Source</th>
+              <th className="px-6 py-4">Actions</th>
             </tr>
           </thead>
 
           <tbody>
-            {loading && (
-              <tr>
-                <td colSpan="5" className="px-4 py-6 text-center">
-                  Loading...
-                </td>
-              </tr>
-            )}
-
             {!loading && paginatedLeads.length === 0 && (
               <tr>
-                <td colSpan="5" className="px-4 py-6 text-center text-slate-500">
-                  No leads found
+                <td colSpan="5" className="py-12 text-center">
+                  <p className="text-slate-500">
+                    No leads yet. Start by adding your first potential customer.
+                  </p>
                 </td>
               </tr>
             )}
@@ -210,17 +224,17 @@ export default function Leads() {
             {paginatedLeads.map((l) => (
               <tr key={l._id} className="border-t hover:bg-slate-50">
                 <td
-                  className="px-4 py-3 cursor-pointer"
+                  className="px-6 py-4 cursor-pointer"
                   onClick={() => {
                     setActiveLead(l);
                     setProfileOpen(true);
                   }}
                 >
-                  <div className="font-medium">{l.name}</div>
+                  <div className="font-medium text-slate-900">{l.name}</div>
                   <div className="text-xs text-slate-500">{l.email}</div>
                 </td>
 
-                <td className="px-4 py-3 text-xs">
+                <td className="px-6 py-4 space-y-1 text-xs">
                   <div className="flex items-center gap-2">
                     <Mail size={14} /> {l.email}
                   </div>
@@ -229,15 +243,15 @@ export default function Leads() {
                   </div>
                 </td>
 
-                <td className="px-4 py-3">
-                  <span className="px-2 py-1 text-xs rounded-lg bg-slate-100">
+                <td className="px-6 py-4">
+                  <span className="px-3 py-1 text-xs rounded-full bg-slate-100">
                     {l.status}
                   </span>
                 </td>
 
-                <td className="px-4 py-3">{l.source}</td>
+                <td className="px-6 py-4">{l.source}</td>
 
-                <td className="flex gap-2 px-4 py-3">
+                <td className="flex gap-3 px-6 py-4">
                   <button
                     onClick={() => {
                       setForm(l);
@@ -256,126 +270,120 @@ export default function Leads() {
         </table>
       </div>
 
-      {/* PAGINATION */}
-      {totalPages > 1 && (
-        <div className="flex justify-end gap-2">
-          <button
-            disabled={page === 1}
-            onClick={() => setPage(page - 1)}
-            className="px-3 py-1 border rounded disabled:opacity-40"
-          >
-            Prev
-          </button>
-          <span className="px-3 py-1 text-sm">
-            Page {page} / {totalPages}
-          </span>
-          <button
-            disabled={page === totalPages}
-            onClick={() => setPage(page + 1)}
-            className="px-3 py-1 border rounded disabled:opacity-40"
-          >
-            Next
-          </button>
+      {/* READYTECH CRM EXPLANATION */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="p-6 bg-white border rounded-3xl">
+          <h3 className="mb-2 text-lg font-semibold">
+            What are Leads in ReadyTech CRM?
+          </h3>
+          <p className="text-sm leading-relaxed text-slate-600">
+            Leads are individuals or organizations that show interest in your
+            services. ReadyTech CRM helps your sales team capture leads from
+            websites, calls, emails, and campaigns, track engagement, and
+            convert them into real business opportunities.
+          </p>
         </div>
-      )}
 
-      {/* CREATE / EDIT DRAWER */}
+        <div className="p-6 text-white bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl">
+          <h3 className="flex items-center gap-2 mb-2 text-lg font-semibold">
+            How ReadyTech Helps <ArrowRight size={16} />
+          </h3>
+          <ul className="space-y-2 text-sm text-slate-300">
+            <li>• Centralized lead database</li>
+            <li>• Status-based sales pipeline</li>
+            <li>• Faster follow-ups & better conversions</li>
+            <li>• Clear visibility for sales managers</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* DRAWERS */}
       {drawerOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
-          <form
-            onSubmit={saveLead}
-            className="w-full max-w-md p-6 space-y-3 bg-white"
+        <Drawer title={form._id ? "Edit Lead" : "New Lead"} onClose={() => setDrawerOpen(false)} onSubmit={saveLead}>
+          <Input label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+          <Input label="Email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
+          <Input label="Phone" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
+          <select
+            value={form.status}
+            onChange={(e) => setForm({ ...form, status: e.target.value })}
+            className="w-full p-3 border rounded-xl"
           >
-            <div className="flex justify-between">
-              <h2 className="text-lg font-semibold">
-                {form._id ? "Edit Lead" : "New Lead"}
-              </h2>
-              <X
-                onClick={() => setDrawerOpen(false)}
-                className="cursor-pointer"
-              />
-            </div>
-
-            <input
-              required
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="Name"
-              className="w-full p-2 border rounded"
-            />
-
-            <input
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              placeholder="Email"
-              className="w-full p-2 border rounded"
-            />
-
-            <input
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              placeholder="Phone"
-              className="w-full p-2 border rounded"
-            />
-
-            <select
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value })}
-              className="w-full p-2 border rounded"
-            >
-              <option>New</option>
-              <option>Contacted</option>
-              <option>Qualified</option>
-              <option>Closed</option>
-            </select>
-
-            <textarea
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              placeholder="Notes"
-              className="w-full p-2 border rounded"
-            />
-
-            <button className="w-full py-2 text-white rounded bg-slate-900">
-              Save Lead
-            </button>
-          </form>
-        </div>
+            <option>New</option>
+            <option>Contacted</option>
+            <option>Qualified</option>
+            <option>Closed</option>
+          </select>
+          <textarea
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            placeholder="Notes"
+            className="w-full p-3 border rounded-xl"
+          />
+          <button className="w-full py-3 text-white bg-slate-900 rounded-xl">
+            Save Lead
+          </button>
+        </Drawer>
       )}
 
-      {/* PROFILE DRAWER */}
       {profileOpen && activeLead && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
-          <div className="w-full max-w-lg p-6 space-y-4 bg-white">
-            <div className="flex justify-between">
-              <h2 className="text-xl font-semibold">{activeLead.name}</h2>
-              <X
-                onClick={() => setProfileOpen(false)}
-                className="cursor-pointer"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="flex items-center gap-2">
-                <User size={14} /> {activeLead.email}
-              </div>
-              <div>{activeLead.phone}</div>
-              <div>Status: {activeLead.status}</div>
-              <div>Source: {activeLead.source}</div>
-            </div>
-
-            <div className="pt-3 border-t">
-              <h3 className="flex items-center gap-2 font-medium">
-                <Activity size={16} /> Activity
-              </h3>
-              <p className="text-xs text-slate-500">
-                Timeline & follow-ups coming soon
-              </p>
-            </div>
+        <Drawer title={activeLead.name} onClose={() => setProfileOpen(false)}>
+          <p className="text-sm text-slate-600">Status: {activeLead.status}</p>
+          <p className="text-sm text-slate-600">Source: {activeLead.source}</p>
+          <div className="mt-3 text-xs text-slate-500">
+            Activity timeline coming soon
           </div>
-        </div>
+        </Drawer>
       )}
+    </div>
+  );
+}
+
+/* ================= UI HELPERS ================= */
+function Kpi({ title, value, icon: Icon, accent }) {
+  const colors = {
+    blue: "bg-blue-50 text-blue-700",
+    amber: "bg-amber-50 text-amber-700",
+    green: "bg-green-50 text-green-700",
+  };
+  return (
+    <div className="flex items-center gap-4 p-5 bg-white border shadow-sm rounded-3xl">
+      <div className={`p-3 rounded-2xl ${colors[accent]}`}>
+        <Icon size={22} />
+      </div>
+      <div>
+        <p className="text-xs text-slate-500">{title}</p>
+        <p className="text-xl font-semibold">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function Drawer({ title, children, onClose, onSubmit }) {
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40">
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-md p-6 space-y-3 bg-white"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <X onClick={onClose} className="cursor-pointer" />
+        </div>
+        {children}
+      </form>
+    </div>
+  );
+}
+
+function Input({ label, value, onChange }) {
+  return (
+    <div>
+      <label className="text-xs text-slate-500">{label}</label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full p-3 border rounded-xl"
+      />
     </div>
   );
 }
