@@ -7,7 +7,6 @@ import {
   Users,
   TrendingUp,
 } from "lucide-react";
-
 import {
   ResponsiveContainer,
   LineChart,
@@ -21,7 +20,6 @@ import {
 } from "recharts";
 import { useNavigate } from "react-router-dom";
 
-
 /* ==================================================== */
 const API_BASE = "https://readytech-crm-dashboard.onrender.com/api";
 
@@ -30,6 +28,7 @@ const API_BASE = "https://readytech-crm-dashboard.onrender.com/api";
 ===================================================== */
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
   const [loading, setLoading] = useState(true);
@@ -43,29 +42,45 @@ export default function DashboardPage() {
   const [stockChart, setStockChart] = useState([]);
   const [salesTrend, setSalesTrend] = useState([]);
 
-  const navigate = useNavigate();
-  
   /* ================= SAFE FETCH ================= */
-  const safeFetch = async (url) => {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
+  const safeFetch = async (endpoint) => {
+    const res = await fetch(`${API_BASE}${endpoint}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
     });
-    if (!res.ok) throw new Error("Failed to load data");
+
+    if (res.status === 401) {
+      localStorage.removeItem("token");
+      navigate("/login");
+      throw new Error("Session expired");
+    }
+
     const json = await res.json();
-    return Array.isArray(json) ? json : json?.data || [];
+    if (!res.ok) throw new Error(json.message || "API error");
+
+    return Array.isArray(json) ? json : json.data || [];
   };
 
-  /* ================= FETCH ALL ================= */
+  /* ================= FETCH DASHBOARD DATA ================= */
   useEffect(() => {
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
     (async () => {
       try {
         setLoading(true);
+        setError("");
 
         const [p, s, po, inv] = await Promise.all([
-          safeFetch("/api/products"),
-          safeFetch("/api/sales"),
-          safeFetch("/api/purchase"),
-          safeFetch("/api/inventory/summary"),
+          safeFetch("/products"),
+          safeFetch("/sales"),
+          safeFetch("/purchase"),
+          safeFetch("/inventory/summary"),
         ]);
 
         setProducts(p);
@@ -73,19 +88,14 @@ export default function DashboardPage() {
         setPurchaseOrders(po);
         setInventory(inv);
 
-        /* ---------- STOCK CALCULATION ---------- */
+        /* ---------- STOCK CHART ---------- */
         const stock = inv.map((i) => {
-          let productName = "Unknown";
-
-          if (typeof i.product === "object") {
-            productName = i.product?.name;
-          } else {
-            const found = p.find((x) => x._id === i.product);
-            productName = found?.name;
-          }
+          let name = "Unknown";
+          if (typeof i.product === "object") name = i.product?.name;
+          else name = p.find((x) => x._id === i.product)?.name;
 
           return {
-            name: productName,
+            name,
             qty: (i.inQty || 0) - (i.outQty || 0),
           };
         });
@@ -103,60 +113,56 @@ export default function DashboardPage() {
         });
 
         setSalesTrend(
-          Object.keys(monthly).map((m) => ({
-            month: m,
-            revenue: monthly[m],
+          Object.entries(monthly).map(([month, revenue]) => ({
+            month,
+            revenue,
           }))
         );
       } catch (err) {
-        setError("Dashboard data failed to load");
+        console.error("❌ Dashboard Error:", err);
+        setError(err.message || "Failed to load dashboard");
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [token, navigate]);
 
+  /* ================= UI STATES ================= */
   if (loading)
     return <div className="p-6 text-slate-500">Loading dashboard…</div>;
 
   if (error)
-    return <div className="p-6 text-red-600">{error}</div>;
+    return (
+      <div className="p-6 text-red-600">
+        {error}
+        <button
+          onClick={() => window.location.reload()}
+          className="block mt-2 text-sm underline"
+        >
+          Retry
+        </button>
+      </div>
+    );
 
   const lowStock = stockChart.filter((s) => s.qty < 10);
 
   /* ================= KPI CONFIG ================= */
   const kpis = [
-    {
-      label: "Products",
-      value: products.length,
-      icon: Package,
-    },
+    { label: "Products", value: products.length, icon: Package },
     {
       label: "Low Stock",
       value: lowStock.length,
       icon: AlertTriangle,
       danger: true,
     },
-    {
-      label: "Sales Orders",
-      value: salesOrders.length,
-      icon: ShoppingCart,
-    },
+    { label: "Sales Orders", value: salesOrders.length, icon: ShoppingCart },
     {
       label: "Purchase Orders",
       value: purchaseOrders.length,
       icon: ClipboardList,
     },
-    {
-      label: "Users",
-      value: 38,
-      icon: Users,
-    },
-    {
-      label: "Revenue",
-      value: "Live",
-      icon: TrendingUp,
-    },
+    { label: "Users", value: "—", icon: Users },
+    { label: "Revenue", value: "Live", icon: TrendingUp },
   ];
 
   return (
