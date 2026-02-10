@@ -140,7 +140,7 @@ export default function Products() {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">
-            Products & Inventory
+            CRM Products
           </h1>
           <p className="max-w-3xl text-sm text-slate-600">
             Manage product catalog, pricing, and stock visibility across

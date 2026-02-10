@@ -217,40 +217,72 @@ function Topbar({ onMenu }) {
   const [profileOpen, setProfileOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-30 border-b bg-white/80 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/70 backdrop-blur-xl">
       <div className="flex items-center justify-between h-16 px-4 md:px-6">
-        <button onClick={onMenu} className="p-2 rounded-lg hover:bg-slate-100">
-          <Menu size={22} />
-        </button>
 
+        {/* LEFT */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate("/notifications")}
-            className="relative p-2 rounded-lg hover:bg-slate-100"
+            onClick={onMenu}
+            className="p-2 transition rounded-xl hover:bg-slate-100"
           >
-            <Bell size={18} />
-            <span className="absolute w-2 h-2 bg-red-500 rounded-full top-1 right-1 animate-pulse" />
+            <Menu size={22} className="text-slate-700" />
           </button>
 
+          <div className="hidden leading-tight sm:block">
+            <p className="text-sm font-semibold text-slate-800">
+              ReadyTech CRM
+            </p>
+            <p className="text-xs text-slate-500">
+              Business Intelligence Platform
+            </p>
+          </div>
+        </div>
+
+        {/* RIGHT */}
+        <div className="flex items-center gap-3">
+
+          {/* Notifications */}
+          <button
+            onClick={() => navigate("/notifications")}
+            className="relative p-2 transition rounded-xl hover:bg-slate-100"
+          >
+            <Bell size={18} className="text-slate-700" />
+            <span className="absolute w-2 h-2 bg-rose-500 rounded-full top-1.5 right-1.5 animate-pulse" />
+          </button>
+
+          {/* PROFILE */}
           <div className="relative">
             <button
               onClick={() => setProfileOpen(!profileOpen)}
-              className="flex items-center gap-2 p-1 rounded-lg hover:bg-slate-100"
+              className="flex items-center gap-2 p-1 pr-2 transition rounded-xl hover:bg-slate-100"
             >
-              <div className="flex items-center justify-center w-8 h-8 text-white bg-indigo-600 rounded-full">
+              <div className="flex items-center justify-center text-sm font-semibold text-white rounded-full shadow w-9 h-9 bg-gradient-to-br from-indigo-600 to-violet-600">
                 A
               </div>
-              <ChevronDown size={14} />
+              <ChevronDown size={14} className="text-slate-500" />
             </button>
 
             {profileOpen && (
-              <div className="absolute right-0 z-50 w-40 p-2 mt-2 bg-white border shadow-xl rounded-xl">
-                <DropdownItem label="Profile" onClick={() => navigate("/profile")} />
-                <DropdownItem label="Settings" onClick={() => navigate("/settings")} />
-                <DropdownItem label="Logout" danger onClick={() => navigate("/login")} />
+              <div className="absolute right-0 z-50 mt-3 overflow-hidden bg-white border shadow-2xl w-44 rounded-2xl border-slate-200">
+                <DropdownItem
+                  label="My Profile"
+                  onClick={() => navigate("/profile")}
+                />
+                <DropdownItem
+                  label="Settings"
+                  onClick={() => navigate("/settings")}
+                />
+                <div className="h-px my-1 bg-slate-100" />
+                <DropdownItem
+                  label="Logout"
+                  danger
+                  onClick={() => navigate("/login")}
+                />
               </div>
             )}
           </div>
+
         </div>
       </div>
     </header>
