@@ -5,14 +5,15 @@ import User from "../models/User.js";
 const auth = async (req, res, next) => {
   try {
     /* ======================================================
-       🚨 BYPASS CORS PREFLIGHT
+       ✅ ALWAYS ALLOW CORS PREFLIGHT
+       Browsers expect 200 OK for OPTIONS
     ====================================================== */
     if (req.method === "OPTIONS") {
-      return next();
+      return res.sendStatus(200);
     }
 
     /* ======================================================
-       GET TOKEN
+       🔑 READ AUTH HEADER
     ====================================================== */
     const authHeader =
       req.headers.authorization || req.headers["x-auth-token"];
@@ -20,23 +21,23 @@ const auth = async (req, res, next) => {
     if (!authHeader) {
       return res.status(401).json({
         success: false,
-        message: "Authorization token missing",
+        message: "Authorization header missing",
       });
     }
 
     const token = authHeader.startsWith("Bearer ")
-      ? authHeader.split(" ")[1]
+      ? authHeader.slice(7)
       : authHeader;
 
-    if (!token) {
+    if (!token || token === "null" || token === "undefined") {
       return res.status(401).json({
         success: false,
-        message: "Token not found",
+        message: "Invalid or empty token",
       });
     }
 
     /* ======================================================
-       VERIFY TOKEN
+       🔐 VERIFY TOKEN
     ====================================================== */
     let decoded;
     try {
@@ -52,7 +53,7 @@ const auth = async (req, res, next) => {
     }
 
     /* ======================================================
-       VALIDATE PAYLOAD
+       🧾 VALIDATE PAYLOAD
     ====================================================== */
     if (!decoded?.id) {
       return res.status(401).json({
@@ -62,7 +63,7 @@ const auth = async (req, res, next) => {
     }
 
     /* ======================================================
-       LOAD USER
+       👤 LOAD USER
     ====================================================== */
     const user = await User.findById(decoded.id)
       .select("-passwordHash")
@@ -76,17 +77,17 @@ const auth = async (req, res, next) => {
     }
 
     /* ======================================================
-       ATTACH USER
+       📎 ATTACH USER
     ====================================================== */
     req.user = user;
 
     next();
   } catch (error) {
-    console.error("🔐 AUTH MIDDLEWARE ERROR:", error);
+    console.error("🔐 AUTH MIDDLEWARE CRASH:", error);
 
-    return res.status(401).json({
+    return res.status(500).json({
       success: false,
-      message: "Authentication failed",
+      message: "Authentication middleware error",
     });
   }
 };

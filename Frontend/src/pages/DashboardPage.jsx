@@ -21,6 +21,10 @@ import {
 } from "recharts";
 import { useNavigate } from "react-router-dom";
 
+
+/* ==================================================== */
+const API_BASE = "https://readytech-crm-dashboard.onrender.com/api";
+
 /* =====================================================
    PREMIUM ZOHO-STYLE ADMIN DASHBOARD
 ===================================================== */
