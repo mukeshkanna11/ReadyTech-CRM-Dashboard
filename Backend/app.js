@@ -48,7 +48,7 @@ const allowedOrigins = [
   "http://localhost:5173", // Vite dev
   "http://localhost:3000", // React dev fallback
   "https://readytechcrm.netlify.app", // Production front
-  "https://readytech-crm-site.netlify.app/",
+  "https://readytech-crm-site.netlify.app",
 ];
 
 app.use(
