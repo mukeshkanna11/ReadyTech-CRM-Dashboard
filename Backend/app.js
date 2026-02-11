@@ -30,7 +30,7 @@ import role from "./middlewares/role.js";
 const app = express();
 
 /* ======================================================
-   TRUST PROXY (for proxies like Render, Netlify)
+   TRUST PROXY (important for Render / Heroku / Netlify)
 ====================================================== */
 app.set("trust proxy", 1);
 
@@ -56,9 +56,9 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
+      if (!origin) return callback(null, true); // Allow non-browser requests (e.g., Postman)
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error("CORS policy: This origin is not allowed"));
+      return callback(new Error(`CORS policy: ${origin} is not allowed`));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -76,17 +76,17 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 /* ======================================================
-   LOGGER
+   LOGGER (for development)
 ====================================================== */
 app.use(morgan("dev"));
 
 /* ======================================================
-   PUBLIC ROUTES
+   PUBLIC ROUTES (no authentication required)
 ====================================================== */
 app.use("/api/auth", authRoutes);
 
 /* ======================================================
-   PROTECTED ROUTES
+   PROTECTED ROUTES (require authentication + role)
 ====================================================== */
 
 // Admin routes (requires admin role)
@@ -129,7 +129,7 @@ app.get("/api/health", (req, res) => {
 });
 
 /* ======================================================
-   404 HANDLER
+   404 HANDLER (Route not found)
 ====================================================== */
 app.use((req, res) => {
   res.status(404).json({
