@@ -19,6 +19,9 @@ import vendorRoutes from "./routes/vendors.routes.js";
 import purchaseRoutes from "./routes/purchase.routes.js";
 import salesRoutes from "./routes/sales.routes.js";
 import warehouseRoutes from "./routes/warehouse.routes.js";
+import adminDashboardRoutes from "./routes/admin.dashboard.routes.js";
+import employeeDashboardRoutes from "./routes/employee.dashboard.routes.js";
+import clientDashboardRoutes from "./routes/client.dashboard.routes.js";
 
 /* ===================== Middlewares ===================== */
 import auth from "./middlewares/auth.js";
@@ -27,7 +30,7 @@ import role from "./middlewares/role.js";
 const app = express();
 
 /* ======================================================
-   TRUST PROXY (FOR RENDER/NETLIFY/PROXY)
+   TRUST PROXY (for proxies like Render, Netlify)
 ====================================================== */
 app.set("trust proxy", 1);
 
@@ -42,28 +45,20 @@ app.use(
 
 /* ======================================================
    CORS SETUP
-   ✅ Fully supports dev & production
 ====================================================== */
 const allowedOrigins = [
-  "http://localhost:5173", // Vite dev
-  "http://localhost:3000", // React dev fallback
-  "https://readytechcrm.netlify.app", // Production front
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://readytechcrm.netlify.app",
   "https://readytech-crm-site.netlify.app",
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests like Postman (no origin)
       if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(
-        new Error("CORS policy: This origin is not allowed")
-      );
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error("CORS policy: This origin is not allowed"));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -93,11 +88,19 @@ app.use("/api/auth", authRoutes);
 /* ======================================================
    PROTECTED ROUTES
 ====================================================== */
-// Admin routes
+
+// Admin routes (requires admin role)
 app.use("/api/admin", auth, role("admin"), adminRoutes);
+app.use("/api/admin/dashboard", auth, role("admin"), adminDashboardRoutes);
 app.use("/api/audit", auth, role("admin"), auditRoutes);
 
-// CRM & ERP routes
+// Employee routes
+app.use("/api/employee/dashboard", auth, role("employee"), employeeDashboardRoutes);
+
+// Client routes
+app.use("/api/client/dashboard", auth, role("client"), clientDashboardRoutes);
+
+// CRM & ERP routes (authenticated users)
 app.use("/api/products", auth, productsRoutes);
 app.use("/api/clients", auth, clientsRoutes);
 app.use("/api/inventory", auth, inventoryRoutes);
@@ -143,7 +146,7 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error("❌ GLOBAL ERROR:", err);
 
-  // If it's a CORS error, return 403
+  // CORS errors
   if (err.message && err.message.startsWith("CORS")) {
     return res.status(403).json({
       success: false,
