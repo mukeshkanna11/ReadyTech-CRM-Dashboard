@@ -30,7 +30,7 @@ import role from "./middlewares/role.js";
 const app = express();
 
 /* ======================================================
-   TRUST PROXY (important for Render / Heroku / Netlify)
+   TRUST PROXY (important for Render / Heroku)
 ====================================================== */
 app.set("trust proxy", 1);
 
@@ -39,7 +39,7 @@ app.set("trust proxy", 1);
 ====================================================== */
 app.use(
   helmet({
-    crossOriginResourcePolicy: false,
+    crossOriginResourcePolicy: false, // allow images, fonts across origins
   })
 );
 
@@ -56,7 +56,7 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // Allow non-browser requests (e.g., Postman)
+      if (!origin) return callback(null, true); // allow non-browser requests (Postman, server-to-server)
       if (allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error(`CORS policy: ${origin} is not allowed`));
     },
@@ -76,9 +76,11 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 /* ======================================================
-   LOGGER (for development)
+   LOGGER (dev mode)
 ====================================================== */
-app.use(morgan("dev"));
+if (process.env.NODE_ENV !== "production") {
+  app.use(morgan("dev"));
+}
 
 /* ======================================================
    PUBLIC ROUTES (no authentication required)
@@ -86,10 +88,10 @@ app.use(morgan("dev"));
 app.use("/api/auth", authRoutes);
 
 /* ======================================================
-   PROTECTED ROUTES (require authentication + role)
+   PROTECTED ROUTES
 ====================================================== */
 
-// Admin routes (requires admin role)
+// Admin routes
 app.use("/api/admin", auth, role("admin"), adminRoutes);
 app.use("/api/admin/dashboard", auth, role("admin"), adminDashboardRoutes);
 app.use("/api/audit", auth, role("admin"), auditRoutes);
@@ -100,7 +102,7 @@ app.use("/api/employee/dashboard", auth, role("employee"), employeeDashboardRout
 // Client routes
 app.use("/api/client/dashboard", auth, role("client"), clientDashboardRoutes);
 
-// CRM & ERP routes (authenticated users)
+// CRM & ERP modules
 app.use("/api/products", auth, productsRoutes);
 app.use("/api/clients", auth, clientsRoutes);
 app.use("/api/inventory", auth, inventoryRoutes);
@@ -116,20 +118,21 @@ app.use("/api/activities", auth, activityRoutes);
 
 // User profile
 app.use("/api/user", auth, userRoutes);
-
+app.use("/api/admin", adminRoutes);
 /* ======================================================
    HEALTH CHECK
 ====================================================== */
 app.get("/api/health", (req, res) => {
-  res.json({
+  res.status(200).json({
     ok: true,
     service: "ReadyTech CRM API",
+    environment: process.env.NODE_ENV || "development",
     time: new Date().toISOString(),
   });
 });
 
 /* ======================================================
-   404 HANDLER (Route not found)
+   404 HANDLER
 ====================================================== */
 app.use((req, res) => {
   res.status(404).json({

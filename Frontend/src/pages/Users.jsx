@@ -41,14 +41,15 @@ export default function Users() {
   });
 
   /* ================= FETCH ================= */
-  const fetchUsers = async () => {
-    try {
-      const { data } = await API.get("/admin/users");
-      setUsers(Array.isArray(data) ? data : []);
-    } catch {
-      toast.error("Failed to load users");
-    }
-  };
+ const fetchUsers = async () => {
+  try {
+    const data = await API.get("/admin/users"); // no need for data.data now
+    setUsers(Array.isArray(data) ? data : []);
+  } catch (err) {
+    console.error("FETCH USERS ERROR:", err);
+  }
+};
+
 
   useEffect(() => {
     fetchUsers();

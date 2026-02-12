@@ -13,7 +13,7 @@ import AuditLogs from "./pages/AuditLogs";
 
 /* ================== AUTH ================== */
 import Login from "./pages/Login";
-import Register from "./pages/Register";
+// import Register from "./pages/Register";
 
 /* ================== INFO / SETTINGS ================== */
 import WhyReadyTech from "./pages/WhyReadyTech";
@@ -47,7 +47,7 @@ export default function App() {
 
         {/* ================= PUBLIC ROUTES ================= */}
         <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        {/* <Route path="/register" element={<Register />} /> */}
 
         {/* ================= PROTECTED ROUTES ================= */}
         <Route

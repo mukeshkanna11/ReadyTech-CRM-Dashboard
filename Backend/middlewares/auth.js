@@ -1,22 +1,18 @@
 // middlewares/auth.js
-
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
 /* =========================================================
-   🔐 VERIFY AUTH TOKEN MIDDLEWARE
+   🔐 AUTHENTICATION MIDDLEWARE
+   Verifies JWT token from Authorization header
 ========================================================= */
 const auth = async (req, res, next) => {
   try {
-    /* ✅ Allow CORS preflight */
-    if (req.method === "OPTIONS") {
-      return res.sendStatus(200);
-    }
+    // ✅ Allow CORS preflight requests
+    if (req.method === "OPTIONS") return res.sendStatus(200);
 
-    /* 🔑 Get Token from Header */
-    const authHeader =
-      req.headers.authorization || req.headers["x-auth-token"];
-
+    // 🔑 Extract token
+    const authHeader = req.headers.authorization || req.headers["x-auth-token"];
     if (!authHeader) {
       return res.status(401).json({
         success: false,
@@ -24,8 +20,7 @@ const auth = async (req, res, next) => {
       });
     }
 
-    /* ✅ Extract Bearer Token */
-    let token = authHeader.startsWith("Bearer ")
+    const token = authHeader.startsWith("Bearer ")
       ? authHeader.slice(7).trim()
       : authHeader.trim();
 
@@ -36,17 +31,14 @@ const auth = async (req, res, next) => {
       });
     }
 
-    /* 🔐 Verify JWT */
+    // 🔐 Verify JWT
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
       return res.status(401).json({
         success: false,
-        message:
-          err.name === "TokenExpiredError"
-            ? "Token expired"
-            : "Invalid token",
+        message: err.name === "TokenExpiredError" ? "Token expired" : "Invalid token",
       });
     }
 
@@ -57,27 +49,21 @@ const auth = async (req, res, next) => {
       });
     }
 
-    /* 👤 Fetch User */
+    // 👤 Fetch user from DB (exclude sensitive fields)
     const user = await User.findById(decoded.id)
       .select("-passwordHash -__v")
       .lean();
 
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "User not found",
-      });
+      return res.status(401).json({ success: false, message: "User not found" });
     }
 
-    /* ❌ Block inactive users */
+    // ❌ Block inactive users
     if (user.isActive === false) {
-      return res.status(403).json({
-        success: false,
-        message: "Account is inactive",
-      });
+      return res.status(403).json({ success: false, message: "Account is inactive" });
     }
 
-    /* 📎 Attach user to request */
+    // 📎 Attach user to request
     req.user = user;
 
     next();
@@ -92,54 +78,31 @@ const auth = async (req, res, next) => {
 
 /* =========================================================
    🛡 ROLE-BASED AUTHORIZATION
+   Usage: authorize("admin", "employee")
 ========================================================= */
-export const authorize = (...allowedRoles) => {
-  return (req, res, next) => {
-    try {
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: "User not authenticated",
-        });
-      }
-
-      if (!allowedRoles.includes(req.user.role)) {
-        return res.status(403).json({
-          success: false,
-          message: "Access denied: insufficient permissions",
-        });
-      }
-
-      next();
-    } catch (error) {
-      console.error("⚠️ AUTHORIZE ERROR:", error);
-      return res.status(403).json({
-        success: false,
-        message: "Access denied",
-      });
+export const authorize = (...allowedRoles) => (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "User not authenticated" });
     }
-  };
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: "Access denied: insufficient permissions" });
+    }
+
+    next();
+  } catch (error) {
+    console.error("⚠️ AUTHORIZE ERROR:", error);
+    return res.status(403).json({ success: false, message: "Access denied" });
+  }
 };
 
 /* =========================================================
-   🔒 ADMIN ONLY SHORTCUT
+   🔒 ROLE SHORTCUTS
 ========================================================= */
 export const requireAdmin = authorize("admin");
-
-/* =========================================================
-   👨‍💼 EMPLOYEE ONLY SHORTCUT
-========================================================= */
 export const requireEmployee = authorize("employee");
-
-/* =========================================================
-   👤 CLIENT ONLY SHORTCUT
-========================================================= */
 export const requireClient = authorize("client");
-
-/* =========================================================
-   🔄 MULTI ROLE SHORTCUT
-   Example: authorizeRoles("admin", "employee")
-========================================================= */
 export const authorizeRoles = (...roles) => authorize(...roles);
 
 export default auth;
