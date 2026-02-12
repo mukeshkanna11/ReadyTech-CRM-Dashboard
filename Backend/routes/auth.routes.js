@@ -7,14 +7,29 @@ import User from "../models/User.js";
 const router = express.Router();
 
 // ===============================
-// CONFIG CHECK
+// SAFETY CHECK FOR ENV
 // ===============================
 if (!process.env.JWT_SECRET) {
-  console.warn("⚠️ WARNING: JWT_SECRET is not defined in environment variables");
+  console.error("❌ JWT_SECRET is NOT configured in environment variables");
 }
 
-// Super Admin email
+// Super Admin Email
 const SUPER_ADMIN_EMAIL = "siva@readytechsolutions.in";
+
+// ===============================
+// GENERATE TOKEN SAFELY
+// ===============================
+const generateToken = (user) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET not configured");
+  }
+
+  return jwt.sign(
+    { id: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+};
 
 /* =========================================================
    ADMIN LOGIN
@@ -50,7 +65,7 @@ router.post("/login", async (req, res) => {
     }
 
     if (!user.passwordHash) {
-      return res.status(500).json({
+      return res.status(400).json({
         success: false,
         message: "Admin password not set",
       });
@@ -65,20 +80,9 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    if (!process.env.JWT_SECRET) {
-      return res.status(500).json({
-        success: false,
-        message: "Server configuration error (JWT)",
-      });
-    }
+    const token = generateToken(user);
 
-    const token = jwt.sign(
-      { id: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" }
-    );
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Admin login successful",
       token,
@@ -91,8 +95,8 @@ router.post("/login", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("ADMIN LOGIN ERROR:", error);
-    res.status(500).json({
+    console.error("🔥 ADMIN LOGIN ERROR:", error.message);
+    return res.status(500).json({
       success: false,
       message: error.message || "Server error",
     });
@@ -100,7 +104,7 @@ router.post("/login", async (req, res) => {
 });
 
 /* =========================================================
-   USER LOGIN (Employee / Client)
+   USER LOGIN
    POST /api/auth/user-login
 ========================================================= */
 router.post("/user-login", async (req, res) => {
@@ -140,7 +144,7 @@ router.post("/user-login", async (req, res) => {
     }
 
     if (!user.passwordHash) {
-      return res.status(500).json({
+      return res.status(400).json({
         success: false,
         message: "Password not set for this user",
       });
@@ -155,23 +159,12 @@ router.post("/user-login", async (req, res) => {
       });
     }
 
-    if (!process.env.JWT_SECRET) {
-      return res.status(500).json({
-        success: false,
-        message: "Server configuration error (JWT)",
-      });
-    }
-
-    const token = jwt.sign(
-      { id: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const token = generateToken(user);
 
     user.lastLogin = new Date();
     await user.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Login successful",
       token,
@@ -184,8 +177,8 @@ router.post("/user-login", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("USER LOGIN ERROR:", error);
-    res.status(500).json({
+    console.error("🔥 USER LOGIN ERROR:", error.message);
+    return res.status(500).json({
       success: false,
       message: error.message || "Server error",
     });
@@ -228,20 +221,9 @@ router.post("/register", async (req, res) => {
       isActive: true,
     });
 
-    if (!process.env.JWT_SECRET) {
-      return res.status(500).json({
-        success: false,
-        message: "Server configuration error (JWT)",
-      });
-    }
+    const token = generateToken(user);
 
-    const token = jwt.sign(
-      { id: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "User registered successfully",
       token,
@@ -254,8 +236,8 @@ router.post("/register", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("REGISTER ERROR:", error);
-    res.status(500).json({
+    console.error("🔥 REGISTER ERROR:", error.message);
+    return res.status(500).json({
       success: false,
       message: error.message || "Server error",
     });
