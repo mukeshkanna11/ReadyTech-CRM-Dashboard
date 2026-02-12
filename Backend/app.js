@@ -118,7 +118,7 @@ app.use("/api/activities", auth, activityRoutes);
 
 // User profile
 app.use("/api/user", auth, userRoutes);
-app.use("/api/admin", adminRoutes);
+
 /* ======================================================
    HEALTH CHECK
 ====================================================== */
