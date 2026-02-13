@@ -1,298 +1,334 @@
-import { useEffect, useState } from "react";
-import {
-  Plus,
-  Trash2,
-  User,
-  Calendar,
-  FileText,
-  Percent,
-  IndianRupee,
-} from "lucide-react";
+import { useEffect, useState, useMemo } from "react";
 import API from "../services/api";
 import { toast } from "react-hot-toast";
 
 export default function CreateInvoice() {
-  const [clients, setClients] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const [customer, setCustomer] = useState("");
-  const [items, setItems] = useState([
-    { product: "", name: "", quantity: 1, price: 0, total: 0 },
-  ]);
+  const [invoiceData, setInvoiceData] = useState({
+    invoiceNumber: `INV-${Date.now()}`,
+    customer: "",
+    issueDate: new Date().toISOString().slice(0, 10),
+    dueDate: "",
+    items: [{ product: "", name: "", quantity: 1, price: 0 }],
+    tax: 0,
+    discount: 0,
+    notes: "",
+  });
 
-  const [tax, setTax] = useState(18);
-  const [discount, setDiscount] = useState(0);
-  const [dueDate, setDueDate] = useState("");
+  /* ================= FETCH ================= */
 
-  const [subtotal, setSubtotal] = useState(0);
-  const [grandTotal, setGrandTotal] = useState(0);
-
-  /* =========================================
-     FETCH CLIENTS & PRODUCTS
-  ========================================= */
   useEffect(() => {
-    fetchData();
+    fetchCustomers();
+    fetchProducts();
   }, []);
 
-  const fetchData = async () => {
-    try {
-      const clientsRes = await API.get("/clients");
-      const productRes = await API.get("/products");
+  const safeArray = (res) => {
+    if (Array.isArray(res.data)) return res.data;
+    return res.data?.data || [];
+  };
 
-      setClients(clientsRes.data);
-      setProducts(productRes.data);
-    } catch (error) {
-      toast.error("Failed to load data");
+  const fetchCustomers = async () => {
+    try {
+      const res = await API.get("/clients");
+      setCustomers(safeArray(res));
+    } catch {
+      setCustomers([]);
     }
   };
 
-  /* =========================================
-     HANDLE PRODUCT CHANGE
-  ========================================= */
-  const handleProductChange = (index, productId) => {
-    const selectedProduct = products.find((p) => p._id === productId);
-
-    const updatedItems = [...items];
-    updatedItems[index] = {
-      ...updatedItems[index],
-      product: productId,
-      name: selectedProduct?.name || "",
-      price: selectedProduct?.price || 0,
-      total: selectedProduct?.price * updatedItems[index].quantity || 0,
-    };
-
-    setItems(updatedItems);
-  };
-
-  /* =========================================
-     HANDLE QUANTITY CHANGE
-  ========================================= */
-  const handleQuantityChange = (index, qty) => {
-    const updatedItems = [...items];
-    updatedItems[index].quantity = qty;
-    updatedItems[index].total = qty * updatedItems[index].price;
-    setItems(updatedItems);
-  };
-
-  /* =========================================
-     CALCULATE TOTALS
-  ========================================= */
-  useEffect(() => {
-    let sub = items.reduce((acc, item) => acc + item.total, 0);
-    setSubtotal(sub);
-
-    const total =
-      sub + (sub * tax) / 100 - (discount ? Number(discount) : 0);
-
-    setGrandTotal(total);
-  }, [items, tax, discount]);
-
-  /* =========================================
-     ADD ITEM ROW
-  ========================================= */
-  const addItem = () => {
-    setItems([
-      ...items,
-      { product: "", name: "", quantity: 1, price: 0, total: 0 },
-    ]);
-  };
-
-  /* =========================================
-     REMOVE ITEM ROW
-  ========================================= */
-  const removeItem = (index) => {
-    const updated = items.filter((_, i) => i !== index);
-    setItems(updated);
-  };
-
-  /* =========================================
-     SUBMIT INVOICE
-  ========================================= */
-  const handleSubmit = async () => {
+  const fetchProducts = async () => {
     try {
+      const res = await API.get("/products");
+      setProducts(safeArray(res));
+    } catch {
+      setProducts([]);
+    }
+  };
+
+  /* ================= ITEM HANDLERS ================= */
+
+  const handleItemChange = (index, field, value) => {
+    const updated = [...invoiceData.items];
+    updated[index][field] = value;
+
+    if (field === "product") {
+      const selected = products.find((p) => p._id === value);
+      if (selected) {
+        updated[index].price = selected.price;
+        updated[index].name = selected.name;
+      }
+    }
+
+    setInvoiceData({ ...invoiceData, items: updated });
+  };
+
+  const addItem = () => {
+    setInvoiceData({
+      ...invoiceData,
+      items: [...invoiceData.items, { product: "", name: "", quantity: 1, price: 0 }],
+    });
+  };
+
+  const removeItem = (index) => {
+    const updated = invoiceData.items.filter((_, i) => i !== index);
+    setInvoiceData({ ...invoiceData, items: updated });
+  };
+
+  /* ================= CALCULATIONS ================= */
+
+  const subtotal = useMemo(() => {
+    return invoiceData.items.reduce(
+      (sum, item) => sum + item.quantity * item.price,
+      0
+    );
+  }, [invoiceData.items]);
+
+  const taxAmount = useMemo(() => {
+    return (subtotal * invoiceData.tax) / 100;
+  }, [subtotal, invoiceData.tax]);
+
+  const grandTotal = useMemo(() => {
+    return subtotal + taxAmount - invoiceData.discount;
+  }, [subtotal, taxAmount, invoiceData.discount]);
+
+  /* ================= CREATE ================= */
+
+  const createInvoice = async () => {
+    if (!invoiceData.customer) {
+      return toast.error("Please select a customer");
+    }
+
+    try {
+      setLoading(true);
+
       await API.post("/invoices", {
-        customer,
-        items,
-        tax,
-        discount,
-        dueDate,
+        ...invoiceData,
+        subtotal,
+        taxAmount,
+        totalAmount: grandTotal,
       });
 
-      toast.success("Invoice Created Successfully 🎉");
-    } catch (error) {
-      toast.error("Invoice Creation Failed");
+      toast.success("Invoice Created Successfully");
+
+      setInvoiceData({
+        invoiceNumber: `INV-${Date.now()}`,
+        customer: "",
+        issueDate: new Date().toISOString().slice(0, 10),
+        dueDate: "",
+        items: [{ product: "", name: "", quantity: 1, price: 0 }],
+        tax: 0,
+        discount: 0,
+        notes: "",
+      });
+
+    } catch (err) {
+      toast.error("Invoice creation failed");
+    } finally {
+      setLoading(false);
     }
   };
 
+  /* ================= UI ================= */
+
   return (
-    <div className="min-h-screen p-8 bg-gradient-to-br from-slate-100 to-slate-200">
-      <div className="max-w-6xl p-10 mx-auto bg-white shadow-2xl rounded-3xl">
+    <div className="min-h-screen p-6 bg-gradient-to-br from-slate-100 to-slate-200">
 
-        {/* HEADER */}
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <FileText size={28} /> Create Invoice
-          </h1>
-        </div>
+      <div className="grid grid-cols-3 gap-6 mx-auto max-w-7xl">
 
-        {/* CLIENT + DATE */}
-        <div className="grid gap-6 mb-8 md:grid-cols-2">
+        {/* ================= LEFT SECTION ================= */}
+        <div className="col-span-2 p-6 space-y-6 bg-white shadow-lg rounded-2xl">
 
-          <div>
-            <label className="flex items-center gap-2 mb-2 text-sm font-semibold">
-              <User size={16} /> Select Client
-            </label>
+          {/* HEADER */}
+          <div className="flex justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold text-slate-800">
+                New Invoice
+              </h2>
+              <p className="text-sm text-slate-500">
+                Create invoice quickly & professionally
+              </p>
+            </div>
+
+            <div className="text-right">
+              <p className="text-xs text-slate-400">Invoice #</p>
+              <p className="font-medium">{invoiceData.invoiceNumber}</p>
+            </div>
+          </div>
+
+          {/* CUSTOMER & DATES */}
+          <div className="grid grid-cols-3 gap-4">
             <select
-              className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-400"
-              value={customer}
-              onChange={(e) => setCustomer(e.target.value)}
+              value={invoiceData.customer}
+              onChange={(e) =>
+                setInvoiceData({ ...invoiceData, customer: e.target.value })
+              }
+              className="p-2 text-sm border rounded-lg"
             >
-              <option value="">Choose Client</option>
-              {clients.map((client) => (
-                <option key={client._id} value={client._id}>
-                  {client.name}
+              <option value="">Customer</option>
+              {customers.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
                 </option>
               ))}
             </select>
-          </div>
 
-          <div>
-            <label className="flex items-center gap-2 mb-2 text-sm font-semibold">
-              <Calendar size={16} /> Due Date
-            </label>
             <input
               type="date"
-              className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-400"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
+              value={invoiceData.issueDate}
+              onChange={(e) =>
+                setInvoiceData({ ...invoiceData, issueDate: e.target.value })
+              }
+              className="p-2 text-sm border rounded-lg"
+            />
+
+            <input
+              type="date"
+              value={invoiceData.dueDate}
+              onChange={(e) =>
+                setInvoiceData({ ...invoiceData, dueDate: e.target.value })
+              }
+              className="p-2 text-sm border rounded-lg"
             />
           </div>
-        </div>
 
-        {/* ITEMS TABLE */}
-        <div className="p-6 shadow-inner bg-slate-50 rounded-2xl">
-
-          {items.map((item, index) => (
-            <div
-              key={index}
-              className="grid items-center gap-4 mb-4 md:grid-cols-5"
-            >
-              <select
-                className="p-2 border rounded-xl"
-                value={item.product}
-                onChange={(e) =>
-                  handleProductChange(index, e.target.value)
-                }
+          {/* ITEMS */}
+          <div className="space-y-3">
+            {invoiceData.items.map((item, index) => (
+              <div
+                key={index}
+                className="grid items-center grid-cols-5 gap-3 p-3 border rounded-lg bg-slate-50"
               >
-                <option value="">Select Product</option>
-                {products.map((product) => (
-                  <option key={product._id} value={product._id}>
-                    {product.name}
-                  </option>
-                ))}
-              </select>
+                <select
+                  value={item.product}
+                  onChange={(e) =>
+                    handleItemChange(index, "product", e.target.value)
+                  }
+                  className="p-2 text-sm border rounded-md"
+                >
+                  <option value="">Product</option>
+                  {products.map((p) => (
+                    <option key={p._id} value={p._id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
 
-              <input
-                type="number"
-                placeholder="Qty"
-                className="p-2 border rounded-xl"
-                value={item.quantity}
-                onChange={(e) =>
-                  handleQuantityChange(index, e.target.value)
-                }
-              />
+                <input
+                  type="number"
+                  value={item.quantity}
+                  min="1"
+                  onChange={(e) =>
+                    handleItemChange(index, "quantity", Number(e.target.value))
+                  }
+                  className="p-2 text-sm text-center border rounded-md"
+                />
 
-              <input
-                type="number"
-                value={item.price}
-                disabled
-                className="p-2 bg-gray-100 border rounded-xl"
-              />
+                <input
+                  value={item.price}
+                  readOnly
+                  className="p-2 text-sm text-center bg-white border rounded-md"
+                />
 
-              <input
-                type="number"
-                value={item.total}
-                disabled
-                className="p-2 bg-gray-100 border rounded-xl"
-              />
+                <div className="text-sm font-medium text-center">
+                  ₹ {item.quantity * item.price}
+                </div>
 
-              <button
-                onClick={() => removeItem(index)}
-                className="text-red-500 hover:text-red-700"
-              >
-                <Trash2 />
-              </button>
-            </div>
-          ))}
+                <button
+                  onClick={() => removeItem(index)}
+                  className="text-xs text-red-500"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
 
           <button
             onClick={addItem}
-            className="flex items-center gap-2 mt-4 font-semibold text-indigo-600"
+            className="px-4 py-2 text-sm text-white rounded-lg bg-slate-800"
           >
-            <Plus size={18} /> Add Item
+            + Add Item
           </button>
-        </div>
 
-        {/* CALCULATIONS */}
-        <div className="grid gap-6 mt-8 md:grid-cols-2">
+          {/* NOTES */}
+          <textarea
+            placeholder="Additional Notes..."
+            value={invoiceData.notes}
+            onChange={(e) =>
+              setInvoiceData({ ...invoiceData, notes: e.target.value })
+            }
+            className="w-full p-3 text-sm border rounded-lg"
+          />
 
-          <div>
-            <label className="flex items-center gap-2 font-semibold">
-              <Percent size={16} /> GST %
-            </label>
-            <input
-              type="number"
-              value={tax}
-              onChange={(e) => setTax(e.target.value)}
-              className="w-full p-2 mt-2 border rounded-xl"
-            />
-          </div>
-
-          <div>
-            <label className="font-semibold">Discount (₹)</label>
-            <input
-              type="number"
-              value={discount}
-              onChange={(e) => setDiscount(e.target.value)}
-              className="w-full p-2 mt-2 border rounded-xl"
-            />
-          </div>
-        </div>
-
-        {/* TOTAL SUMMARY */}
-        <div className="p-6 mt-10 text-white shadow-xl bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl">
-          <div className="flex justify-between mb-2">
-            <span>Subtotal</span>
-            <span>₹ {subtotal.toFixed(2)}</span>
-          </div>
-
-          <div className="flex justify-between mb-2">
-            <span>GST ({tax}%)</span>
-            <span>₹ {(subtotal * tax / 100).toFixed(2)}</span>
-          </div>
-
-          <div className="flex justify-between mb-2">
-            <span>Discount</span>
-            <span>- ₹ {discount}</span>
-          </div>
-
-          <hr className="my-3 border-white/40" />
-
-          <div className="flex justify-between text-xl font-bold">
-            <span>Total Amount</span>
-            <span>₹ {grandTotal.toFixed(2)}</span>
-          </div>
-        </div>
-
-        {/* SUBMIT */}
-        <div className="mt-8 text-right">
           <button
-            onClick={handleSubmit}
-            className="px-8 py-3 font-semibold text-white bg-indigo-600 shadow-lg hover:bg-indigo-700 rounded-2xl"
+            onClick={createInvoice}
+            disabled={loading}
+            className="w-full py-3 text-sm font-medium text-white transition bg-emerald-600 rounded-xl hover:bg-emerald-700"
           >
-            Create Invoice
+            {loading ? "Creating..." : "Create Invoice"}
           </button>
+
         </div>
+
+        {/* ================= RIGHT SUMMARY PANEL ================= */}
+        <div className="p-6 space-y-6 bg-white shadow-lg rounded-2xl h-fit">
+
+          <h3 className="text-lg font-semibold text-slate-700">
+            Invoice Summary
+          </h3>
+
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span>₹ {subtotal}</span>
+            </div>
+
+            <div className="flex justify-between">
+              <span>Tax ({invoiceData.tax}%)</span>
+              <span>₹ {taxAmount}</span>
+            </div>
+
+            <div className="flex justify-between">
+              <span>Discount</span>
+              <span>₹ {invoiceData.discount}</span>
+            </div>
+
+            <div className="flex justify-between pt-3 text-base font-semibold border-t">
+              <span>Total</span>
+              <span>₹ {grandTotal}</span>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <input
+              type="number"
+              placeholder="Tax %"
+              value={invoiceData.tax}
+              onChange={(e) =>
+                setInvoiceData({ ...invoiceData, tax: Number(e.target.value) })
+              }
+              className="w-full p-2 text-sm border rounded-lg"
+            />
+
+            <input
+              type="number"
+              placeholder="Discount"
+              value={invoiceData.discount}
+              onChange={(e) =>
+                setInvoiceData({
+                  ...invoiceData,
+                  discount: Number(e.target.value),
+                })
+              }
+              className="w-full p-2 text-sm border rounded-lg"
+            />
+          </div>
+
+        </div>
+
       </div>
     </div>
   );

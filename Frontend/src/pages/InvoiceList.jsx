@@ -4,25 +4,25 @@ import {
   Plus,
   Eye,
   Trash2,
-  CheckCircle,
+  FileDown,
   FileText,
 } from "lucide-react";
 import API from "../services/api";
 import { toast } from "react-hot-toast";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 export default function InvoiceList() {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  /* =========================================
-     FETCH INVOICES
-  ========================================= */
+  /* ================= FETCH ================= */
   const fetchInvoices = async () => {
     try {
       const res = await API.get("/invoices");
-      setInvoices(res.data);
-    } catch (error) {
+      setInvoices(res.data || []);
+    } catch (err) {
       toast.error("Failed to fetch invoices");
     } finally {
       setLoading(false);
@@ -33,160 +33,268 @@ export default function InvoiceList() {
     fetchInvoices();
   }, []);
 
-  /* =========================================
-     DELETE INVOICE
-  ========================================= */
+  /* ================= DELETE ================= */
   const deleteInvoice = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this invoice?"))
-      return;
-
+    if (!window.confirm("Delete this invoice?")) return;
     try {
       await API.delete(`/invoices/${id}`);
-      toast.success("Invoice Deleted");
+      toast.success("Invoice deleted");
       fetchInvoices();
-    } catch (error) {
+    } catch {
       toast.error("Delete failed");
     }
   };
 
-  /* =========================================
-     MARK AS PAID
-  ========================================= */
-  const markAsPaid = async (id) => {
+  /* ================= SAFE PDF DOWNLOAD ================= */
+  const downloadPDF = (invoice) => {
     try {
-      await API.put(`/invoices/${id}/status`, {
-        status: "Paid",
-        paymentMode: "UPI",
+      const doc = new jsPDF("p", "mm", "a4");
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      /* ===== SAFE CALCULATIONS ===== */
+      const subTotal =
+        invoice.items?.reduce(
+          (acc, item) =>
+            acc +
+            Number(item.quantity || 0) *
+              Number(item.price || 0),
+          0
+        ) || 0;
+
+      const tax = Number(invoice.tax || 0);
+      const discount = Number(invoice.discount || 0);
+      const taxAmount = (subTotal * tax) / 100;
+      const total = subTotal + taxAmount - discount;
+
+      /* ================= HEADER ================= */
+      doc.setFillColor(30, 64, 175);
+      doc.rect(0, 0, pageWidth, 35, "F");
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(20);
+      doc.text("INVOICE", pageWidth - 45, 22);
+
+      doc.setFontSize(14);
+      doc.text("ReadyTechSolutions", 14, 18);
+
+      doc.setFontSize(9);
+      doc.text(
+        "2nd Floor, 149, Sri Nagar\nPeelamedu, Coimbatore - 641004\nPhone: 070107 97721",
+        14,
+        25
+      );
+
+      doc.setTextColor(0, 0, 0);
+
+      /* ================= CUSTOMER BOX ================= */
+      doc.roundedRect(14, 45, pageWidth - 28, 25, 3, 3);
+
+      doc.setFontSize(11);
+      doc.text(
+        `Invoice No : ${invoice.invoiceNumber}`,
+        20,
+        55
+      );
+      doc.text(
+        `Customer   : ${invoice.customer?.name || "N/A"}`,
+        20,
+        62
+      );
+      doc.text(
+        `Due Date   : ${
+          invoice.dueDate
+            ? new Date(invoice.dueDate).toLocaleDateString()
+            : "-"
+        }`,
+        pageWidth - 70,
+        55
+      );
+
+      /* ================= TABLE ================= */
+      autoTable(doc, {
+        startY: 80,
+        head: [["Product", "Qty", "Rate", "Amount"]],
+        body:
+          invoice.items?.map((item) => [
+            item.name || "-",
+            item.quantity || 0,
+            `Rs. ${Number(item.price || 0).toFixed(2)}`,
+            `Rs. ${(
+              Number(item.quantity || 0) *
+              Number(item.price || 0)
+            ).toFixed(2)}`,
+          ]) || [],
+        styles: {
+          fontSize: 10,
+          cellPadding: 4,
+        },
+        headStyles: {
+          fillColor: [30, 64, 175],
+        },
+        columnStyles: {
+          1: { halign: "center" },
+          2: { halign: "right" },
+          3: { halign: "right" },
+        },
       });
-      toast.success("Marked as Paid");
-      fetchInvoices();
+
+      const finalY = doc.lastAutoTable.finalY + 10;
+
+      /* ================= TOTAL BOX ================= */
+      doc.roundedRect(pageWidth - 85, finalY, 70, 35, 3, 3);
+
+      doc.setFontSize(11);
+
+      doc.text("Subtotal:", pageWidth - 80, finalY + 8);
+      doc.text(
+        `Rs. ${subTotal.toFixed(2)}`,
+        pageWidth - 20,
+        finalY + 8,
+        { align: "right" }
+      );
+
+      doc.text(`Tax (${tax}%):`, pageWidth - 80, finalY + 15);
+      doc.text(
+        `Rs. ${taxAmount.toFixed(2)}`,
+        pageWidth - 20,
+        finalY + 15,
+        { align: "right" }
+      );
+
+      doc.text("Discount:", pageWidth - 80, finalY + 22);
+      doc.text(
+        `Rs. ${discount.toFixed(2)}`,
+        pageWidth - 20,
+        finalY + 22,
+        { align: "right" }
+      );
+
+      doc.setFontSize(13);
+      doc.setTextColor(30, 64, 175);
+
+      doc.text("Grand Total:", pageWidth - 80, finalY + 32);
+      doc.text(
+        `Rs. ${total.toFixed(2)}`,
+        pageWidth - 20,
+        finalY + 32,
+        { align: "right" }
+      );
+
+      doc.setTextColor(0, 0, 0);
+
+      /* ================= FOOTER ================= */
+      doc.setFontSize(9);
+      doc.text(
+        "Thank you for choosing ReadyTechSolutions",
+        pageWidth / 2,
+        290,
+        { align: "center" }
+      );
+
+      /* ================= FORCE SAFE DOWNLOAD ================= */
+      const pdfBlob = doc.output("blob");
+      const blobUrl = URL.createObjectURL(pdfBlob);
+
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `Invoice-${invoice.invoiceNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+
+      toast.success("Invoice Downloaded Successfully");
     } catch (error) {
-      toast.error("Update failed");
+      console.error(error);
+      toast.error("PDF generation failed");
     }
   };
 
-  /* =========================================
-     STATUS BADGE STYLE
-  ========================================= */
   const getStatusStyle = (status) => {
     switch (status) {
       case "Paid":
         return "bg-green-100 text-green-700";
       case "Sent":
         return "bg-blue-100 text-blue-700";
-      case "Cancelled":
-        return "bg-red-100 text-red-700";
       default:
         return "bg-yellow-100 text-yellow-700";
     }
   };
 
   return (
-    <div className="min-h-screen p-8 bg-gradient-to-br from-slate-100 to-slate-200">
-      <div className="p-8 mx-auto bg-white shadow-2xl max-w-7xl rounded-3xl">
+    <div className="min-h-screen p-10 bg-slate-100">
+      <div className="p-10 mx-auto bg-white shadow-xl max-w-7xl rounded-3xl">
 
-        {/* HEADER */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-10">
           <div className="flex items-center gap-3">
             <FileText size={28} />
-            <h1 className="text-3xl font-bold">Invoice Management</h1>
+            <h1 className="text-3xl font-bold">
+              Invoice Management
+            </h1>
           </div>
 
           <button
             onClick={() => navigate("/invoices/create")}
-            className="flex items-center gap-2 px-6 py-3 text-white bg-indigo-600 shadow-lg hover:bg-indigo-700 rounded-2xl"
+            className="flex gap-2 px-6 py-3 text-white bg-blue-600 rounded-xl"
           >
             <Plus size={18} /> Create Invoice
           </button>
         </div>
 
-        {/* TABLE */}
         {loading ? (
-          <p className="text-gray-500">Loading invoices...</p>
-        ) : invoices.length === 0 ? (
-          <p className="text-gray-500">No invoices found.</p>
+          <p>Loading...</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-separate border-spacing-y-3">
-              <thead>
-                <tr className="text-sm text-left text-gray-600">
-                  <th className="px-4 py-2">Invoice No</th>
-                  <th className="px-4 py-2">Customer</th>
-                  <th className="px-4 py-2">Total</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2">Due Date</th>
-                  <th className="px-4 py-2 text-center">Actions</th>
+          <table className="w-full">
+            <thead className="text-left text-gray-500">
+              <tr>
+                <th>Invoice</th>
+                <th>Customer</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((invoice) => (
+                <tr key={invoice._id} className="border-b">
+                  <td className="py-4 font-semibold">
+                    {invoice.invoiceNumber}
+                  </td>
+                  <td>{invoice.customer?.name}</td>
+                  <td>
+                    Rs. {Number(invoice.totalAmount || 0).toFixed(2)}
+                  </td>
+                  <td>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs ${getStatusStyle(
+                        invoice.status
+                      )}`}
+                    >
+                      {invoice.status}
+                    </span>
+                  </td>
+                  <td className="flex gap-4 py-4">
+                    <Eye
+                      className="text-blue-600 cursor-pointer"
+                      onClick={() =>
+                        navigate(`/invoices/${invoice._id}`)
+                      }
+                    />
+                    <FileDown
+                      className="text-green-600 cursor-pointer"
+                      onClick={() => downloadPDF(invoice)}
+                    />
+                    <Trash2
+                      className="text-red-600 cursor-pointer"
+                      onClick={() => deleteInvoice(invoice._id)}
+                    />
+                  </td>
                 </tr>
-              </thead>
-
-              <tbody>
-                {invoices.map((invoice) => (
-                  <tr
-                    key={invoice._id}
-                    className="transition shadow-sm bg-slate-50 hover:bg-slate-100 rounded-2xl"
-                  >
-                    <td className="px-4 py-3 font-semibold">
-                      {invoice.invoiceNumber}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {invoice.customer?.name || "N/A"}
-                    </td>
-
-                    <td className="px-4 py-3 font-medium">
-                      ₹ {invoice.totalAmount?.toFixed(2)}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusStyle(
-                          invoice.status
-                        )}`}
-                      >
-                        {invoice.status}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {invoice.dueDate
-                        ? new Date(invoice.dueDate).toLocaleDateString()
-                        : "-"}
-                    </td>
-
-                    <td className="flex justify-center gap-3 px-4 py-3">
-                      {/* VIEW */}
-                      <button
-                        onClick={() =>
-                          navigate(`/invoices/${invoice._id}`)
-                        }
-                        className="text-indigo-600 hover:text-indigo-800"
-                      >
-                        <Eye size={18} />
-                      </button>
-
-                      {/* MARK PAID */}
-                      {invoice.status !== "Paid" && (
-                        <button
-                          onClick={() => markAsPaid(invoice._id)}
-                          className="text-green-600 hover:text-green-800"
-                        >
-                          <CheckCircle size={18} />
-                        </button>
-                      )}
-
-                      {/* DELETE */}
-                      <button
-                        onClick={() => deleteInvoice(invoice._id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
     </div>
