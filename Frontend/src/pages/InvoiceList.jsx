@@ -6,6 +6,9 @@ import {
   Trash2,
   FileDown,
   FileText,
+  CheckCircle,
+  Clock,
+  FileEdit,
 } from "lucide-react";
 import API from "../services/api";
 import { toast } from "react-hot-toast";
@@ -45,14 +48,23 @@ export default function InvoiceList() {
     }
   };
 
+  /* ================= NEW: UPDATE STATUS ================= */
+  const updateStatus = async (id, status) => {
+    try {
+      await API.put(`/invoices/${id}/status`, { status });
+      toast.success(`Invoice marked as ${status}`);
+      fetchInvoices();
+    } catch (err) {
+      toast.error("Status update failed");
+    }
+  };
+
   /* ================= SAFE PDF DOWNLOAD ================= */
   const downloadPDF = (invoice) => {
     try {
       const doc = new jsPDF("p", "mm", "a4");
       const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
 
-      /* ===== SAFE CALCULATIONS ===== */
       const subTotal =
         invoice.items?.reduce(
           (acc, item) =>
@@ -91,11 +103,7 @@ export default function InvoiceList() {
       doc.roundedRect(14, 45, pageWidth - 28, 25, 3, 3);
 
       doc.setFontSize(11);
-      doc.text(
-        `Invoice No : ${invoice.invoiceNumber}`,
-        20,
-        55
-      );
+      doc.text(`Invoice No : ${invoice.invoiceNumber}`, 20, 55);
       doc.text(
         `Customer   : ${invoice.customer?.name || "N/A"}`,
         20,
@@ -125,13 +133,8 @@ export default function InvoiceList() {
               Number(item.price || 0)
             ).toFixed(2)}`,
           ]) || [],
-        styles: {
-          fontSize: 10,
-          cellPadding: 4,
-        },
-        headStyles: {
-          fillColor: [30, 64, 175],
-        },
+        styles: { fontSize: 10, cellPadding: 4 },
+        headStyles: { fillColor: [30, 64, 175] },
         columnStyles: {
           1: { halign: "center" },
           2: { halign: "right" },
@@ -145,7 +148,6 @@ export default function InvoiceList() {
       doc.roundedRect(pageWidth - 85, finalY, 70, 35, 3, 3);
 
       doc.setFontSize(11);
-
       doc.text("Subtotal:", pageWidth - 80, finalY + 8);
       doc.text(
         `Rs. ${subTotal.toFixed(2)}`,
@@ -172,7 +174,6 @@ export default function InvoiceList() {
 
       doc.setFontSize(13);
       doc.setTextColor(30, 64, 175);
-
       doc.text("Grand Total:", pageWidth - 80, finalY + 32);
       doc.text(
         `Rs. ${total.toFixed(2)}`,
@@ -183,7 +184,6 @@ export default function InvoiceList() {
 
       doc.setTextColor(0, 0, 0);
 
-      /* ================= FOOTER ================= */
       doc.setFontSize(9);
       doc.text(
         "Thank you for choosing ReadyTechSolutions",
@@ -192,19 +192,7 @@ export default function InvoiceList() {
         { align: "center" }
       );
 
-      /* ================= FORCE SAFE DOWNLOAD ================= */
-      const pdfBlob = doc.output("blob");
-      const blobUrl = URL.createObjectURL(pdfBlob);
-
-      const link = document.createElement("a");
-      link.href = blobUrl;
-      link.download = `Invoice-${invoice.invoiceNumber}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-
-      document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl);
-
+      doc.save(`Invoice-${invoice.invoiceNumber}.pdf`);
       toast.success("Invoice Downloaded Successfully");
     } catch (error) {
       console.error(error);
@@ -216,10 +204,12 @@ export default function InvoiceList() {
     switch (status) {
       case "Paid":
         return "bg-green-100 text-green-700";
-      case "Sent":
-        return "bg-blue-100 text-blue-700";
-      default:
+      case "Draft":
+        return "bg-gray-200 text-gray-700";
+      case "Pending":
         return "bg-yellow-100 text-yellow-700";
+      default:
+        return "bg-blue-100 text-blue-700";
     }
   };
 
@@ -275,17 +265,40 @@ export default function InvoiceList() {
                       {invoice.status}
                     </span>
                   </td>
-                  <td className="flex gap-4 py-4">
+                  <td className="flex items-center gap-4 py-4">
                     <Eye
                       className="text-blue-600 cursor-pointer"
                       onClick={() =>
                         navigate(`/invoices/${invoice._id}`)
                       }
                     />
+
                     <FileDown
                       className="text-green-600 cursor-pointer"
                       onClick={() => downloadPDF(invoice)}
                     />
+
+                    <CheckCircle
+                      className="text-green-600 cursor-pointer"
+                      onClick={() =>
+                        updateStatus(invoice._id, "Paid")
+                      }
+                    />
+
+                    <Clock
+                      className="text-yellow-600 cursor-pointer"
+                      onClick={() =>
+                        updateStatus(invoice._id, "Pending")
+                      }
+                    />
+
+                    <FileEdit
+                      className="text-gray-600 cursor-pointer"
+                      onClick={() =>
+                        updateStatus(invoice._id, "Draft")
+                      }
+                    />
+
                     <Trash2
                       className="text-red-600 cursor-pointer"
                       onClick={() => deleteInvoice(invoice._id)}
