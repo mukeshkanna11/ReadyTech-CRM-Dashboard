@@ -15,6 +15,7 @@ import {
   LogOut,
   Warehouse,
   ShoppingCart,
+  Receipt,
   ClipboardList,
   Layers,
   Truck,
@@ -83,7 +84,10 @@ function Sidebar({ open }) {
         <NavItem open={open} to="/leads" icon={BarChart3} label="Leads" />
         <NavItem open={open} to="/salesforce" icon={Cloud} label="Salesforce" />
         <NavItem open={open} to="/auditlogs" icon={Shield} label="Audit Logs" />
-
+        
+         {/* Billing Section */}
+  <NavItem open={open} to="/invoices" icon={Receipt} label="Invoices" />
+  
         {/* ================= ERP MODULE ================= */}
         {open ? (
           /* EXPANDED MODE */
@@ -163,6 +167,7 @@ function ERPLinks() {
       <NavSubItem to="/stocks/purchase-orders" icon={ClipboardList} label="Purchase Orders" />
       <NavSubItem to="/stocks/sales-orders" icon={ShoppingCart} label="Sales Orders" />
       <NavSubItem to="/stocks/inventory" icon={Layers} label="Inventory" />
+      
     </>
   );
 }

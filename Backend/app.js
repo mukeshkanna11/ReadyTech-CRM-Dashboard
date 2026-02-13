@@ -22,6 +22,8 @@ import warehouseRoutes from "./routes/warehouse.routes.js";
 import adminDashboardRoutes from "./routes/admin.dashboard.routes.js";
 import employeeDashboardRoutes from "./routes/employee.dashboard.routes.js";
 import clientDashboardRoutes from "./routes/client.dashboard.routes.js";
+import invoiceRoutes from "./routes/invoice.routes.js";
+
 
 /* ===================== Middlewares ===================== */
 import auth from "./middlewares/auth.js";
@@ -115,6 +117,7 @@ app.use("/api/warehouses", auth, warehouseRoutes);
 app.use("/api/leads", auth, leadsRoutes);
 app.use("/api/opportunities", auth, opportunityRoutes);
 app.use("/api/activities", auth, activityRoutes);
+app.use("/api/invoices", invoiceRoutes);
 
 // User profile
 app.use("/api/user", auth, userRoutes);

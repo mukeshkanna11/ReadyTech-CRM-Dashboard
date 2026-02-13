@@ -1,24 +1,15 @@
 // routes/auth.routes.js
 import express from "express";
 import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 
 const router = express.Router();
 
-// ===============================
-// SAFETY CHECK FOR ENV
-// ===============================
-if (!process.env.JWT_SECRET) {
-  console.error("❌ JWT_SECRET is NOT configured in environment variables");
-}
-
-// Super Admin Email
 const SUPER_ADMIN_EMAIL = "siva@readytechsolutions.in";
 
-// ===============================
-// GENERATE TOKEN SAFELY
-// ===============================
+/* =========================================================
+   TOKEN GENERATOR
+========================================================= */
 const generateToken = (user) => {
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET not configured");
@@ -33,7 +24,6 @@ const generateToken = (user) => {
 
 /* =========================================================
    ADMIN LOGIN
-   POST /api/auth/login
 ========================================================= */
 router.post("/login", async (req, res) => {
   try {
@@ -64,14 +54,7 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    if (!user.passwordHash) {
-      return res.status(400).json({
-        success: false,
-        message: "Admin password not set",
-      });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    const isMatch = await user.comparePassword(password);
 
     if (!isMatch) {
       return res.status(401).json({
@@ -86,26 +69,20 @@ router.post("/login", async (req, res) => {
       success: true,
       message: "Admin login successful",
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+      user,
     });
 
   } catch (error) {
-    console.error("🔥 ADMIN LOGIN ERROR:", error.message);
+    console.error("🔥 ADMIN LOGIN ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Server error",
+      message: "Server error",
     });
   }
 });
 
 /* =========================================================
    USER LOGIN
-   POST /api/auth/user-login
 ========================================================= */
 router.post("/user-login", async (req, res) => {
   try {
@@ -143,14 +120,7 @@ router.post("/user-login", async (req, res) => {
       });
     }
 
-    if (!user.passwordHash) {
-      return res.status(400).json({
-        success: false,
-        message: "Password not set for this user",
-      });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    const isMatch = await user.comparePassword(password);
 
     if (!isMatch) {
       return res.status(401).json({
@@ -168,26 +138,20 @@ router.post("/user-login", async (req, res) => {
       success: true,
       message: "Login successful",
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+      user,
     });
 
   } catch (error) {
-    console.error("🔥 USER LOGIN ERROR:", error.message);
+    console.error("🔥 USER LOGIN ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Server error",
+      message: "Server error",
     });
   }
 });
 
 /* =========================================================
    REGISTER USER
-   POST /api/auth/register
 ========================================================= */
 router.post("/register", async (req, res) => {
   try {
@@ -211,15 +175,15 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = await User.create({
+    const user = new User({
       name,
       email: normalizedEmail,
-      passwordHash: hashedPassword,
+      passwordHash: password, // will auto-hash
       role,
       isActive: true,
     });
+
+    await user.save();
 
     const token = generateToken(user);
 
@@ -227,19 +191,14 @@ router.post("/register", async (req, res) => {
       success: true,
       message: "User registered successfully",
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+      user,
     });
 
   } catch (error) {
-    console.error("🔥 REGISTER ERROR:", error.message);
+    console.error("🔥 REGISTER ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Server error",
+      message: "Server error",
     });
   }
 });

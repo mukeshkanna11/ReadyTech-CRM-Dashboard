@@ -5,8 +5,14 @@ import bcrypt from "bcryptjs";
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true }, // hashed password
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+    passwordHash: { type: String, required: true },
     role: {
       type: String,
       enum: ["admin", "employee", "client"],
@@ -20,63 +26,54 @@ const userSchema = new mongoose.Schema(
 );
 
 /* =========================================================
-   PASSWORD COMPARISON HELPER
-   Returns true/false for a given plain password
+   HASH PASSWORD BEFORE SAVE
+========================================================= */
+userSchema.pre("save", async function (next) {
+  if (!this.isModified("passwordHash")) return next();
+
+  const salt = await bcrypt.genSalt(10);
+  this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
+  next();
+});
+
+/* =========================================================
+   COMPARE PASSWORD METHOD
 ========================================================= */
 userSchema.methods.comparePassword = async function (password) {
-  if (!password || !this.passwordHash) {
-    throw new Error("Password not provided or not set");
-  }
   return bcrypt.compare(password, this.passwordHash);
 };
 
 /* =========================================================
-   REMOVE PASSWORD FROM JSON RESPONSE
+   REMOVE PASSWORD FROM RESPONSE
 ========================================================= */
 userSchema.methods.toJSON = function () {
-  const user = this.toObject();
-  delete user.passwordHash;
-  return user;
+  const obj = this.toObject();
+  delete obj.passwordHash;
+  return obj;
 };
 
 /* =========================================================
-   PRE-SAVE HOOK TO HASH PASSWORD
-   Only hashes when passwordHash is modified
-========================================================= */
-userSchema.pre("save", async function () {
-  if (this.isModified("passwordHash")) {
-    const salt = await bcrypt.genSalt(10);
-    this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
-  }
-});
-
-/* =========================================================
-   STATIC METHOD TO CREATE SUPER ADMIN USER IF NOT EXISTS
+   CREATE SUPER ADMIN IF NOT EXISTS
 ========================================================= */
 userSchema.statics.createAdminIfNotExists = async function () {
-  const User = this;
   const adminEmail = "siva@readytechsolutions.in";
-  const existingAdmin = await User.findOne({ email: adminEmail });
+
+  const existingAdmin = await this.findOne({ email: adminEmail });
 
   if (!existingAdmin) {
-    const admin = await User.create({
+    const admin = new this({
       name: "Super Admin",
       email: adminEmail,
-      passwordHash: "siva@123", // will be hashed automatically
+      passwordHash: "siva@123", // auto hashed
       role: "admin",
       isActive: true,
     });
-    console.log("✅ Super Admin created:", admin.email);
-  } else {
-    console.log("ℹ️ Super Admin already exists:", existingAdmin.email);
-  }
-};
 
-/* =========================================================
-   HELPER STATIC METHOD TO FETCH ALL USERS (without password)
-========================================================= */
-userSchema.statics.getAllUsers = async function () {
-  return this.find().select("-passwordHash").sort({ createdAt: -1 });
+    await admin.save();
+    console.log("✅ Super Admin created");
+  } else {
+    console.log("ℹ️ Super Admin already exists");
+  }
 };
 
 export default mongoose.model("User", userSchema);
