@@ -1,16 +1,216 @@
-# React + Vite
+🏢 Ready Tech Solutions – CRM System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A full-featured Customer Relationship Management (CRM) web application built using React + Vite (Frontend) and Node.js + Express + MongoDB (Backend).
 
-Currently, two official plugins are available:
+This CRM system helps manage:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+👥 Customers
 
-## React Compiler
+📦 Products
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+🧾 Invoices & Billing
 
-## Expanding the ESLint configuration
+📊 Dashboard & Reports
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+🔐 Role-based Authentication (Admin access)
+
+🚀 Live Demo
+
+🔗 Live URL:
+https://readytechcrm.netlify.app/
+
+🛠️ Tech Stack
+Frontend
+
+⚛️ React (Vite)
+
+🎨 Tailwind CSS
+
+📦 Axios
+
+🔥 React Hot Toast
+
+📊 Recharts
+
+📄 jsPDF (Invoice PDF generation)
+
+🧩 Lucide Icons
+
+Backend
+
+🟢 Node.js
+
+🚀 Express.js
+
+🍃 MongoDB (Mongoose)
+
+🔐 JWT Authentication
+
+🔑 Role-based Access Control
+
+📌 Features
+🔐 Authentication
+
+Admin Login
+
+JWT-based secure authentication
+
+Protected routes
+
+Role-based access control
+
+📊 Dashboard
+
+Total Customers
+
+Total Products
+
+Total Invoices
+
+Sales Overview (Charts)
+
+Monthly Revenue Graph
+
+👥 Customer Management
+
+Add Customer
+
+Edit Customer
+
+Delete Customer
+
+Search & Filter
+
+Customer Contact Information
+
+📦 Product Management
+
+Add Product
+
+Update Product
+
+Delete Product
+
+Stock Management
+
+Price Management
+
+🧾 Invoice & Billing Module
+
+Create Invoice
+
+Auto Invoice Number Generation
+
+Add Multiple Products
+
+GST / Tax Calculation
+
+Total Amount Calculation
+
+Download Invoice as PDF
+
+View Invoice Details
+
+Delete Invoice
+
+📄 Reports
+
+Sales Reports
+
+Revenue Tracking
+
+Invoice History
+
+⚙️ Installation Guide
+1️⃣ Clone the Repository
+git clone https://github.com/your-username/crm-project.git
+cd crm-project
+
+2️⃣ Backend Setup
+cd backend
+npm install
+
+
+Create .env file:
+
+PORT=5000
+MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=your_secret_key
+
+
+Run backend:
+
+npm run dev
+
+3️⃣ Frontend Setup
+cd frontend
+npm install
+npm run dev
+
+🔑 Admin Credentials (Demo)
+Email: siva@readytechsolution.in
+Password: siva@123
+
+🧾 Invoice PDF Generation
+
+Invoices are generated using:
+
+jsPDF
+
+jspdf-autotable
+
+Includes:
+
+Company Logo
+
+Customer Details
+
+Product Table
+
+GST Calculation
+
+Total Amount
+
+Download Option
+
+🔒 Security Features
+
+Password Hashing (bcrypt)
+
+JWT Token Authentication
+
+Protected API Routes
+
+Role-based Authorization
+
+Input Validation
+
+📈 Future Enhancements
+
+Multi-user roles (Sales, Manager)
+
+Email Invoice Sending
+
+Payment Integration
+
+Export Reports (Excel/PDF)
+
+Activity Logs
+
+Customer Follow-up Reminder System
+
+🏢 About the Company
+
+Ready Tech Solutions
+Proprietor: Siva Shankar R
+We provide software development, web applications, and business automation solutions.
+
+🤝 Support
+
+For any issues or feature requests:
+
+📧 Email: siva@readytechsolution.in
+
+📜 License
+
+This project is developed for internal business use by Ready Tech Solutions.

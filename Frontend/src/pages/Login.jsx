@@ -4,7 +4,7 @@ import { Mail, Lock, Users, ClipboardList, Package } from "lucide-react";
 import API from "../services/api";
 
 // Company logo
-import companyLogo from "../assets/Rtech-logo.png";
+import companyLogo from "../assets/logo.png";
 
 const ADMIN_EMAIL = "siva@readytechsolutions.in";
 

@@ -2,55 +2,53 @@ import Invoice from "../models/Invoice.js";
 import generateInvoiceNumber from "../utils/generateInvoiceNumber.js";
 
 /* =====================================================
-   CREATE INVOICE (Enterprise Safe Version)
+   CREATE INVOICE
 ===================================================== */
 export const createInvoice = async (req, res) => {
   try {
     const {
       customer,
-      billingDetails,
+      billingDetails = {},
       items,
       discountType = "Flat",
       discountValue = 0,
       dueDate,
-      issueDate,
+      issueDate = new Date(),
       subscriptionStart,
       subscriptionEnd,
       paymentMode,
-      notes,
-      termsAndConditions,
+      notes = "",
+      termsAndConditions = "",
       currency = "INR",
     } = req.body;
 
-    if (!customer) {
-      return res.status(400).json({ success: false, message: "Customer is required" });
-    }
-
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ success: false, message: "Invoice must contain at least one item" });
-    }
+    // VALIDATION
+    if (!customer) return res.status(400).json({ message: "Customer is required" });
+    if (!items || !Array.isArray(items) || items.length === 0)
+      return res.status(400).json({ message: "Invoice must contain at least 1 item" });
 
     let subtotal = 0;
     let taxTotal = 0;
 
+    // PROCESS ITEMS
     const processedItems = items.map((item) => {
-      const quantity = Number(item.quantity) || 0;
-      const unitPrice = Number(item.unitPrice) || 0;
-      const taxPercent = Number(item.taxPercent) || 0;
+      const quantity = Number(item.quantity || 1);
+      const unitPrice = Number(item.unitPrice || item.rate || 0);
+      const taxPercent = Number(item.taxPercent || 0);
 
-      if (quantity <= 0 || unitPrice <= 0) {
-        throw new Error("Invalid quantity or unit price");
+      if (quantity <= 0 || unitPrice < 0) {
+        throw new Error("Invalid quantity or unit price in items");
       }
 
-      const baseTotal = quantity * unitPrice;
-      const taxAmount = (baseTotal * taxPercent) / 100;
-      const total = baseTotal + taxAmount;
+      const taxAmount = (quantity * unitPrice * taxPercent) / 100;
+      const total = quantity * unitPrice + taxAmount;
 
-      subtotal += baseTotal;
+      subtotal += quantity * unitPrice;
       taxTotal += taxAmount;
 
       return {
-        ...item,
+        product: item.product || null,
+        description: item.description || "",
         quantity,
         unitPrice,
         taxPercent,
@@ -59,34 +57,20 @@ export const createInvoice = async (req, res) => {
       };
     });
 
-    /* ================= Discount Calculation ================= */
-
+    // DISCOUNT
     let discountAmount = 0;
-    const safeDiscountValue = Number(discountValue) || 0;
-
     if (discountType === "Percentage") {
-      discountAmount = (subtotal * safeDiscountValue) / 100;
+      discountAmount = (subtotal * Number(discountValue)) / 100;
     } else {
-      discountAmount = safeDiscountValue;
+      discountAmount = Number(discountValue || 0);
     }
 
-    if (discountAmount < 0) discountAmount = 0;
-    if (discountAmount > subtotal) discountAmount = subtotal;
+    const grandTotal = subtotal + taxTotal - discountAmount;
 
-    /* ================= Grand Total ================= */
-
-    let grandTotal = subtotal + taxTotal - discountAmount;
-
-    if (grandTotal < 0) grandTotal = 0;
-    if (isNaN(grandTotal)) {
-      return res.status(400).json({
-        success: false,
-        message: "Calculation error occurred",
-      });
-    }
-
+    // GENERATE UNIQUE INVOICE NUMBER
     const invoiceNumber = await generateInvoiceNumber();
 
+    // CREATE INVOICE
     const invoice = await Invoice.create({
       invoiceNumber,
       customer,
@@ -95,13 +79,12 @@ export const createInvoice = async (req, res) => {
       subtotal,
       taxTotal,
       discountType,
-      discountValue: safeDiscountValue,
+      discountValue,
       discountAmount,
       grandTotal,
-      amountPaid: 0,
       balanceDue: grandTotal,
       status: "Draft",
-      issueDate: issueDate || new Date(),
+      issueDate,
       dueDate,
       subscriptionStart,
       subscriptionEnd,
@@ -111,17 +94,10 @@ export const createInvoice = async (req, res) => {
       currency,
     });
 
-    res.status(201).json({
-      success: true,
-      message: "Invoice created successfully",
-      data: invoice,
-    });
-  } catch (error) {
-    console.error("Create Invoice Error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error",
-    });
+    res.status(201).json({ success: true, data: invoice });
+  } catch (err) {
+    console.error("CREATE INVOICE ERROR:", err);
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -132,13 +108,12 @@ export const getInvoices = async (req, res) => {
   try {
     const invoices = await Invoice.find()
       .populate("customer")
-      .sort({ createdAt: -1 })
-      .lean();
+      .sort({ createdAt: -1 });
 
     res.json({ success: true, data: invoices });
-  } catch (error) {
-    console.error("Get Invoices Error:", error);
-    res.status(500).json({ success: false, message: error.message });
+  } catch (err) {
+    console.error("GET INVOICES ERROR:", err);
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -147,64 +122,13 @@ export const getInvoices = async (req, res) => {
 ===================================================== */
 export const getSingleInvoice = async (req, res) => {
   try {
-    const invoice = await Invoice.findById(req.params.id)
-      .populate("customer")
-      .lean();
-
-    if (!invoice) {
-      return res.status(404).json({ success: false, message: "Invoice not found" });
-    }
+    const invoice = await Invoice.findById(req.params.id).populate("customer");
+    if (!invoice) return res.status(404).json({ message: "Invoice not found" });
 
     res.json({ success: true, data: invoice });
-  } catch (error) {
-    console.error("Get Single Invoice Error:", error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-/* =====================================================
-   RECORD PAYMENT (Enterprise Safe)
-===================================================== */
-export const recordPayment = async (req, res) => {
-  try {
-    const { amount, paymentMode, paymentReference } = req.body;
-
-    const invoice = await Invoice.findById(req.params.id);
-
-    if (!invoice) {
-      return res.status(404).json({ success: false, message: "Invoice not found" });
-    }
-
-    const paymentAmount = Number(amount);
-
-    if (!paymentAmount || paymentAmount <= 0) {
-      return res.status(400).json({ success: false, message: "Invalid payment amount" });
-    }
-
-    invoice.amountPaid = (invoice.amountPaid || 0) + paymentAmount;
-
-    invoice.balanceDue = invoice.grandTotal - invoice.amountPaid;
-
-    invoice.paymentMode = paymentMode;
-    invoice.paymentReference = paymentReference;
-
-    if (invoice.balanceDue <= 0) {
-      invoice.status = "Paid";
-      invoice.balanceDue = 0;
-    } else {
-      invoice.status = "Partially Paid";
-    }
-
-    await invoice.save();
-
-    res.json({
-      success: true,
-      message: "Payment recorded successfully",
-      data: invoice,
-    });
-  } catch (error) {
-    console.error("Record Payment Error:", error);
-    res.status(500).json({ success: false, message: error.message });
+  } catch (err) {
+    console.error("GET SINGLE INVOICE ERROR:", err);
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -214,20 +138,44 @@ export const recordPayment = async (req, res) => {
 export const updateInvoiceStatus = async (req, res) => {
   try {
     const { status } = req.body;
-
     const invoice = await Invoice.findById(req.params.id);
-
-    if (!invoice) {
-      return res.status(404).json({ success: false, message: "Invoice not found" });
-    }
+    if (!invoice) return res.status(404).json({ message: "Invoice not found" });
 
     invoice.status = status;
     await invoice.save();
 
     res.json({ success: true, data: invoice });
-  } catch (error) {
-    console.error("Update Status Error:", error);
-    res.status(500).json({ success: false, message: error.message });
+  } catch (err) {
+    console.error("UPDATE INVOICE STATUS ERROR:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/* =====================================================
+   RECORD PAYMENT
+===================================================== */
+export const recordPayment = async (req, res) => {
+  try {
+    const { amount, paymentMode, paymentReference } = req.body;
+    const invoice = await Invoice.findById(req.params.id);
+    if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+
+    const paymentAmount = Number(amount);
+    if (!paymentAmount || paymentAmount <= 0) return res.status(400).json({ message: "Invalid payment amount" });
+
+    invoice.amountPaid += paymentAmount;
+    invoice.balanceDue = invoice.grandTotal - invoice.amountPaid;
+    invoice.paymentMode = paymentMode;
+    invoice.paymentReference = paymentReference;
+
+    invoice.status = invoice.balanceDue <= 0 ? "Paid" : "Partially Paid";
+
+    await invoice.save();
+
+    res.json({ success: true, data: invoice });
+  } catch (err) {
+    console.error("RECORD PAYMENT ERROR:", err);
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -237,14 +185,11 @@ export const updateInvoiceStatus = async (req, res) => {
 export const deleteInvoice = async (req, res) => {
   try {
     const invoice = await Invoice.findByIdAndDelete(req.params.id);
-
-    if (!invoice) {
-      return res.status(404).json({ success: false, message: "Invoice not found" });
-    }
+    if (!invoice) return res.status(404).json({ message: "Invoice not found" });
 
     res.json({ success: true, message: "Invoice deleted successfully" });
-  } catch (error) {
-    console.error("Delete Invoice Error:", error);
-    res.status(500).json({ success: false, message: error.message });
+  } catch (err) {
+    console.error("DELETE INVOICE ERROR:", err);
+    res.status(500).json({ message: err.message });
   }
 };

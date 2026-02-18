@@ -3,77 +3,63 @@ import API from "../services/api";
 import toast from "react-hot-toast";
 
 export default function CreateInvoice() {
-  /* =========================
-      STATES
-  ========================== */
-
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const today = new Date().toISOString().split("T")[0];
 
-  const defaultInvoice = {
+  const [invoice, setInvoice] = useState({
     customer: "",
     invoiceDate: today,
     dueDate: today,
     notes: "Thanks for your business.",
-    terms: "",
     discountPercent: 0,
+    tdsType: "",
     tdsPercent: 0,
     tcsPercent: 0,
-    items: [{ product: "", quantity: 1, rate: 0 }],
-  };
+    items: [{ product: "", description: "", quantity: 1, rate: 0, taxPercent: 0 }],
+  });
 
-  const [invoice, setInvoice] = useState(defaultInvoice);
-
-  /* =========================
-      TDS OPTIONS
-  ========================== */
-
+  /* ===========================
+     TDS OPTIONS
+  ============================ */
   const TDS_OPTIONS = [
+    { label: "Commission or Brokerage", percent: 2 },
     { label: "Professional Fees", percent: 10 },
-    { label: "Commission", percent: 2 },
     { label: "Dividend", percent: 10 },
+    { label: "Rent on land/furniture", percent: 10 },
     { label: "Technical Fees", percent: 2 },
   ];
 
-  /* =========================
-      FETCH DATA
-  ========================== */
-
+  /* ===========================
+     FETCH CLIENTS & PRODUCTS
+  ============================ */
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const clientRes = await API.get("/clients");
-        const productRes = await API.get("/products");
+        const [clientRes, productRes] = await Promise.all([
+          API.get("/clients"),
+          API.get("/products"),
+        ]);
 
-        const clientData =
-          clientRes.data?.data ||
-          clientRes.data?.clients ||
-          clientRes.data ||
-          [];
+        // Ensure correct data path
+        const clientData = clientRes.data?.data || clientRes.data || [];
+        const productData = productRes.data?.data || productRes.data || [];
 
-        const productData =
-          productRes.data?.data ||
-          productRes.data?.products ||
-          productRes.data ||
-          [];
-
-        setClients(Array.isArray(clientData) ? clientData : []);
-        setProducts(Array.isArray(productData) ? productData : []);
-      } catch (error) {
-        toast.error("Failed to load data");
+        setClients(clientData);
+        setProducts(productData);
+      } catch (err) {
+        console.error("Fetch error:", err);
+        toast.error("Failed to load clients or products");
       }
     };
-
     fetchData();
   }, []);
 
-  /* =========================
-      ITEM FUNCTIONS
-  ========================== */
-
+  /* ===========================
+     ITEM FUNCTIONS
+  ============================ */
   const updateItem = (index, field, value) => {
     const updated = [...invoice.items];
     updated[index][field] = value;
@@ -81,184 +67,176 @@ export default function CreateInvoice() {
     if (field === "product") {
       const selected = products.find((p) => p._id === value);
       if (selected) {
+        updated[index].description = selected.name;
         updated[index].rate = selected.price || 0;
       }
     }
-
     setInvoice({ ...invoice, items: updated });
   };
 
   const addItem = () => {
     setInvoice({
       ...invoice,
-      items: [...invoice.items, { product: "", quantity: 1, rate: 0 }],
+      items: [...invoice.items, { product: "", description: "", quantity: 1, rate: 0, taxPercent: 0 }],
     });
   };
 
   const removeItem = (index) => {
-    setInvoice({
-      ...invoice,
-      items: invoice.items.filter((_, i) => i !== index),
-    });
+    const updated = invoice.items.filter((_, i) => i !== index);
+    setInvoice({ ...invoice, items: updated });
   };
 
-  /* =========================
-      CALCULATIONS
-  ========================== */
-
+  /* ===========================
+     CALCULATIONS
+  ============================ */
   const calculations = useMemo(() => {
     let subtotal = 0;
+    let taxTotal = 0;
 
     invoice.items.forEach((item) => {
-      subtotal +=
-        (Number(item.quantity) || 0) *
-        (Number(item.rate) || 0);
+      const quantity = Number(item.quantity || 0);
+      const rate = Number(item.rate || 0);
+      const taxPercent = Number(item.taxPercent || 0);
+
+      subtotal += quantity * rate;
+      taxTotal += (quantity * rate * taxPercent) / 100;
     });
 
-    const discount =
-      (subtotal * Number(invoice.discountPercent || 0)) / 100;
+    const discountAmount = (subtotal * Number(invoice.discountPercent || 0)) / 100;
+    const afterDiscount = subtotal - discountAmount;
 
-    const afterDiscount = subtotal - discount;
+    const tdsAmount = (afterDiscount * Number(invoice.tdsPercent || 0)) / 100;
+    const tcsAmount = (afterDiscount * Number(invoice.tcsPercent || 0)) / 100;
 
-    const tds =
-      (afterDiscount * Number(invoice.tdsPercent || 0)) / 100;
+    const total = afterDiscount - tdsAmount + tcsAmount + taxTotal;
 
-    const tcs =
-      (afterDiscount * Number(invoice.tcsPercent || 0)) / 100;
-
-    const total = afterDiscount - tds + tcs;
-
-    return {
-      subtotal,
-      discount,
-      tds,
-      tcs,
-      total,
-    };
+    return { subtotal, discountAmount, tdsAmount, tcsAmount, taxTotal, total };
   }, [invoice]);
 
-  /* =========================
-      SUBMIT
-  ========================== */
-
+  /* ===========================
+     HANDLE SUBMIT
+  ============================ */
   const handleSubmit = async () => {
-    if (!invoice.customer) {
-      return toast.error("Select customer");
-    }
+    if (!invoice.customer) return toast.error("Please select a customer");
 
     try {
       setLoading(true);
 
-      await API.post("/invoices", {
-        ...invoice,
-        ...calculations,
-      });
+      const payload = {
+        customer: invoice.customer,
+        items: invoice.items.map((i) => ({
+          product: i.product,
+          description: i.description,
+          quantity: i.quantity,
+          unitPrice: i.rate,
+          taxPercent: i.taxPercent,
+        })),
+        discountPercent: invoice.discountPercent,
+        tdsType: invoice.tdsType,
+        tdsPercent: invoice.tdsPercent,
+        tcsPercent: invoice.tcsPercent,
+        notes: invoice.notes,
+        invoiceDate: invoice.invoiceDate,
+        dueDate: invoice.dueDate,
+        subtotal: calculations.subtotal,
+        taxTotal: calculations.taxTotal,
+        discountAmount: calculations.discountAmount,
+        grandTotal: calculations.total,
+        currency: "INR",
+      };
+
+      await API.post("/invoices", payload);
 
       toast.success("Invoice Created Successfully 🚀");
-      setInvoice(defaultInvoice);
-    } catch (error) {
-      toast.error("Failed to create invoice");
+
+      // Reset
+      setInvoice({
+        customer: "",
+        invoiceDate: today,
+        dueDate: today,
+        notes: "Thanks for your business.",
+        discountPercent: 0,
+        tdsType: "",
+        tdsPercent: 0,
+        tcsPercent: 0,
+        items: [{ product: "", description: "", quantity: 1, rate: 0, taxPercent: 0 }],
+      });
+    } catch (err) {
+      console.error("Submit error:", err);
+      toast.error("Invoice creation failed");
     } finally {
       setLoading(false);
     }
   };
 
-  /* =========================
-      UI
-  ========================== */
-
+  /* ===========================
+     RENDER
+  ============================ */
   return (
-    <div className="min-h-screen p-10 bg-gray-100">
-      <div className="grid grid-cols-3 gap-8 mx-auto max-w-7xl">
+    <div className="min-h-screen p-6 bg-gray-50">
+      <div className="max-w-6xl p-8 mx-auto bg-white shadow-xl rounded-2xl">
+        <h1 className="mb-8 text-3xl font-bold">Create New Invoice</h1>
 
-        {/* LEFT SECTION */}
-        <div className="col-span-2 p-8 bg-white shadow-xl rounded-2xl">
-
-          <h1 className="mb-6 text-3xl font-bold">
-            New Invoice
-          </h1>
-
-          {/* HEADER */}
-          <div className="grid grid-cols-2 gap-6 mb-8">
-
-            <div>
-              <label className="text-sm font-semibold">
-                Customer
-              </label>
-              <select
-                value={invoice.customer}
-                onChange={(e) =>
-                  setInvoice({ ...invoice, customer: e.target.value })
-                }
-                className="w-full p-3 mt-2 border rounded-lg"
-              >
-                <option value="">Select Customer</option>
-                {clients.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-sm font-semibold">
-                Invoice Date
-              </label>
-              <input
-                type="date"
-                value={invoice.invoiceDate}
-                onChange={(e) =>
-                  setInvoice({
-                    ...invoice,
-                    invoiceDate: e.target.value,
-                  })
-                }
-                className="w-full p-3 mt-2 border rounded-lg"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-semibold">
-                Due Date
-              </label>
-              <input
-                type="date"
-                value={invoice.dueDate}
-                onChange={(e) =>
-                  setInvoice({
-                    ...invoice,
-                    dueDate: e.target.value,
-                  })
-                }
-                className="w-full p-3 mt-2 border rounded-lg"
-              />
-            </div>
+        {/* HEADER */}
+        <div className="grid grid-cols-3 gap-6 mb-10">
+          <div>
+            <label className="text-sm font-medium">Customer</label>
+            <select
+              className="w-full p-3 mt-2 border rounded-lg"
+              value={invoice.customer}
+              onChange={(e) => setInvoice({ ...invoice, customer: e.target.value })}
+            >
+              <option value="">Select Customer</option>
+              {clients.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* ITEMS */}
-          <table className="w-full overflow-hidden border rounded-lg">
-            <thead className="bg-gray-50">
+          <div>
+            <label className="text-sm font-medium">Invoice Date</label>
+            <input
+              type="date"
+              className="w-full p-3 mt-2 border rounded-lg"
+              value={invoice.invoiceDate}
+              onChange={(e) => setInvoice({ ...invoice, invoiceDate: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium">Due Date</label>
+            <input
+              type="date"
+              className="w-full p-3 mt-2 border rounded-lg"
+              value={invoice.dueDate}
+              onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })}
+            />
+          </div>
+        </div>
+
+        {/* ITEMS */}
+        <div className="mb-4 overflow-x-auto">
+          <table className="w-full text-sm border rounded-lg">
+            <thead className="bg-gray-100">
               <tr>
-                <th className="p-4 text-left">Item</th>
+                <th className="p-3 text-left">Item</th>
                 <th>Qty</th>
                 <th>Rate</th>
+                <th>Tax %</th>
                 <th>Amount</th>
                 <th></th>
               </tr>
             </thead>
-
             <tbody>
               {invoice.items.map((item, index) => (
                 <tr key={index} className="border-t">
-
-                  <td className="p-3">
+                  <td className="p-2">
                     <select
-                      value={item.product}
-                      onChange={(e) =>
-                        updateItem(index, "product", e.target.value)
-                      }
                       className="w-full p-2 border rounded"
+                      value={item.product}
+                      onChange={(e) => updateItem(index, "product", e.target.value)}
                     >
                       <option value="">Select Product</option>
                       {products.map((p) => (
@@ -267,30 +245,39 @@ export default function CreateInvoice() {
                         </option>
                       ))}
                     </select>
+                    <p className="mt-1 text-xs">{item.description}</p>
                   </td>
 
                   <td>
                     <input
                       type="number"
-                      value={item.quantity}
-                      onChange={(e) =>
-                        updateItem(index, "quantity", e.target.value)
-                      }
                       className="w-20 p-2 border rounded"
+                      value={item.quantity}
+                      onChange={(e) => updateItem(index, "quantity", e.target.value)}
                     />
                   </td>
 
                   <td>₹ {item.rate}</td>
 
                   <td>
-                    ₹ {(item.quantity * item.rate).toFixed(2)}
+                    <input
+                      type="number"
+                      className="w-16 p-1 border rounded"
+                      value={item.taxPercent}
+                      onChange={(e) => updateItem(index, "taxPercent", e.target.value)}
+                    />
                   </td>
 
                   <td>
-                    <button
-                      onClick={() => removeItem(index)}
-                      className="text-red-500"
-                    >
+                    ₹{" "}
+                    {(
+                      item.quantity * item.rate +
+                      (item.quantity * item.rate * item.taxPercent) / 100
+                    ).toFixed(2)}
+                  </td>
+
+                  <td>
+                    <button onClick={() => removeItem(index)} className="text-red-500">
                       ✕
                     </button>
                   </td>
@@ -298,108 +285,54 @@ export default function CreateInvoice() {
               ))}
             </tbody>
           </table>
-
-          <button
-            onClick={addItem}
-            className="px-4 py-2 mt-4 bg-gray-200 rounded-lg"
-          >
-            + Add Item
-          </button>
-
-          {/* NOTES */}
-          <div className="mt-8">
-            <label className="text-sm font-semibold">
-              Notes
-            </label>
-            <textarea
-              value={invoice.notes}
-              onChange={(e) =>
-                setInvoice({ ...invoice, notes: e.target.value })
-              }
-              className="w-full p-3 mt-2 border rounded-lg"
-            />
-          </div>
-
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="w-full py-3 mt-8 text-lg text-white bg-blue-600 rounded-xl"
-          >
-            {loading ? "Creating..." : "Save Invoice"}
-          </button>
         </div>
 
-        {/* RIGHT SUMMARY CARD */}
-        <div className="p-8 space-y-4 bg-white shadow-xl rounded-2xl">
+        <button onClick={addItem} className="px-4 py-2 mt-2 bg-gray-200 rounded-lg">
+          + Add Item
+        </button>
 
-          <h2 className="text-xl font-bold">
-            Invoice Summary
-          </h2>
-
-          <p>Subtotal: ₹ {calculations.subtotal.toFixed(2)}</p>
-
-          <div>
-            <label>Discount %</label>
-            <input
-              type="number"
-              value={invoice.discountPercent}
-              onChange={(e) =>
-                setInvoice({
-                  ...invoice,
-                  discountPercent: e.target.value,
-                })
-              }
-              className="w-full p-2 mt-1 border rounded"
-            />
-            <p>- ₹ {calculations.discount.toFixed(2)}</p>
+        {/* SUMMARY */}
+        <div className="flex justify-end mt-8">
+          <div className="space-y-2 text-right w-96">
+            <p>Subtotal: ₹ {calculations.subtotal.toFixed(2)}</p>
+            <p>Discount ({invoice.discountPercent}%): - ₹ {calculations.discountAmount.toFixed(2)}</p>
+            <p>TDS ({invoice.tdsPercent}%): - ₹ {calculations.tdsAmount.toFixed(2)}</p>
+            <p>TCS ({invoice.tcsPercent}%): + ₹ {calculations.tcsAmount.toFixed(2)}</p>
+            <p>Tax: ₹ {calculations.taxTotal.toFixed(2)}</p>
+            <h2 className="text-xl font-bold">Grand Total: ₹ {calculations.total.toFixed(2)}</h2>
           </div>
-
-          <div>
-            <label>TDS</label>
-            <select
-              onChange={(e) => {
-                const selected =
-                  TDS_OPTIONS[e.target.value];
-                setInvoice({
-                  ...invoice,
-                  tdsPercent: selected?.percent || 0,
-                });
-              }}
-              className="w-full p-2 mt-1 border rounded"
-            >
-              <option>Select TDS</option>
-              {TDS_OPTIONS.map((t, i) => (
-                <option key={i} value={i}>
-                  {t.label} [{t.percent}%]
-                </option>
-              ))}
-            </select>
-            <p>- ₹ {calculations.tds.toFixed(2)}</p>
-          </div>
-
-          <div>
-            <label>TCS %</label>
-            <input
-              type="number"
-              value={invoice.tcsPercent}
-              onChange={(e) =>
-                setInvoice({
-                  ...invoice,
-                  tcsPercent: e.target.value,
-                })
-              }
-              className="w-full p-2 mt-1 border rounded"
-            />
-            <p>+ ₹ {calculations.tcs.toFixed(2)}</p>
-          </div>
-
-          <hr />
-
-          <h2 className="text-2xl font-bold">
-            Total: ₹ {calculations.total.toFixed(2)}
-          </h2>
-
         </div>
+
+        {/* TDS SELECTION */}
+        <div className="w-64 mt-4">
+          <label className="text-sm font-medium">Select TDS</label>
+          <select
+            className="w-full p-2 mt-1 border rounded"
+            onChange={(e) => {
+              const selected = TDS_OPTIONS[e.target.value];
+              setInvoice({
+                ...invoice,
+                tdsType: selected?.label || "",
+                tdsPercent: selected?.percent || 0,
+              });
+            }}
+          >
+            <option value="">None</option>
+            {TDS_OPTIONS.map((t, i) => (
+              <option key={i} value={i}>
+                {t.label} [{t.percent}%]
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          onClick={handleSubmit}
+          disabled={loading}
+          className="w-full py-3 mt-8 text-lg text-white bg-blue-600 rounded-xl"
+        >
+          {loading ? "Creating..." : "Save Invoice"}
+        </button>
       </div>
     </div>
   );
