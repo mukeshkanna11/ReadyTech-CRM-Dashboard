@@ -230,7 +230,6 @@ return (
 
         {/* CUSTOMER + BASIC INFO */}
         <div className="grid gap-6 mb-8 md:grid-cols-3">
-
           <div>
             <label className="text-sm font-semibold">Customer</label>
             <select
@@ -277,41 +276,8 @@ return (
           </div>
         </div>
 
-        {/* DATES */}
-        <div className="grid gap-6 mb-8 md:grid-cols-4">
-
-          <input type="date" value={invoice.purchaseDate}
-            onChange={(e) => setInvoice({ ...invoice, purchaseDate: e.target.value })}
-            className="p-3 border rounded-xl"
-          />
-
-          <input type="date" value={invoice.issueDate}
-            onChange={(e) => setInvoice({ ...invoice, issueDate: e.target.value })}
-            className="p-3 border rounded-xl"
-          />
-
-          <input type="date" value={invoice.dueDate}
-            onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })}
-            className="p-3 border rounded-xl"
-          />
-
-          <select
-            value={invoice.paymentMode}
-            onChange={(e) =>
-              setInvoice({ ...invoice, paymentMode: e.target.value })
-            }
-            className="p-3 border rounded-xl"
-          >
-            <option>UPI</option>
-            <option>Cash</option>
-            <option>Card</option>
-            <option>Bank Transfer</option>
-          </select>
-        </div>
-
         {/* ITEMS */}
         <div className="mb-8">
-
           <div className="flex justify-between mb-4">
             <h2 className="text-lg font-bold">Items</h2>
 
@@ -329,51 +295,75 @@ return (
                 <th>Description</th>
                 <th>Qty</th>
                 <th>Price</th>
+                <th>Tax %</th>
                 <th>Total</th>
               </tr>
             </thead>
 
             <tbody>
-              {invoice.items.map((item, i) => (
-                <tr key={i} className="border-t">
+              {invoice.items.map((item, i) => {
+                const qty = Number(item.quantity || 0);
+                const price = Number(item.unitPrice || 0);
+                const taxPercent = Number(item.taxPercent || 0);
 
-                  <td>
-                    <input
-                      value={item.description}
-                      onChange={(e) =>
-                        updateItem(i, "description", e.target.value)
-                      }
-                      className="w-full p-2"
-                    />
-                  </td>
+                const base = qty * price;
+                const tax = (base * taxPercent) / 100;
+                const total = base + tax;
 
-                  <td>
-                    <input
-                      type="number"
-                      value={item.quantity}
-                      onChange={(e) =>
-                        updateItem(i, "quantity", e.target.value)
-                      }
-                      className="w-20 p-2"
-                    />
-                  </td>
+                return (
+                  <tr key={i} className="border-t">
 
-                  <td>
-                    <input
-                      type="number"
-                      value={item.unitPrice}
-                      onChange={(e) =>
-                        updateItem(i, "unitPrice", e.target.value)
-                      }
-                      className="p-2 w-28"
-                    />
-                  </td>
+                    <td>
+                      <input
+                        value={item.description}
+                        onChange={(e) =>
+                          updateItem(i, "description", e.target.value)
+                        }
+                        className="w-full p-2"
+                      />
+                    </td>
 
-                  <td>
-                    ₹ {(item.quantity * item.unitPrice).toFixed(2)}
-                  </td>
-                </tr>
-              ))}
+                    <td>
+                      <input
+                        type="number"
+                        value={item.quantity}
+                        onChange={(e) =>
+                          updateItem(i, "quantity", e.target.value)
+                        }
+                        className="w-20 p-2"
+                      />
+                    </td>
+
+                    <td>
+                      <input
+                        type="number"
+                        value={item.unitPrice}
+                        onChange={(e) =>
+                          updateItem(i, "unitPrice", e.target.value)
+                        }
+                        className="p-2 w-28"
+                      />
+                    </td>
+
+                    {/* TAX INPUT */}
+                    <td>
+                      <input
+                        type="number"
+                        value={item.taxPercent}
+                        onChange={(e) =>
+                          updateItem(i, "taxPercent", e.target.value)
+                        }
+                        className="w-20 p-2"
+                      />
+                    </td>
+
+                    <td>
+                      ₹ {total.toFixed(2)}
+                    </td>
+
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -420,47 +410,63 @@ return (
               <option value="INTER">INTER (IGST)</option>
             </select>
           </div>
-
         </div>
 
-        {/* 💎 PREMIUM SUMMARY */}
+        {/* 💎 SUMMARY */}
         <div className="p-6 mb-8 border shadow-sm rounded-2xl bg-slate-50">
 
           <h2 className="mb-4 text-lg font-bold">Invoice Summary</h2>
 
-          <div className="space-y-2 text-sm">
+          {(() => {
+            let subtotal = 0;
+            let totalTax = 0;
 
-            <div className="flex justify-between">
-              <span>Subtotal</span>
-              <span>₹ {calculations.subtotal.toFixed(2)}</span>
-            </div>
+            invoice.items.forEach((item) => {
+              const qty = Number(item.quantity || 0);
+              const price = Number(item.unitPrice || 0);
+              const taxPercent = Number(item.taxPercent || 0);
 
-            <div className="flex justify-between">
-              <span>Discount</span>
-              <span>₹ {calculations.discountAmount.toFixed(2)}</span>
-            </div>
+              const base = qty * price;
+              const tax = (base * taxPercent) / 100;
 
-            <div className="flex justify-between">
-              <span>Taxable Amount</span>
-              <span>₹ {calculations.taxableAmount.toFixed(2)}</span>
-            </div>
+              subtotal += base;
+              totalTax += tax;
+            });
 
-            <div className="flex justify-between">
-              <span>CGST</span>
-              <span>₹ {(calculations.totalTax / 2).toFixed(2)}</span>
-            </div>
+            const discount =
+              invoice.discountType === "Percentage"
+                ? (subtotal * invoice.discountValue) / 100
+                : Number(invoice.discountValue || 0);
 
-            <div className="flex justify-between">
-              <span>SGST</span>
-              <span>₹ {(calculations.totalTax / 2).toFixed(2)}</span>
-            </div>
+            const taxable = subtotal - discount;
+            const grandTotal = taxable + totalTax;
 
-            <div className="flex justify-between pt-3 text-lg font-bold border-t">
-              <span>Grand Total</span>
-              <span>₹ {calculations.grandTotal.toFixed(2)}</span>
-            </div>
+            return (
+              <div className="space-y-2 text-sm">
 
-          </div>
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+                  <span>₹ {subtotal.toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>Discount</span>
+                  <span>₹ {discount.toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>Total Tax</span>
+                  <span>₹ {totalTax.toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between pt-3 text-lg font-bold border-t">
+                  <span>Grand Total</span>
+                  <span>₹ {grandTotal.toFixed(2)}</span>
+                </div>
+
+              </div>
+            );
+          })()}
         </div>
 
         {/* NOTES */}
@@ -476,10 +482,9 @@ return (
         {/* SAVE */}
         <button
           onClick={handleSubmit}
-          disabled={loading}
           className="w-full py-4 mt-6 text-white bg-indigo-600 rounded-2xl hover:bg-indigo-700"
         >
-          {loading ? "Creating..." : "Create Invoice"}
+          Create Invoice
         </button>
 
       </div>
