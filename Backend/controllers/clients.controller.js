@@ -4,16 +4,69 @@ import { logAction } from "../utils/auditLogger.js"; // Optional: if you want au
 // Create new client
 export const createClient = async (req, res) => {
   try {
-    const { name, email, phone } = req.body;
-    const client = await Client.create({ name, email, phone });
+    const {
+      companyName,
+      contactPerson,
+      email,
+      phone,
+      website,
+      gstNumber,
+      panNumber,
+      billingAddress,
+      shippingAddress,
+      clientType,
+      status,
+      currentPlan,
+      subscriptionStatus,
+      subscriptionStartDate,
+      subscriptionEndDate,
+      notes,
+    } = req.body;
 
-    // Log the action
-    if (req.user) await logAction(req.user._id, "CREATE_CLIENT", { clientId: client._id, name });
+    const client = await Client.create({
+      companyName,
+      contactPerson,
+      email,
+      phone,
+      website,
+      gstNumber,
+      panNumber,
+      billingAddress,
+      shippingAddress,
+      clientType,
+      status,
+      currentPlan,
+      subscriptionStatus,
+      subscriptionStartDate,
+      subscriptionEndDate,
+      notes,
+    });
 
-    res.status(201).json(client);
+    if (req.user) {
+      await logAction(
+        req.user._id,
+        "CREATE_CLIENT",
+        {
+          clientId: client._id,
+          companyName,
+        }
+      );
+    }
+
+    res.status(201).json({
+      success: true,
+      data: client,
+    });
   } catch (err) {
-    console.error("Create Client Error:", err.message);
-    res.status(500).json({ message: err.message });
+    console.error(
+      "Create Client Error:",
+      err.message
+    );
+
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
 

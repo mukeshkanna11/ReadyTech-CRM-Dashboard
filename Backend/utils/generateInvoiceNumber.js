@@ -1,12 +1,22 @@
 import Invoice from "../models/Invoice.js";
 
 const generateInvoiceNumber = async () => {
-  const lastInvoice = await Invoice.findOne().sort({ createdAt: -1 });
+  const year = new Date().getFullYear();
 
-  if (!lastInvoice) return "INV-1001";
+  const lastInvoice = await Invoice.findOne({
+    invoiceNumber: {
+      $regex: `INV-${year}`,
+    },
+  }).sort({ createdAt: -1 });
 
-  const lastNumber = parseInt(lastInvoice.invoiceNumber.split("-")[1]);
-  return `INV-${lastNumber + 1}`;
+  let sequence = 1;
+
+  if (lastInvoice) {
+    const parts = lastInvoice.invoiceNumber.split("-");
+    sequence = parseInt(parts[2]) + 1;
+  }
+
+  return `INV-${year}-${String(sequence).padStart(5, "0")}`;
 };
 
 export default generateInvoiceNumber;

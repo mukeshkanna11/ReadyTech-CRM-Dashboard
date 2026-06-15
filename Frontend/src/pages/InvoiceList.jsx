@@ -12,10 +12,7 @@ import API from "../services/api";
 import { toast } from "react-hot-toast";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import logoImg from "../assets/logo.png"; // your company logo
-import QRCode from "qrcode";
-
-
+import logoImg from "../assets/logo1.png";
 
 export default function InvoiceList() {
   const navigate = useNavigate();
@@ -24,9 +21,8 @@ export default function InvoiceList() {
 
   /* ================= SAFE ARRAY ================= */
   const safeArray = (res) => {
-    if (Array.isArray(res?.data?.data)) return res.data.data;
-    if (Array.isArray(res?.data)) return res.data;
-    return [];
+    const data = res?.data?.data ?? res?.data ?? [];
+    return Array.isArray(data) ? data : [];
   };
 
   /* ================= FETCH ================= */
@@ -50,6 +46,7 @@ export default function InvoiceList() {
   /* ================= DELETE ================= */
   const deleteInvoice = async (id) => {
     if (!window.confirm("Delete this invoice?")) return;
+
     try {
       await API.delete(`/invoices/${id}`);
       toast.success("Invoice deleted");
@@ -72,110 +69,125 @@ export default function InvoiceList() {
     }
   };
 
-  /* ================= AUTO STATUS CHECK ================= */
-  const getComputedStatus = (invoice) => {
-    if (invoice.status === "Paid") return "Paid";
-    if (
-      invoice.dueDate &&
-      new Date(invoice.dueDate) < new Date() &&
-      invoice.status !== "Paid"
-    ) {
+  /* ================= COMPUTE STATUS ================= */
+  const getComputedStatus = (invoice = {}) => {
+    const status = (invoice?.status || "").toLowerCase();
+
+    if (status === "paid") return "Paid";
+
+    const dueDate = invoice?.dueDate || invoice?.due_date;
+
+    if (dueDate && new Date(dueDate).getTime() < Date.now()) {
       return "Overdue";
     }
-    return invoice.status || "Pending";
+
+    return "Pending";
   };
 
-   /* ================= FORMAT CURRENCY ================= */
-const formatCurrency = (amount) => {
-  return Number(amount || 0).toFixed(2);
-};
+  /* ================= FORMAT CURRENCY ================= */
+  const formatCurrency = (amount) => {
+    const val = Number(amount);
+    return Number.isFinite(val) ? val.toFixed(2) : "0.00";
+  };
 
   /* ================= TOTAL CALCULATION ================= */
-  const calculateTotals = (invoice) => {
-    const items = Array.isArray(invoice.items) ? invoice.items : [];
+  const calculateTotals = (invoice = {}) => {
+    const items = Array.isArray(invoice?.items) ? invoice.items : [];
 
     let subtotal = 0;
     let totalTax = 0;
 
     items.forEach((item) => {
-      const qty = Number(item.quantity || 0);
-      const price = Number(item.unitPrice || item.rate || 0);
-      const taxPercent = Number(item.taxPercent || 0);
+      const qty = Number(item?.quantity || 0);
+      const price = Number(item?.unitPrice ?? item?.rate ?? 0);
+      const taxPercent = Number(item?.taxPercent || 0);
+
       const base = qty * price;
-      const tax = Math.round((base * taxPercent) / 100);
+      const tax = (base * taxPercent) / 100;
+
       subtotal += base;
       totalTax += tax;
     });
 
-    const discount = Math.round(Number(invoice.discountAmount || 0));
-    const tds = Math.round(Number(invoice.tdsAmount || 0));
-    const tcs = Math.round(Number(invoice.tcsAmount || 0));
+    const discount = Number(invoice?.discountAmount || 0);
+    const tds = Number(invoice?.tdsAmount || 0);
+    const tcs = Number(invoice?.tcsAmount || 0);
 
     const grandTotal = subtotal + totalTax - discount - tds + tcs;
-    const balance = invoice.status === "Paid" ? 0 : invoice.balance ?? grandTotal;
 
-    return { subtotal, totalTax, discount, tds, tcs, grandTotal, balance, computedStatus: getComputedStatus(invoice) };
+    const computedStatus = getComputedStatus(invoice);
+
+    const balance =
+      computedStatus === "Paid"
+        ? 0
+        : Number(invoice?.balance ?? grandTotal);
+
+    return {
+      subtotal,
+      totalTax,
+      discount,
+      tds,
+      tcs,
+      grandTotal,
+      balance,
+      computedStatus,
+    };
   };
 
- 
+  /* ================= NUMBER TO WORDS ================= */
+  const numberToWords = (num) => {
+    if (!num || num === 0) return "Zero Rupees Only";
 
-/* ================= NUMBER TO WORDS (INDIAN FORMAT) ================= */
-const numberToWords = (num) => {
-  if (!num || num === 0) return "Zero Rupees Only";
+    const ones = [
+      "", "One", "Two", "Three", "Four", "Five", "Six",
+      "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve",
+      "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+      "Seventeen", "Eighteen", "Nineteen",
+    ];
 
-  const ones = [
-    "", "One", "Two", "Three", "Four", "Five", "Six",
-    "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve",
-    "Thirteen", "Fourteen", "Fifteen", "Sixteen",
-    "Seventeen", "Eighteen", "Nineteen"
-  ];
+    const tens = [
+      "", "", "Twenty", "Thirty", "Forty",
+      "Fifty", "Sixty", "Seventy", "Eighty", "Ninety",
+    ];
 
-  const tens = [
-    "", "", "Twenty", "Thirty", "Forty",
-    "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"
-  ];
+    const convert = (n) => {
+      let str = "";
 
-  const convertBelowThousand = (n) => {
-    let str = "";
+      if (n >= 100) {
+        str += ones[Math.floor(n / 100)] + " Hundred ";
+        n %= 100;
+      }
 
-    if (n >= 100) {
-      str += ones[Math.floor(n / 100)] + " Hundred ";
-      n %= 100;
-    }
+      if (n >= 20) {
+        str += tens[Math.floor(n / 10)] + " ";
+        n %= 10;
+      }
 
-    if (n >= 20) {
-      str += tens[Math.floor(n / 10)] + " ";
-      n %= 10;
-    }
+      if (n > 0) str += ones[n] + " ";
 
-    if (n > 0) {
-      str += ones[n] + " ";
-    }
+      return str.trim();
+    };
 
-    return str.trim();
+    let result = "";
+    const crore = Math.floor(num / 10000000);
+    num %= 10000000;
+
+    const lakh = Math.floor(num / 100000);
+    num %= 100000;
+
+    const thousand = Math.floor(num / 1000);
+    num %= 1000;
+
+    if (crore) result += convert(crore) + " Crore ";
+    if (lakh) result += convert(lakh) + " Lakh ";
+    if (thousand) result += convert(thousand) + " Thousand ";
+    if (num) result += convert(num);
+
+    return result.trim() + " Rupees Only";
   };
 
-  let result = "";
-  const crore = Math.floor(num / 10000000);
-  num %= 10000000;
-
-  const lakh = Math.floor(num / 100000);
-  num %= 100000;
-
-  const thousand = Math.floor(num / 1000);
-  num %= 1000;
-
-  if (crore) result += convertBelowThousand(crore) + " Crore ";
-  if (lakh) result += convertBelowThousand(lakh) + " Lakh ";
-  if (thousand) result += convertBelowThousand(thousand) + " Thousand ";
-  if (num) result += convertBelowThousand(num);
-
-  return result.trim() + " Rupees Only";
-};
-
-
-/* ================= DOWNLOAD PDF ================= */
-const downloadPDF = async (invoice) => {
+  /* ================= DOWNLOAD PDF ================= */
+  const downloadPDF = async (invoice) => {
   try {
     const doc = new jsPDF("p", "mm", "a4");
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -184,218 +196,198 @@ const downloadPDF = async (invoice) => {
     const { subtotal, totalTax, discount, grandTotal, balance } =
       calculateTotals(invoice);
 
-    /* ================= LIGHT WATERMARK BACKGROUND ================= */
-    doc.setGState(new doc.GState({ opacity: 0.08 }));
+    /* ================= SOFT WATERMARK ================= */
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(100);
-    doc.setTextColor(balance <= 0 ? 0 : 255, balance <= 0 ? 150 : 0, 0);
+    doc.setFontSize(60);
+    doc.setTextColor(240, 240, 240); // VERY LIGHT GREY
 
     doc.text(
-      balance <= 0 ? "PAID" : "DUE",
+      balance <= 0 ? "PAID" : "INVOICE",
       pageWidth / 2,
       pageHeight / 2,
       { align: "center", angle: 45 }
     );
 
-    doc.setGState(new doc.GState({ opacity: 1 }));
+    doc.setTextColor(0, 0, 0);
 
     /* ================= HEADER ================= */
-    doc.setFillColor(15, 23, 42);
-    doc.rect(0, 0, pageWidth, 35, "F");
+    doc.setFillColor(248, 250, 252);
+    doc.rect(0, 0, pageWidth, 45, "F");
 
     if (logoImg) {
-      doc.addImage(logoImg, "PNG", 15, 8, 22, 20);
+      doc.addImage(logoImg, "PNG", 15, 10, 22, 22);
     }
 
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
-    doc.text("READY TECH SOLUTIONS", 45, 15);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("READY TECH SOLUTIONS", 45, 18);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text("GSTIN: 29IWQPS5331L1ZH", 45, 24);
+    doc.text("Coimbatore, Tamil Nadu", 45, 29);
+    doc.text("Email: info@readytechsolutions.in", 45, 34);
+
+    /* ================= INVOICE TITLE ================= */
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text("TAX INVOICE", pageWidth - 20, 18, { align: "right" });
+
+    /* ================= DATES BOX ================= */
+    const invoiceDate =
+      invoice?.invoiceDate ||
+      invoice?.date ||
+      invoice?.createdAt;
+
+    const dueDate = invoice?.dueDate;
+
+    const orderDate = invoice?.orderDate || invoiceDate;
 
     doc.setFontSize(9);
-    doc.text("GSTIN: 29IWQPS5331L1ZH", 45, 22);
-    doc.text("Coimbatore, Tamil Nadu", 45, 27);
-    doc.text("Email: info@readytechsolutions.in", 45, 31);
+    doc.setFont("helvetica", "normal");
 
-    doc.setTextColor(0, 0, 0);
-/* ================= INVOICE HEADER SECTION ================= */
+    doc.text(
+      `Invoice No: ${invoice?.invoiceNumber || "-"}`,
+      pageWidth - 20,
+      28,
+      { align: "right" }
+    );
 
-doc.setFont("helvetica", "bold");
-doc.setFontSize(20);
-doc.text("TAX INVOICE", pageWidth - 20, 45, { align: "right" });
+    doc.text(
+      `Invoice Date: ${invoiceDate ? new Date(invoiceDate).toLocaleDateString("en-IN") : "-"}`,
+      pageWidth - 20,
+      33,
+      { align: "right" }
+    );
 
-doc.setFont("helvetica", "normal");
-doc.setFontSize(10);
+    doc.text(
+      `Order Date: ${orderDate ? new Date(orderDate).toLocaleDateString("en-IN") : "-"}`,
+      pageWidth - 20,
+      38,
+      { align: "right" }
+    );
 
-/* ---------- FETCH INVOICE DATE SAFELY ---------- */
-const rawInvoiceDate =
-  invoice?.invoiceDate ||
-  invoice?.date ||
-  invoice?.createdAt ||
-  invoice?.invoice_date ||
-  null;
+    doc.text(
+      `Due Date: ${dueDate ? new Date(dueDate).toLocaleDateString("en-IN") : "-"}`,
+      pageWidth - 20,
+      43,
+      { align: "right" }
+    );
 
-const invoiceDate = rawInvoiceDate
-  ? new Date(rawInvoiceDate).toLocaleDateString("en-IN")
-  : "-";
+    /* ================= BILL TO ================= */
+    doc.setDrawColor(220);
+    doc.roundedRect(15, 55, 90, 25, 3, 3);
 
-/* ---------- FETCH DUE DATE SAFELY ---------- */
-const rawDueDate =
-  invoice?.dueDate ||
-  invoice?.due_date ||
-  null;
+    doc.setFont("helvetica", "bold");
+    doc.text("BILL TO", 20, 63);
 
-const dueDate = rawDueDate
-  ? new Date(rawDueDate).toLocaleDateString("en-IN")
-  : "-";
+    doc.setFont("helvetica", "normal");
 
-/* ---------- RIGHT SIDE DETAILS ---------- */
-doc.text(`Invoice No : ${invoice?.invoiceNumber || invoice?.invoice_no || "-"}`, pageWidth - 20, 53, { align: "right" });
-doc.text(`Invoice Date : ${invoiceDate}`, pageWidth - 20, 59, { align: "right" });
-doc.text(`Due Date : ${dueDate}`, pageWidth - 20, 65, { align: "right" });
+    const customerName =
+      invoice?.customer?.companyName ||
+      invoice?.customer?.contactPerson ||
+      invoice?.customerName ||
+      "N/A";
 
-
-/* ================= BILL TO SECTION ================= */
-
-doc.setDrawColor(210);
-doc.roundedRect(15, 50, 90, 22, 3, 3);
-
-doc.setFont("helvetica", "bold");
-doc.setFontSize(12);
-doc.text("Bill To", 20, 58);
-
-doc.setFont("helvetica", "normal");
-doc.setFontSize(11);
-
-/* ---------- FETCH CUSTOMER NAME SAFELY ---------- */
-const customerName =
-  invoice?.customerName ||
-  invoice?.clientName ||
-  invoice?.name ||
-  invoice?.customer?.name ||
-  invoice?.client?.name ||
-  invoice?.customer?.fullName ||
-  "-";
-
-doc.text(customerName, 20, 66);
-
-
+    doc.text(customerName, 20, 70);
 
     /* ================= ITEMS TABLE ================= */
     autoTable(doc, {
-      startY: 80,
+      startY: 85,
       theme: "grid",
-      head: [["Description", "Qty", "Rate", "CGST", "SGST", "Total"]],
-      body: (invoice.items || []).map((item) => {
-        const qty = Number(item.quantity || 0);
-        const price = Number(item.unitPrice || 0);
-        const taxPercent = Number(item.taxPercent || 0);
-
-        const base = qty * price;
-        const cgst = (base * taxPercent) / 200;
-        const sgst = (base * taxPercent) / 200;
-        const total = base + cgst + sgst;
-
-        return [
-          item.description || "Item",
-          qty,
-          formatCurrency(price),
-          formatCurrency(cgst),
-          formatCurrency(sgst),
-          formatCurrency(total),
-        ];
-      }),
       styles: {
         fontSize: 9,
         cellPadding: 3,
-        halign: "left",
-      },
-      columnStyles: {
-        1: { halign: "center" },
-        2: { halign: "right" },
-        3: { halign: "right" },
-        4: { halign: "right" },
-        5: { halign: "right" },
       },
       headStyles: {
-        fillColor: [37, 99, 235],
-        halign: "center",
+        fillColor: [241, 245, 249],
+        textColor: 30,
         fontStyle: "bold",
       },
-      didDrawPage: () => {
-        doc.setFontSize(8);
-        doc.text(
-          "This is a computer generated invoice.",
-          pageWidth / 2,
-          pageHeight - 10,
-          { align: "center" }
-        );
-      },
+      head: [["Description", "Qty", "Rate", "CGST", "SGST", "Total"]],
+      body: (Array.isArray(invoice?.items) ? invoice.items : []).map(
+        (item) => {
+          const qty = Number(item?.quantity || 0);
+          const price = Number(item?.unitPrice || 0);
+          const taxPercent = Number(item?.taxPercent || 0);
+
+          const base = qty * price;
+          const tax = (base * taxPercent) / 100;
+
+          return [
+            item?.description || "Item",
+            qty,
+            formatCurrency(price),
+            formatCurrency(tax / 2),
+            formatCurrency(tax / 2),
+            formatCurrency(base + tax),
+          ];
+        }
+      ),
     });
 
-    let finalY = doc.lastAutoTable.finalY + 10;
+    let y = doc.lastAutoTable.finalY + 10;
 
-    if (finalY > pageHeight - 90) {
-      doc.addPage();
-      finalY = 20;
-    }
+    /* ================= TOTAL BOX (PREMIUM) ================= */
+    doc.setDrawColor(230);
+    doc.roundedRect(pageWidth - 85, y, 70, 45, 3, 3);
 
-    /* ================= TOTALS BOX ================= */
-    doc.setDrawColor(180);
-    doc.roundedRect(pageWidth - 85, finalY, 70, 42, 3, 3);
-
-    const labelX = pageWidth - 80;
-    const valueX = pageWidth - 20;
-
-    const drawRight = (label, value, y) => {
-      doc.text(label, labelX, y);
-      doc.text(value, valueX, y, { align: "right" });
-    };
-
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
 
-    drawRight("Subtotal:", formatCurrency(subtotal), finalY + 8);
-    drawRight("Tax:", formatCurrency(totalTax), finalY + 15);
-    drawRight("Discount:", formatCurrency(discount), finalY + 22);
+    doc.text("Subtotal:", pageWidth - 80, y + 8);
+    doc.text(formatCurrency(subtotal), pageWidth - 25, y + 8, {
+      align: "right",
+    });
+
+    doc.text("Tax:", pageWidth - 80, y + 15);
+    doc.text(formatCurrency(totalTax), pageWidth - 25, y + 15, {
+      align: "right",
+    });
+
+    doc.text("Discount:", pageWidth - 80, y + 22);
+    doc.text(formatCurrency(discount), pageWidth - 25, y + 22, {
+      align: "right",
+    });
 
     doc.setFont("helvetica", "bold");
-    drawRight("Grand Total:", formatCurrency(grandTotal), finalY + 30);
+    doc.text("Grand Total:", pageWidth - 80, y + 32);
+    doc.text(formatCurrency(grandTotal), pageWidth - 25, y + 32, {
+      align: "right",
+    });
 
-    doc.setTextColor(220, 38, 38);
-    drawRight("Balance Due:", formatCurrency(balance), finalY + 37);
-    doc.setTextColor(0, 0, 0);
     doc.setFont("helvetica", "normal");
+    doc.text("Balance:", pageWidth - 80, y + 40);
+    doc.text(formatCurrency(balance), pageWidth - 25, y + 40, {
+      align: "right",
+    });
 
     /* ================= AMOUNT IN WORDS ================= */
+    doc.setFontSize(10);
     doc.text(
       `Amount in Words: ${numberToWords(Math.round(grandTotal))}`,
       15,
-      finalY + 55
+      y + 55
     );
 
-    /* ================= BANK DETAILS ================= */
-    doc.setFont("helvetica", "bold");
-    doc.text("Bank Details:", 15, finalY + 70);
+    /* ================= FOOTER ================= */
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    doc.text(
+      "This is a computer generated invoice and does not require signature.",
+      pageWidth / 2,
+      pageHeight - 10,
+      { align: "center" }
+    );
 
-    doc.setFont("helvetica", "normal");
-    doc.text("Bank Name: HDFC Bank", 15, finalY + 77);
-    doc.text("A/C No: 123456789012", 15, finalY + 83);
-    doc.text("IFSC: HDFC0001234", 15, finalY + 89);
+    doc.save(`Invoice-${invoice?.invoiceNumber || "INV"}.pdf`);
 
-    /* ================= SIGNATURE ================= */
-    doc.setFont("helvetica", "bold");
-    doc.text("Authorized Signature", pageWidth - 60, pageHeight - 30);
-    doc.line(pageWidth - 70, pageHeight - 35, pageWidth - 20, pageHeight - 35);
-
-    doc.save(`Invoice-${invoice.invoiceNumber}.pdf`);
-    toast.success("Invoice Generated Successfully");
-
-  } catch (error) {
-    console.error(error);
+    toast.success("Invoice downloaded successfully");
+  } catch (err) {
+    console.error(err);
     toast.error("PDF generation failed");
   }
 };
-
-
 
   /* ================= STATUS STYLE ================= */
   const getStatusStyle = (status) => {
@@ -411,69 +403,181 @@ doc.text(customerName, 20, 66);
     }
   };
 
-  /* ================= UI ================= */
-  return (
-    <div className="min-h-screen p-10 bg-slate-100">
-      <div className="p-10 mx-auto bg-white shadow-xl max-w-7xl rounded-3xl">
-        <div className="flex items-center justify-between mb-10">
-          <h1 className="text-3xl font-bold">Invoice Management</h1>
+  
+ return (
+  <div className="min-h-screen p-6 bg-slate-50 md:p-10">
+    <div className="mx-auto max-w-7xl">
 
-          <button
-            onClick={() => navigate("/invoices/create")}
-            className="flex gap-2 px-6 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700"
-          >
-            <Plus size={18} /> Create Invoice
-          </button>
+      {/* ================= HEADER ================= */}
+      <div className="flex flex-col mb-8 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800">
+            Invoice Management
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Manage, track and download invoices
+          </p>
         </div>
 
+        <button
+          onClick={() => navigate("/invoices/create")}
+          className="flex items-center gap-2 px-5 py-3 mt-4 text-white transition bg-blue-600 shadow-sm md:mt-0 rounded-xl hover:bg-blue-700"
+        >
+          <Plus size={18} /> Create Invoice
+        </button>
+      </div>
+
+      {/* ================= CONTENT BOX ================= */}
+      <div className="overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-100">
+
+        {/* ================= LOADING ================= */}
         {loading ? (
-          <p>Loading...</p>
+          <div className="p-10 text-center text-slate-500">
+            Loading invoices...
+          </div>
         ) : invoices.length === 0 ? (
-          <p className="text-gray-500">No invoices found</p>
+          <div className="p-10 text-center text-slate-500">
+            No invoices found
+          </div>
         ) : (
-          <table className="w-full border rounded-lg">
-            <thead className="text-left text-gray-500 border-b">
-              <tr>
-                <th className="px-2 py-3">Invoice</th>
-                <th>Customer</th>
-                <th>Total</th>
-                <th>Balance</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
 
-            <tbody>
-              {invoices.map((invoice) => {
-                const { grandTotal, balance, computedStatus } = calculateTotals(invoice);
-                const customerName = invoice.customer?.name || invoice.customerName || "N/A";
+          <div className="overflow-x-auto">
 
-                return (
-                  <tr key={invoice._id} className="border-b hover:bg-gray-50">
-                    <td className="px-2 py-4 font-semibold">{invoice.invoiceNumber}</td>
-                    <td>{customerName}</td>
-                    <td>{formatCurrency(grandTotal)}</td>
-                    <td>{formatCurrency(balance)}</td>
-                    <td>
-                      <span className={`px-3 py-1 rounded-full text-xs ${getStatusStyle(computedStatus)}`}>
-                        {computedStatus}
-                      </span>
-                    </td>
+            {/* ================= TABLE ================= */}
+            <table className="w-full">
 
-                    <td className="flex gap-4 px-2 py-4">
-                      <Eye className="text-blue-600 cursor-pointer" onClick={() => navigate(`/invoices/${invoice._id}`)} />
-                      <FileDown className="text-green-600 cursor-pointer" onClick={() => downloadPDF(invoice)} />
-                      <CheckCircle className="text-green-600 cursor-pointer" onClick={() => updateStatus(invoice, "Paid")} />
-                      <AlertCircle className="text-red-600 cursor-pointer" onClick={() => updateStatus(invoice, "Overdue")} />
-                      <Trash2 className="text-red-600 cursor-pointer" onClick={() => deleteInvoice(invoice._id)} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+              {/* HEADER */}
+              <thead className="text-sm bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="px-6 py-4 font-medium text-left">Invoice</th>
+                  <th className="px-6 py-4 font-medium text-left">Customer</th>
+                  <th className="px-6 py-4 font-medium text-right">Total</th>
+                  <th className="px-6 py-4 font-medium text-right">Balance</th>
+                  <th className="px-6 py-4 font-medium text-center">Status</th>
+                  <th className="px-6 py-4 font-medium text-center">Actions</th>
+                </tr>
+              </thead>
+
+              {/* BODY */}
+              <tbody className="divide-y divide-slate-100">
+
+                {invoices.map((invoice) => {
+                  const {
+                    grandTotal,
+                    balance,
+                    computedStatus,
+                  } = calculateTotals(invoice);
+
+                  const customerName =
+                    invoice?.customer?.companyName ||
+                    invoice?.customer?.contactPerson ||
+                    invoice?.customerName ||
+                    "N/A";
+
+                  return (
+                    <tr
+                      key={invoice._id}
+                      className="transition hover:bg-slate-50"
+                    >
+
+                      {/* INVOICE NO */}
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-slate-800">
+                          {invoice?.invoiceNumber || "-"}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          ID: {invoice?._id?.slice(-6)}
+                        </div>
+                      </td>
+
+                      {/* CUSTOMER */}
+                      <td className="px-6 py-4 text-slate-600">
+                        {customerName}
+                      </td>
+
+                      {/* TOTAL */}
+                      <td className="px-6 py-4 font-medium text-right text-slate-700">
+                        ₹ {formatCurrency(grandTotal)}
+                      </td>
+
+                      {/* BALANCE */}
+                      <td className="px-6 py-4 text-right">
+                        <span
+                          className={`font-semibold ${
+                            balance === 0
+                              ? "text-green-600"
+                              : "text-red-500"
+                          }`}
+                        >
+                          ₹ {formatCurrency(balance)}
+                        </span>
+                      </td>
+
+                      {/* STATUS */}
+                      <td className="px-6 py-4 text-center">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusStyle(
+                            computedStatus
+                          )}`}
+                        >
+                          {computedStatus}
+                        </span>
+                      </td>
+
+                      {/* ACTIONS */}
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-center gap-3">
+
+                          <Eye
+                            size={18}
+                            className="text-blue-500 cursor-pointer hover:text-blue-700"
+                            onClick={() =>
+                              navigate(`/invoices/${invoice._id}`)
+                            }
+                          />
+
+                          <FileDown
+                            size={18}
+                            className="cursor-pointer text-emerald-500 hover:text-emerald-700"
+                            onClick={() => downloadPDF(invoice)}
+                          />
+
+                          <CheckCircle
+                            size={18}
+                            className="text-green-500 cursor-pointer hover:text-green-700"
+                            onClick={() =>
+                              updateStatus(invoice, "Paid")
+                            }
+                          />
+
+                          <AlertCircle
+                            size={18}
+                            className="text-yellow-500 cursor-pointer hover:text-yellow-700"
+                            onClick={() =>
+                              updateStatus(invoice, "Overdue")
+                            }
+                          />
+
+                          <Trash2
+                            size={18}
+                            className="text-red-500 cursor-pointer hover:text-red-700"
+                            onClick={() =>
+                              deleteInvoice(invoice._id)
+                            }
+                          />
+                        </div>
+                      </td>
+
+                    </tr>
+                  );
+                })}
+
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
+  </div>
   );
-}
+};

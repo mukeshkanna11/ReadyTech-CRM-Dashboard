@@ -123,7 +123,7 @@ Invoice History
 
 ⚙️ Installation Guide
 1️⃣ Clone the Repository
-git clone https://github.com/your-username/crm-project.git
+git clone https://github.com/mukeshkanna11/ReadyTech-CRM-Dashboard
 cd crm-project
 
 2️⃣ Backend Setup
@@ -148,7 +148,7 @@ npm install
 npm run dev
 
 🔑 Admin Credentials (Demo)
-Email: siva@readytechsolution.in
+Email: siva@readytechsolutions.in
 Password: siva@123
 
 🧾 Invoice PDF Generation
@@ -209,7 +209,7 @@ We provide software development, web applications, and business automation solut
 
 For any issues or feature requests:
 
-📧 Email: siva@readytechsolution.in
+📧 Email: info@readytechsolutions.in
 
 📜 License
 

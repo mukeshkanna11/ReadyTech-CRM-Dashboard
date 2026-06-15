@@ -118,53 +118,86 @@ export default function Clients() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [activeClient, setActiveClient] = useState(null);
 
+
   const emptyForm = {
-    name: "",
-    company: "",
-    email: "",
-    phone: "",
-    status: "Active",
-    source: "Website",
-    address: "",
-    notes: "",
-  };
-  const [form, setForm] = useState(emptyForm);
+  companyName: "",
+  contactPerson: "",
+  email: "",
+  phone: "",
+  website: "",
+  gstNumber: "",
+  panNumber: "",
 
-  /* ================= Fetch Clients ================= */
-  const fetchClients = async () => {
-    try {
-      setLoading(true);
-      const { data } = await API.get("/clients");
-      setClients(data);
-    } catch {
-      toast.error("Failed to load clients");
-    } finally {
-      setLoading(false);
-    }
-  };
+  clientType: "Customer",
+  status: "Active",
+  currentPlan: "",
+  subscriptionStatus: "Active",
 
-  useEffect(() => {
-    fetchClients();
-  }, []);
+  notes: "",
+
+  billingAddress: {
+    addressLine1: "",
+    addressLine2: "",
+    city: "",
+    state: "",
+    pincode: "",
+    country: "India",
+  },
+
+  shippingAddress: {
+    country: "India",
+  },
+};
+const [form, setForm] = useState(emptyForm);
+
+ const fetchClients = async () => {
+  try {
+    setLoading(true);
+
+    const { data } = await API.get("/clients");
+
+    const list = Array.isArray(data?.data)
+      ? data.data
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    setClients(list);
+  } catch (err) {
+    toast.error("Failed to load clients");
+    console.error("CLIENT FETCH ERROR:", err);
+  } finally {
+    setLoading(false);
+  }
+};
 
   /* ================= Create / Update Client ================= */
   const saveClient = async (e) => {
-    e.preventDefault();
-    try {
-      if (form._id) {
-        await API.put(`/clients/${form._id}`, form);
-        toast.success("Client updated");
-      } else {
-        await API.post("/clients", form);
-        toast.success("Client created");
-      }
-      setDrawerOpen(false);
-      setForm(emptyForm);
-      fetchClients();
-    } catch (err) {
-      toast.error(err.response?.data?.message || "Save failed");
+  e.preventDefault();
+
+  try {
+    const payload = { ...form };
+
+    // safety cleanup (important in real apps)
+    delete payload.__v;
+    delete payload.createdAt;
+    delete payload.updatedAt;
+
+    if (payload._id) {
+      await API.put(`/clients/${payload._id}`, payload);
+      toast.success("Client updated");
+    } else {
+      await API.post("/clients", payload);
+      toast.success("Client created");
     }
-  };
+
+    setDrawerOpen(false);
+    setForm(emptyForm);
+    fetchClients();
+  } catch (err) {
+    toast.error(err?.response?.data?.message || "Save failed");
+  }
+};
 
   /* ================= Delete Client ================= */
   const removeClient = async (id) => {
@@ -179,11 +212,13 @@ export default function Clients() {
   };
 
   /* ================= Filtered Clients ================= */
-  const filteredClients = useMemo(() => {
-    return clients.filter((c) =>
-      `${c.name} ${c.company} ${c.email}`.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [clients, search]);
+ const filteredClients = useMemo(() => {
+  return clients.filter((c) =>
+    `${c.companyName || ""} ${c.contactPerson || ""} ${c.email || ""}`
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  );
+}, [clients, search]);
 
   return (
     <div className="space-y-6">
