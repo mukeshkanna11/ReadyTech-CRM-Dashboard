@@ -100,45 +100,40 @@ export const createInvoice = async (req, res) => {
     let subtotal = 0;
 
     const processedItems = items.map((item) => {
-      const quantity = Number(item.quantity || 1);
-      const unitPrice = Number(item.unitPrice || 0);
-      const taxPercent = Number(item.taxPercent || 18);
+  const quantity = Number(item.quantity || 1);
+  const unitPrice = Number(item.unitPrice || 0);
+  const taxPercent = Number(item.taxPercent || 0);
 
-      if (quantity <= 0) {
-        throw new Error(
-          "Quantity must be greater than zero"
-        );
-      }
+  if (quantity <= 0) {
+    throw new Error("Quantity must be greater than zero");
+  }
 
-      if (unitPrice < 0) {
-        throw new Error(
-          "Unit price cannot be negative"
-        );
-      }
+  if (unitPrice < 0) {
+    throw new Error("Unit price cannot be negative");
+  }
 
-      const taxableAmount =
-        quantity * unitPrice;
+  const taxableAmount = quantity * unitPrice;
 
-      subtotal += taxableAmount;
+  const taxAmount = (taxableAmount * taxPercent) / 100;
 
-      return {
-        product: item.product || null,
-        description:
-          item.description || "",
-        hsnCode:
-          item.hsnCode || "",
-        planType:
-          item.planType || "One-Time",
-        users:
-          Number(item.users || 1),
-        quantity,
-        unitPrice,
-        taxableAmount,
-        taxPercent,
-        taxAmount: 0,
-        total: taxableAmount,
-      };
-    });
+  const total = taxableAmount + taxAmount;
+
+  subtotal += taxableAmount;
+
+  return {
+    product: item.product || null,
+    description: item.description || "",
+    hsnCode: item.hsnCode || "",
+    planType: item.planType || "One-Time",
+    users: Number(item.users || 1),
+    quantity,
+    unitPrice,
+    taxableAmount,
+    taxPercent,
+    taxAmount,   // ✅ FIXED
+    total        // ✅ FIXED
+  };
+});
 
     /* =========================
        DISCOUNT
