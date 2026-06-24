@@ -57,17 +57,29 @@ export default function InvoiceList() {
     }
   };
 
-  /* ================= UPDATE STATUS ================= */
   const updateStatus = async (invoice, status) => {
-    try {
-      await API.put(`/invoices/${invoice._id}/status`, { status });
-      toast.success(`Marked as ${status}`);
-      fetchInvoices();
-    } catch (err) {
-      console.error(err);
-      toast.error("Status update failed");
-    }
-  };
+  try {
+    const res = await API.put(
+      `/api/invoices/${invoice._id}/status`,
+      {
+        paymentStatus: status, // ✔ MUST be paymentStatus
+      }
+    );
+
+    const updated = res.data.data;
+
+    setInvoices((prev) =>
+      prev.map((inv) =>
+        inv._id === invoice._id ? updated : inv
+      )
+    );
+
+    toast.success(`Marked as ${status}`);
+  } catch (err) {
+    console.error(err);
+    toast.error("Failed to update status");
+  }
+};
 
   /* ================= COMPUTE STATUS ================= */
   const getComputedStatus = (invoice = {}) => {

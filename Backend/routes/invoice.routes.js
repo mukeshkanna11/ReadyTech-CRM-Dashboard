@@ -1,35 +1,15 @@
 import express from "express";
 import mongoose from "mongoose";
-
 import {
   createInvoice,
   getInvoices,
   getSingleInvoice,
-  getInvoicesByCustomer,
   updateInvoiceStatus,
-  recordPayment,
   deleteInvoice,
+  recordPayment,
 } from "../controllers/invoice.controller.js";
 
 const router = express.Router();
-
-/* ==========================================
-   MONGODB ID VALIDATOR
-========================================== */
-const validateObjectId = (req, res, next) => {
-  const { id, customerId } = req.params;
-
-  const value = id || customerId;
-
-  if (!mongoose.Types.ObjectId.isValid(value)) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid ID",
-    });
-  }
-
-  next();
-};
 
 /* ==========================================
    CREATE INVOICE
@@ -42,48 +22,60 @@ router.post("/", createInvoice);
 router.get("/", getInvoices);
 
 /* ==========================================
-   GET INVOICES BY CUSTOMER
+   GET SINGLE INVOICE (SAFE VERSION)
 ========================================== */
-router.get(
-  "/customer/:customerId",
-  validateObjectId,
-  getInvoicesByCustomer
-);
+router.get("/:id", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid Invoice ID" });
+    }
+
+    next();
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}, getSingleInvoice);
 
 /* ==========================================
-   GET SINGLE INVOICE
+   RECORD PAYMENT (NEW - IMPORTANT)
 ========================================== */
-router.get(
-  "/:id",
-  validateObjectId,
-  getSingleInvoice
-);
+router.put("/:id/payment", async (req, res, next) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid Invoice ID" });
+  }
+
+  next();
+}, recordPayment);
 
 /* ==========================================
-   RECORD PAYMENT
+   UPDATE STATUS
 ========================================== */
-router.put(
-  "/:id/payment",
-  validateObjectId,
-  recordPayment
-);
+router.put("/:id/status", async (req, res, next) => {
+  const { id } = req.params;
 
-/* ==========================================
-   UPDATE PAYMENT STATUS
-========================================== */
-router.put(
-  "/:id/status",
-  validateObjectId,
-  updateInvoiceStatus
-);
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid Invoice ID" });
+  }
+
+  next();
+}, updateInvoiceStatus);
 
 /* ==========================================
    DELETE INVOICE
 ========================================== */
-router.delete(
-  "/:id",
-  validateObjectId,
-  deleteInvoice
-);
+router.delete("/:id", async (req, res, next) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid Invoice ID" });
+  }
+
+  next();
+}, deleteInvoice);
 
 export default router;
