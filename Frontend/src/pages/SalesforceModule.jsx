@@ -47,52 +47,133 @@ export default function SalesforceModule() {
   const [activeTab, setActiveTab] = useState("leads");
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+const [openLeadForm, setOpenLeadForm] = useState(false);
+
+
 
   const [stats, setStats] = useState({
-    totalLeads: 0,
-    totalOpportunities: 0,
-    totalActivities: 0,
-    closedDeals: 0,
-    pendingActivities: 0,
-    revenue: 0,
-  });
+  totalLeads: 0,
+  totalOpportunities: 0,
+  totalActivities: 0,
+  closedDeals: 0,
+  pendingActivities: 0,
+  revenue: 0,
+
+  newLeads: 0,
+  contacted: 0,
+  qualified: 0,
+  converted: 0,
+  lost: 0,
+
+  activeLeads: 0,
+  winRate: 0,
+});
 
   const token = localStorage.getItem("token");
 
   const fetchDashboardStats = async () => {
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      const { data } = await axios.get(
-        `${API_URL}/activities/dashboard/stats/summary`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+    const { data } = await axios.get(
+  `${API_URL}/activities/dashboard/stats/summary`,
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+);
 
-      if (data?.success) {
-        setStats(data.stats);
-      }
-    } catch (error) {
-      console.error(error);
-      toast.error("Failed to load dashboard");
-    } finally {
-      setLoading(false);
-    }
-  };
+console.log("Dashboard Response:", data);
 
-  useEffect(() => {
-    fetchDashboardStats();
-  }, []);
+    const dashboardData =
+      data?.stats ||
+      data?.data ||
+      data ||
+      {};
+
+    const totalLeads = Number(
+      dashboardData.totalLeads || 0
+    );
+
+    const closedDeals = Number(
+      dashboardData.closedDeals || 0
+    );
+
+    const activeLeads =
+      totalLeads - closedDeals;
+
+    const winRate =
+      totalLeads > 0
+        ? (
+            (closedDeals / totalLeads) *
+            100
+          ).toFixed(1)
+        : 0;
+
+    setStats({
+  totalLeads: dashboardData.total || 0,
+
+  totalOpportunities: 0,
+
+  totalActivities: dashboardData.total || 0,
+
+  closedDeals: dashboardData.completed || 0,
+
+  pendingActivities: dashboardData.pending || 0,
+
+  revenue: 0,
+
+  newLeads: dashboardData.total || 0,
+
+  contacted: dashboardData.calls || 0,
+
+  qualified: dashboardData.emails || 0,
+
+  converted: dashboardData.completed || 0,
+
+  lost: 0,
+
+  activeLeads:
+    (dashboardData.total || 0) -
+    (dashboardData.completed || 0),
+
+  winRate:
+    dashboardData.total > 0
+      ? (
+          (dashboardData.completed /
+            dashboardData.total) *
+          100
+        ).toFixed(1)
+      : 0,
+});
+  } catch (error) {
+    console.error(
+      "Dashboard Error:",
+      error
+    );
+
+    toast.error(
+      error?.response?.data?.message ||
+        "Failed to load dashboard"
+    );
+  } finally {
+    setLoading(false);
+  }
+};
   
+useEffect(() => {
+  fetchDashboardStats();
+}, []);
 
   const handleRefresh = async () => {
-    await fetchDashboardStats();
-    setRefreshKey((prev) => prev + 1);
-    toast.success("Dashboard refreshed");
-  };
+  await fetchDashboardStats();
+  setRefreshKey((prev) => prev + 1);
+
+  toast.success(
+    "Dashboard refreshed successfully"
+  );
+};
 
   const conversionRate = useMemo(() => {
     if (!stats.totalLeads) return 0;
@@ -103,234 +184,170 @@ export default function SalesforceModule() {
     ).toFixed(1);
   }, [stats]);
 
+  const kpis = useMemo(
+  () => ({
+    total: stats.totalLeads,
+    newLeads: stats.newLeads,
+    contacted: stats.contacted,
+    qualified: stats.qualified,
+    converted: stats.converted,
+    lost: stats.lost,
+    activeLeads: stats.activeLeads,
+    conversionRate: stats.winRate,
+  }),
+  [stats]
+);
+
   return (
-    <div className="min-h-screen p-6 bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 lg:p-8">
+  <div className="min-h-screen p-6 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 lg:p-8">
 
-      {/* HERO HEADER */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-[32px] bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-700 p-8 text-white shadow-2xl"
-      >
-        <div className="absolute inset-0 bg-black/10" />
+    {/* HERO */}
+    <motion.div
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="relative overflow-hidden rounded-[36px] bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-700 p-8 lg:p-10 shadow-2xl"
+    >
+      <div className="absolute inset-0 bg-black/10" />
 
-        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+      <div className="relative z-10 flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
 
-          <div>
-            <h1 className="text-4xl font-extrabold">
-              Salesforce CRM Dashboard
-            </h1>
+        <div>
+          <h1 className="text-3xl font-bold text-white lg:text-3xl">
+            Salesforce CRM Dashboard
+          </h1>
 
-            <p className="max-w-2xl mt-3 text-blue-100">
-              Manage leads, opportunities, revenue,
-              customer activities and business growth
-              from one centralized platform.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className="flex items-center gap-2 px-5 py-3 font-semibold text-blue-700 transition bg-white shadow-lg rounded-xl hover:scale-105"
-            >
-              <RefreshCw
-                size={18}
-                className={loading ? "animate-spin" : ""}
-              />
-              Refresh
-            </button>
-
-            <button
-              onClick={() => setActiveTab("leads")}
-              className="flex items-center gap-2 px-5 py-3 font-semibold text-white transition shadow-lg rounded-xl bg-emerald-500 hover:bg-emerald-600"
-            >
-              <Plus size={18} />
-              Add Lead
-            </button>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* KPI CARDS */}
-      <div className="grid gap-5 mt-8 sm:grid-cols-2 xl:grid-cols-5">
-
-        <Kpi
-          title="Total Leads"
-          value={stats.totalLeads}
-          icon={Users}
-          gradient="from-blue-500 to-indigo-600"
-        />
-
-        <Kpi
-          title="Opportunities"
-          value={stats.totalOpportunities}
-          icon={Briefcase}
-          gradient="from-emerald-500 to-teal-600"
-        />
-
-        <Kpi
-          title="Closed Deals"
-          value={stats.closedDeals}
-          icon={CheckCircle2}
-          gradient="from-purple-500 to-pink-600"
-        />
-
-        <Kpi
-          title="Pending Activities"
-          value={stats.pendingActivities}
-          icon={Activity}
-          gradient="from-orange-500 to-amber-500"
-        />
-
-        <Kpi
-          title="Revenue"
-          value={`₹${Number(
-            stats.revenue || 0
-          ).toLocaleString()}`}
-          icon={DollarSign}
-          gradient="from-green-500 to-emerald-600"
-        />
-      </div>
-
-      {/* INSIGHTS */}
-      <div className="grid gap-6 mt-8 lg:grid-cols-3">
-
-        <InsightCard
-          title="Lead Conversion"
-          value={`${conversionRate}%`}
-          icon={Target}
-          color="text-indigo-600"
-        />
-
-        <InsightCard
-          title="Revenue Growth"
-          value={`₹${Number(
-            stats.revenue || 0
-          ).toLocaleString()}`}
-          icon={TrendingUp}
-          color="text-green-600"
-        />
-
-        <InsightCard
-          title="Sales Performance"
-          value={stats.closedDeals}
-          icon={BarChart3}
-          color="text-purple-600"
-        />
-      </div>
-
-      {/* TAB NAVIGATION */}
-      <div className="p-3 mt-8 bg-white shadow-xl rounded-3xl">
-
-        <div className="flex flex-wrap gap-3">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 rounded-xl px-6 py-3 font-medium transition-all duration-300 ${
-                  active
-                    ? "bg-blue-600 text-white shadow-lg"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <Icon size={18} />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* CONTENT */}
-      <motion.div
-        key={activeTab}
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mt-6 rounded-[32px] bg-white p-6 shadow-2xl"
-      >
-        {activeTab === "leads" && (
-          <LeadsTab key={`leads-${refreshKey}`} />
-        )}
-
-        {activeTab === "opportunities" && (
-          <OpportunitiesTab
-            key={`opportunities-${refreshKey}`}
-          />
-        )}
-
-        {activeTab === "activities" && (
-          <ActivitiesTab
-            key={`activities-${refreshKey}`}
-          />
-        )}
-      </motion.div>
-
-      {/* FOOTER ANALYTICS */}
-      <div className="grid gap-6 mt-8 lg:grid-cols-2">
-
-        <div className="p-6 bg-white shadow-xl rounded-3xl">
-          <h3 className="mb-5 text-lg font-bold">
-            CRM Summary
-          </h3>
-
-          <div className="space-y-4">
-
-            <SummaryRow
-              label="Total Leads"
-              value={stats.totalLeads}
-            />
-
-            <SummaryRow
-              label="Opportunities"
-              value={stats.totalOpportunities}
-            />
-
-            <SummaryRow
-              label="Closed Deals"
-              value={stats.closedDeals}
-            />
-
-            <SummaryRow
-              label="Pending Activities"
-              value={stats.pendingActivities}
-            />
-          </div>
-        </div>
-
-        <div className="p-6 text-white shadow-xl rounded-3xl bg-gradient-to-r from-green-500 to-emerald-600">
-
-          <div className="flex items-center justify-between">
-
-            <div>
-              <p className="opacity-90">
-                Total Revenue
-              </p>
-
-              <h2 className="mt-2 text-5xl font-extrabold">
-                ₹
-                {Number(
-                  stats.revenue || 0
-                ).toLocaleString()}
-              </h2>
-            </div>
-
-            <ArrowUpRight size={50} />
-          </div>
-
-          <p className="mt-6 text-green-100">
-            Revenue generated from successful
-            opportunities and closed deals.
+          <p className="max-w-3xl mt-4 text-lg text-blue-100">
+            Manage leads, opportunities, customer engagement,
+            sales activities and revenue performance from one
+            enterprise-grade platform.
           </p>
         </div>
+
+        <div className="flex flex-wrap gap-3">
+
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="flex items-center gap-2 px-5 py-3 font-semibold text-blue-700 transition bg-white shadow-xl rounded-2xl hover:scale-105"
+          >
+            <RefreshCw
+              size={18}
+              className={loading ? "animate-spin" : ""}
+            />
+            Refresh
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab("leads");
+              setOpenLeadForm(true);
+            }}
+            className="flex items-center gap-2 px-5 py-3 font-semibold text-white transition shadow-xl rounded-2xl bg-emerald-500 hover:bg-emerald-600"
+          >
+            <Plus size={18} />
+            Add Lead
+          </button>
+
+        </div>
       </div>
+    </motion.div>
+
+    {/* KPI CARDS */}
+    <div className="grid gap-6 mt-8 md:grid-cols-2 xl:grid-cols-4">
+
+      <Kpi
+        title="Total Leads"
+        value={kpis.total}
+        icon={Users}
+        gradient="from-blue-600 to-indigo-700"
+      />
+
+      <Kpi
+        title="Active Leads"
+        value={kpis.activeLeads}
+        icon={TrendingUp}
+        gradient="from-cyan-500 to-sky-700"
+      />
+
+      <Kpi
+        title="Converted"
+        value={kpis.converted}
+        icon={CheckCircle2}
+        gradient="from-emerald-500 to-green-700"
+      />
+
+      <Kpi
+        title="Conversion Rate"
+        value={`${kpis.conversionRate}%`}
+        icon={Target}
+        gradient="from-pink-500 to-violet-700"
+      />
+
     </div>
-  );
-}
+
+
+    {/* NAVIGATION */}
+    <div className="p-4 mt-10 bg-white border shadow-xl rounded-3xl border-slate-100">
+
+      <div className="flex flex-wrap gap-4">
+
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.id;
+
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-3 rounded-2xl px-7 py-4 font-semibold transition-all duration-300 ${
+                active
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg"
+                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              <Icon size={18} />
+              {tab.label}
+            </button>
+          );
+        })}
+
+      </div>
+
+    </div>
+
+    {/* CONTENT */}
+    <motion.div
+      key={activeTab}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mt-8 rounded-[32px] border border-slate-100 bg-white p-8 shadow-2xl"
+    >
+
+      {activeTab === "leads" && (
+        <LeadsTab
+          key={`leads-${refreshKey}`}
+          openLeadForm={openLeadForm}
+          setOpenLeadForm={setOpenLeadForm}
+          onLeadCreated={fetchDashboardStats}
+        />
+      )}
+
+      {activeTab === "opportunities" && (
+        <OpportunitiesTab
+          key={`opportunities-${refreshKey}`}
+        />
+      )}
+
+      {activeTab === "activities" && (
+        <ActivitiesTab
+          key={`activities-${refreshKey}`}
+        />
+      )}
+
+    </motion.div>
+
+  </div>
+);
 
 function Kpi({
   title,
@@ -341,21 +358,22 @@ function Kpi({
   return (
     <motion.div
       whileHover={{
-        y: -6,
-        scale: 1.02,
+        y: -8,
       }}
-      className={`relative overflow-hidden rounded-3xl bg-gradient-to-br ${gradient} p-6 text-white shadow-2xl`}
+      className={`relative overflow-hidden rounded-3xl bg-gradient-to-br ${gradient} p-7 text-white shadow-2xl`}
     >
+      <div className="absolute w-24 h-24 rounded-full -right-4 -top-4 bg-white/10" />
+
       <Icon
-        className="absolute right-5 top-5 opacity-20"
-        size={36}
+        size={34}
+        className="absolute right-6 top-6 opacity-20"
       />
 
-      <p className="text-sm opacity-90">
+      <p className="text-sm font-medium opacity-90">
         {title}
       </p>
 
-      <h2 className="mt-3 text-4xl font-bold">
+      <h2 className="mt-4 text-4xl font-bold">
         {value}
       </h2>
     </motion.div>
@@ -369,13 +387,21 @@ function InsightCard({
   color,
 }) {
   return (
-    <div className="p-6 bg-white shadow-xl rounded-3xl">
+    <motion.div
+      whileHover={{
+        y: -4,
+      }}
+      className="p-6 bg-white border shadow-xl rounded-3xl border-slate-100"
+    >
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">
+        <h3 className="text-sm font-medium text-slate-500">
           {title}
         </h3>
 
-        <Icon className={color} size={22} />
+        <Icon
+          size={22}
+          className={color}
+        />
       </div>
 
       <div
@@ -383,7 +409,7 @@ function InsightCard({
       >
         {value}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -392,12 +418,16 @@ function SummaryRow({
   value,
 }) {
   return (
-    <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50">
-      <span>{label}</span>
+    <div className="flex items-center justify-between p-4 transition border rounded-2xl border-slate-100 bg-slate-50 hover:bg-slate-100">
+      <span className="font-medium text-slate-600">
+        {label}
+      </span>
 
-      <span className="font-bold">
+      <span className="text-lg font-bold text-slate-800">
         {value}
       </span>
     </div>
   );
+}
+
 }

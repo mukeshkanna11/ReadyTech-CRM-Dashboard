@@ -16,7 +16,7 @@ const EMPTY_FORM = {
   name: "",
   email: "",
   phone: "",
-  status: "New",
+  status: "new",
   source: "Website",
   department: "Salesforce",
   notes: "",
@@ -30,7 +30,11 @@ const STATUS_COLORS = {
   lost: "bg-red-100 text-red-800",
 };
 
-export default function LeadsTab() {
+export default function LeadsTab({
+  openLeadForm,
+  setOpenLeadForm,
+  onLeadCreated,
+}) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -77,7 +81,15 @@ useEffect(() => {
   fetchLeads();
 }, []);
 
-  /* ================= SAVE ================= */
+useEffect(() => {
+  if (openLeadForm) {
+    setForm(EMPTY_FORM);
+    setDrawerOpen(true);
+  }
+}, [openLeadForm]);
+
+
+// ================= SAVE =================
   const saveLead = async (e) => {
   e.preventDefault();
 
@@ -94,30 +106,38 @@ useEffect(() => {
       notes: form.notes,
     };
 
+    let res;
+
     if (form._id) {
-      const res = await API.put(
+      res = await API.put(
         `/leads/${form._id}`,
         payload
       );
 
       console.log("UPDATE:", res.data);
-
       toast.success("Lead Updated");
     } else {
-      const res = await API.post(
+      res = await API.post(
         "/leads",
         payload
       );
 
       console.log("CREATE:", res.data);
-
       toast.success("Lead Created");
     }
 
     setDrawerOpen(false);
     setForm(EMPTY_FORM);
 
+    if (setOpenLeadForm) {
+      setOpenLeadForm(false);
+    }
+
     await fetchLeads();
+
+    if (onLeadCreated) {
+      onLeadCreated();
+    }
   } catch (error) {
     console.error("SAVE ERROR", error);
 
@@ -129,7 +149,6 @@ useEffect(() => {
     setLoading(false);
   }
 };
-
   /* ================= DELETE ================= */
   const deleteLead = async (id) => {
   const confirmDelete =
@@ -220,35 +239,53 @@ useEffect(() => {
   const totalPages = Math.ceil(filteredLeads.length / PAGE_SIZE);
   const paginatedLeads = filteredLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+ 
   /* ================= KPI SUMMARY ================= */
-  /* ================= KPI SUMMARY ================= */
+/* ================= KPI SUMMARY ================= */
 const kpis = useMemo(() => {
-  const total = leads.length;
+  const normalizedLeads = leads.map((lead) => ({
+    ...lead,
+    status: (lead.status || "").toLowerCase(),
+  }));
 
-  const newLeads = leads.filter(
+  const total = normalizedLeads.length;
+
+  const newLeads = normalizedLeads.filter(
     (l) => l.status === "new"
   ).length;
 
-  const contacted = leads.filter(
+  const contacted = normalizedLeads.filter(
     (l) => l.status === "contacted"
   ).length;
 
-  const qualified = leads.filter(
+  const qualified = normalizedLeads.filter(
     (l) => l.status === "qualified"
   ).length;
 
-  const converted = leads.filter(
+  const converted = normalizedLeads.filter(
     (l) => l.status === "converted"
   ).length;
 
-  const lost = leads.filter(
+  const lost = normalizedLeads.filter(
     (l) => l.status === "lost"
   ).length;
 
+  const activeLeads =
+    newLeads + contacted + qualified;
+
   const conversionRate =
     total > 0
-      ? ((converted / total) * 100).toFixed(1)
-      : 0;
+      ? Number(
+          (converted / total) * 100
+        ).toFixed(1)
+      : "0.0";
+
+  const lossRate =
+    total > 0
+      ? Number(
+          (lost / total) * 100
+        ).toFixed(1)
+      : "0.0";
 
   return {
     total,
@@ -257,10 +294,11 @@ const kpis = useMemo(() => {
     qualified,
     converted,
     lost,
+    activeLeads,
     conversionRate,
+    lossRate,
   };
 }, [leads]);
-
 
 
 
@@ -273,7 +311,7 @@ const kpis = useMemo(() => {
 
       <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-4xl font-bold">
+          <h1 className="text-3xl font-bold">
             Lead Management
           </h1>
 
@@ -300,47 +338,77 @@ const kpis = useMemo(() => {
     </div>
 
     {/* KPI SECTION */}
-    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-6">
+<div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
 
-  <div className="p-6 text-white shadow-xl rounded-3xl bg-gradient-to-br from-blue-500 to-indigo-600">
-    <p className="text-sm opacity-90">Total Leads</p>
+  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-700 hover:-translate-y-1 hover:shadow-2xl">
+    <p className="text-sm text-blue-100">
+      Total Leads
+    </p>
     <h2 className="mt-3 text-4xl font-bold">
       {kpis.total}
     </h2>
   </div>
 
-  <div className="p-6 text-white shadow-xl rounded-3xl bg-gradient-to-br from-emerald-500 to-green-600">
-    <p className="text-sm opacity-90">New Leads</p>
+  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-emerald-500 to-green-700 hover:-translate-y-1 hover:shadow-2xl">
+    <p className="text-sm text-green-100">
+      New Leads
+    </p>
     <h2 className="mt-3 text-4xl font-bold">
       {kpis.newLeads}
     </h2>
   </div>
 
-  <div className="p-6 text-white shadow-xl rounded-3xl bg-gradient-to-br from-amber-500 to-orange-600">
-    <p className="text-sm opacity-90">Contacted</p>
+  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-amber-500 to-orange-600 hover:-translate-y-1 hover:shadow-2xl">
+    <p className="text-sm text-orange-100">
+      Contacted
+    </p>
     <h2 className="mt-3 text-4xl font-bold">
       {kpis.contacted}
     </h2>
   </div>
 
-  <div className="p-6 text-white shadow-xl rounded-3xl bg-gradient-to-br from-purple-500 to-fuchsia-600">
-    <p className="text-sm opacity-90">Qualified</p>
+  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-purple-600 to-fuchsia-700 hover:-translate-y-1 hover:shadow-2xl">
+    <p className="text-sm text-purple-100">
+      Qualified
+    </p>
     <h2 className="mt-3 text-4xl font-bold">
       {kpis.qualified}
     </h2>
   </div>
 
-  <div className="p-6 text-white shadow-xl rounded-3xl bg-gradient-to-br from-green-600 to-emerald-700">
-    <p className="text-sm opacity-90">Converted</p>
+  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-green-600 to-emerald-700 hover:-translate-y-1 hover:shadow-2xl">
+    <p className="text-sm text-green-100">
+      Converted
+    </p>
     <h2 className="mt-3 text-4xl font-bold">
       {kpis.converted}
     </h2>
   </div>
 
-  <div className="p-6 text-white shadow-xl rounded-3xl bg-gradient-to-br from-red-500 to-rose-600">
-    <p className="text-sm opacity-90">Lost</p>
+  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-red-500 to-rose-700 hover:-translate-y-1 hover:shadow-2xl">
+    <p className="text-sm text-red-100">
+      Lost
+    </p>
     <h2 className="mt-3 text-4xl font-bold">
       {kpis.lost}
+    </h2>
+  </div>
+
+  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-cyan-500 to-sky-700 hover:-translate-y-1 hover:shadow-2xl">
+    <p className="text-sm text-cyan-100">
+      Active Leads
+    </p>
+    <h2 className="mt-3 text-4xl font-bold">
+      {kpis.activeLeads}
+    </h2>
+  </div>
+
+  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-pink-500 to-violet-700 hover:-translate-y-1 hover:shadow-2xl">
+    <p className="text-sm text-pink-100">
+      Conversion Rate
+    </p>
+    <h2 className="mt-3 text-4xl font-bold">
+      {kpis.conversionRate}%
     </h2>
   </div>
 
@@ -565,9 +633,13 @@ const kpis = useMemo(() => {
           <button
             type="button"
             onClick={() => {
-              setDrawerOpen(false);
-              setForm(EMPTY_FORM);
-            }}
+  setDrawerOpen(false);
+  setForm(EMPTY_FORM);
+
+  if (setOpenLeadForm) {
+    setOpenLeadForm(false);
+  }
+}}
           >
             <X size={22} />
           </button>
