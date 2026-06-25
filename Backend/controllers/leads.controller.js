@@ -56,3 +56,50 @@ export const deleteLead = async (req, res) => {
 
   res.json({ message: "Deleted" });
 };
+
+export const convertLead = async (req, res) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+
+    if (!lead) {
+      return res.status(404).json({
+        message: "Lead not found",
+      });
+    }
+
+    const opportunity = await Opportunity.create({
+      title: `${lead.name} Opportunity`,
+      value: req.body.value || 0,
+      lead: lead._id,
+      customerName: lead.name,
+      email: lead.email,
+      phone: lead.phone,
+      source: lead.source,
+      stage: "Prospecting",
+      owner: req.user._id,
+    });
+
+    lead.status = "Qualified";
+    await lead.save();
+
+    await AuditLog.create({
+      userId: req.user._id,
+      action: "convert_lead",
+      target: lead._id,
+      newValue: opportunity,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Lead converted successfully",
+      opportunity,
+    });
+  } catch (error) {
+    console.error("CONVERT ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

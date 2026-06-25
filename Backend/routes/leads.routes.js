@@ -188,40 +188,74 @@ router.post("/:id/convert", async (req, res) => {
     const { title, value } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid lead ID" });
+      return res.status(400).json({
+        message: "Invalid lead ID",
+      });
     }
 
     const lead = await Lead.findById(id);
+
     if (!lead) {
-      return res.status(404).json({ message: "Lead not found" });
+      return res.status(404).json({
+        message: "Lead not found",
+      });
     }
 
-    // Prevent double conversion
-    if (lead.status === "Converted") {
-      return res.status(400).json({ message: "Lead already converted" });
+    // already converted check
+    if (lead.status === "converted") {
+      return res.status(400).json({
+        message: "Lead already converted",
+      });
     }
 
-    // Create Opportunity
-    const opportunity = await Opportunity.create({
-      title: title || `${lead.name} Opportunity`,
-      lead: lead._id,
-      value: value || 0,
-      assignedTo: lead.owner,
-      department: lead.department || "Salesforce",
-    });
+    const opportunity =
+      await Opportunity.create({
+        title:
+          title ||
+          `${lead.name} Opportunity`,
 
-    // Update Lead
-    lead.status = "Converted";
+        lead: lead._id,
+
+        value:
+          Number(value) || 0,
+
+        assignedTo:
+          lead.owner || null,
+
+        department:
+          lead.department ||
+          "Salesforce",
+
+        createdBy:
+          lead.owner || null,
+
+        notes:
+          lead.notes || "",
+
+        stage: "Prospecting",
+      });
+
+    lead.status = "converted";
+
     await lead.save();
 
-    res.json({
-      message: "Lead converted successfully",
+    res.status(200).json({
+      success: true,
+      message:
+        "Lead converted successfully",
       lead,
       opportunity,
     });
   } catch (error) {
-    console.error("Lead convert error:", error);
-    res.status(500).json({ message: "Failed to convert lead" });
+    console.error(
+      "CONVERT ERROR:",
+      error
+    );
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 });
 
