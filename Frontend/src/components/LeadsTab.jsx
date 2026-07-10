@@ -7,6 +7,18 @@ import {
   RefreshCw,
   Pencil,
   Trash2,
+  Home,
+  ChevronRight,
+   Users,
+   Loader2,
+   Eye,
+   Phone,
+   Mail,
+   Download,
+   TrendingUp,
+   RotateCcw,
+   Filter,
+  
   X,
 } from "lucide-react";
 
@@ -14,14 +26,21 @@ const PAGE_SIZE = 8;
 
 const EMPTY_FORM = {
   name: "",
+  company: "",
   email: "",
   phone: "",
+  website: "",
   status: "new",
+  priority: "Medium",
   source: "Website",
-  department: "Salesforce",
+  department: "",
+  owner: "",
+  value: "",
+  expectedCloseDate: "",
+  leadScore: 50,
+  address: "",
   notes: "",
 };
-
 const STATUS_COLORS = {
   new: "bg-blue-100 text-blue-800",
   contacted: "bg-yellow-100 text-yellow-800",
@@ -305,153 +324,331 @@ const kpis = useMemo(() => {
   return (
   <div className="space-y-8">
 
-    {/* HERO SECTION */}
-    <div className="relative p-8 overflow-hidden text-white shadow-2xl rounded-3xl bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-700">
-      <div className="absolute inset-0 bg-black/10" />
+    {/* ===================== HERO SECTION ===================== */}
+<div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-900 to-blue-900 text-white shadow-[0_20px_60px_rgba(15,23,42,0.35)]">
 
-      <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">
+  {/* Background Effects */}
+  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_35%)]" />
+  <div className="absolute rounded-full -top-20 -right-20 h-72 w-72 bg-indigo-500/20 blur-3xl" />
+  <div className="absolute rounded-full -bottom-24 -left-20 h-72 w-72 bg-cyan-500/20 blur-3xl" />
+
+  <div className="relative p-8 lg:p-10">
+
+    {/* Top */}
+    <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+
+      {/* Left */}
+      <div>
+
+        <div className="flex items-center gap-2 mb-3 text-sm text-blue-200">
+          <Home size={15} />
+          Dashboard
+          <ChevronRight size={14} />
+          CRM
+          <ChevronRight size={14} />
+          <span className="font-medium text-white">
             Lead Management
-          </h1>
-
-          <p className="mt-2 text-blue-100">
-            Manage, track and convert leads into opportunities.
-          </p>
+          </span>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={fetchLeads}
-            disabled={loading}
-            className="flex items-center gap-2 px-5 py-3 font-medium text-blue-700 transition bg-white shadow-lg rounded-xl hover:scale-105"
-          >
-            <RefreshCw
-              size={18}
-              className={loading ? "animate-spin" : ""}
-            />
-            Refresh
-          </button>
+        <div className="flex items-center gap-3">
+
+          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/10 backdrop-blur">
+            <Users size={28} />
+          </div>
+
+          <div>
+            <h1 className="text-4xl font-bold tracking-tight">
+              Lead Management
+            </h1>
+
+            <p className="max-w-2xl mt-2 text-blue-100">
+              Centralize your sales pipeline, monitor lead performance,
+              assign ownership, and convert prospects into customers with
+              real-time analytics.
+            </p>
+          </div>
 
         </div>
+
+        {/* Status */}
+        <div className="flex flex-wrap items-center gap-5 mt-6 text-sm">
+
+          <div className="flex items-center gap-2 px-3 py-2 rounded-full bg-emerald-500/20 text-emerald-300">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+            CRM Online
+          </div>
+
+          <div className="text-blue-100">
+            Last Sync :
+            <span className="ml-2 font-semibold text-white">
+              2 mins ago
+            </span>
+          </div>
+
+          <div className="text-blue-100">
+            Updated Today :
+            <span className="ml-2 font-semibold text-white">
+              132 Leads
+            </span>
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* Right Buttons */}
+      <div className="flex flex-wrap gap-3">
+
+        <button
+          onClick={fetchLeads}
+          disabled={loading}
+          className="flex items-center gap-2 px-5 py-3 font-semibold text-indigo-700 transition-all bg-white shadow-lg rounded-xl hover:scale-105"
+        >
+          <RefreshCw
+            size={18}
+            className={loading ? "animate-spin" : ""}
+          />
+          Refresh
+        </button>
+
+        <button className="flex items-center gap-2 px-5 py-3 font-semibold transition border rounded-xl bg-white/10 border-white/20 hover:bg-white/20">
+          <Download size={18} />
+          Export
+        </button>
+
+        <button className="flex items-center gap-2 px-5 py-3 font-semibold transition rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 hover:scale-105">
+          <Plus size={18} />
+          New Lead
+        </button>
+
+      </div>
+
+    </div>
+
+    {/* KPI Cards */}
+    <div className="grid grid-cols-2 gap-5 mt-10 md:grid-cols-4">
+
+      <div className="p-5 border bg-white/10 backdrop-blur-xl rounded-2xl border-white/10">
+        <div className="text-sm text-blue-200">
+          Total Leads
+        </div>
+
+        <div className="mt-2 text-3xl font-bold">
+          1,248
+        </div>
+
+        <div className="mt-1 text-xs text-emerald-300">
+          ↑ 12% this month
+        </div>
+      </div>
+
+      <div className="p-5 border bg-white/10 backdrop-blur-xl rounded-2xl border-white/10">
+        <div className="text-sm text-blue-200">
+          Qualified
+        </div>
+
+        <div className="mt-2 text-3xl font-bold">
+          486
+        </div>
+
+        <div className="mt-1 text-xs text-green-300">
+          Conversion 38%
+        </div>
+      </div>
+
+      <div className="p-5 border bg-white/10 backdrop-blur-xl rounded-2xl border-white/10">
+        <div className="text-sm text-blue-200">
+          Follow Ups
+        </div>
+
+        <div className="mt-2 text-3xl font-bold">
+          93
+        </div>
+
+        <div className="mt-1 text-xs text-yellow-300">
+          Due Today
+        </div>
+      </div>
+
+      <div className="p-5 border bg-white/10 backdrop-blur-xl rounded-2xl border-white/10">
+        <div className="text-sm text-blue-200">
+          Revenue Potential
+        </div>
+
+        <div className="mt-2 text-3xl font-bold">
+          ₹18.5L
+        </div>
+
+        <div className="mt-1 text-xs text-cyan-300">
+          Forecast
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+    <div className="relative p-6 overflow-hidden text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-700 hover:-translate-y-2 hover:shadow-2xl">
+
+  {/* Background Glow */}
+  <div className="absolute w-32 h-32 rounded-full -top-8 -right-8 bg-white/10 blur-3xl" />
+
+  <div className="relative">
+
+    {/* Header */}
+    <div className="flex items-center justify-between">
+
+      <div>
+        <p className="text-sm text-blue-100">
+          Total Leads
+        </p>
+
+        <h2 className="mt-2 text-4xl font-bold">
+          {kpis.total}
+        </h2>
+      </div>
+
+      <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/20 backdrop-blur">
+        <Users size={28} />
+      </div>
+
+    </div>
+
+    {/* Trend */}
+    <div className="flex items-center justify-between mt-6">
+
+      <div className="flex items-center gap-2 text-sm font-medium text-emerald-200">
+        <TrendingUp size={16} />
+        +12.4%
+      </div>
+
+      <span className="text-xs text-blue-100">
+        vs last month
+      </span>
+
+    </div>
+
+    {/* Progress */}
+    <div className="mt-4">
+
+      <div className="flex justify-between mb-2 text-xs text-blue-100">
+        <span>Target</span>
+        <span>78%</span>
+      </div>
+
+      <div className="h-2 overflow-hidden rounded-full bg-white/20">
+        <div
+          className="h-full bg-white rounded-full"
+          style={{ width: "78%" }}
+        />
+      </div>
+
+    </div>
+
+    {/* Footer */}
+    <div className="pt-4 mt-5 border-t border-white/20">
+      <div className="flex items-center justify-between text-xs">
+
+        <span className="text-blue-100">
+          Updated 2 mins ago
+        </span>
+
+        <span className="font-semibold">
+          Live Data
+        </span>
+
       </div>
     </div>
 
-    {/* KPI SECTION */}
-<div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-
-  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-700 hover:-translate-y-1 hover:shadow-2xl">
-    <p className="text-sm text-blue-100">
-      Total Leads
-    </p>
-    <h2 className="mt-3 text-4xl font-bold">
-      {kpis.total}
-    </h2>
-  </div>
-
-  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-emerald-500 to-green-700 hover:-translate-y-1 hover:shadow-2xl">
-    <p className="text-sm text-green-100">
-      New Leads
-    </p>
-    <h2 className="mt-3 text-4xl font-bold">
-      {kpis.newLeads}
-    </h2>
-  </div>
-
-  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-amber-500 to-orange-600 hover:-translate-y-1 hover:shadow-2xl">
-    <p className="text-sm text-orange-100">
-      Contacted
-    </p>
-    <h2 className="mt-3 text-4xl font-bold">
-      {kpis.contacted}
-    </h2>
-  </div>
-
-  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-purple-600 to-fuchsia-700 hover:-translate-y-1 hover:shadow-2xl">
-    <p className="text-sm text-purple-100">
-      Qualified
-    </p>
-    <h2 className="mt-3 text-4xl font-bold">
-      {kpis.qualified}
-    </h2>
-  </div>
-
-  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-green-600 to-emerald-700 hover:-translate-y-1 hover:shadow-2xl">
-    <p className="text-sm text-green-100">
-      Converted
-    </p>
-    <h2 className="mt-3 text-4xl font-bold">
-      {kpis.converted}
-    </h2>
-  </div>
-
-  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-red-500 to-rose-700 hover:-translate-y-1 hover:shadow-2xl">
-    <p className="text-sm text-red-100">
-      Lost
-    </p>
-    <h2 className="mt-3 text-4xl font-bold">
-      {kpis.lost}
-    </h2>
-  </div>
-
-  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-cyan-500 to-sky-700 hover:-translate-y-1 hover:shadow-2xl">
-    <p className="text-sm text-cyan-100">
-      Active Leads
-    </p>
-    <h2 className="mt-3 text-4xl font-bold">
-      {kpis.activeLeads}
-    </h2>
-  </div>
-
-  <div className="p-6 text-white transition-all duration-300 shadow-xl rounded-3xl bg-gradient-to-br from-pink-500 to-violet-700 hover:-translate-y-1 hover:shadow-2xl">
-    <p className="text-sm text-pink-100">
-      Conversion Rate
-    </p>
-    <h2 className="mt-3 text-4xl font-bold">
-      {kpis.conversionRate}%
-    </h2>
   </div>
 
 </div>
 
-    {/* FILTER BAR */}
-    <div className="p-5 bg-white border shadow-xl rounded-3xl dark:bg-slate-800">
+   {/* ================= FILTER BAR ================= */}
 
-      <div className="flex flex-col gap-4 lg:flex-row">
+<div className="p-6 bg-white border shadow-lg border-slate-200 rounded-3xl">
 
-        <div className="relative flex-1">
-          <Search
-            size={18}
-            className="absolute left-4 top-3.5 text-gray-400"
-          />
+  <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
 
-          <input
-            value={search}
-            onChange={(e) =>
-              setSearch(e.target.value)
-            }
-            placeholder="Search leads..."
-            className="w-full py-3 pl-12 pr-4 border rounded-2xl focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:bg-slate-700 dark:text-white"
-          />
-        </div>
+    {/* Left */}
+    <div className="flex flex-wrap flex-1 gap-4">
 
-        <select
-          value={statusFilter}
-          onChange={(e) =>
-            setStatusFilter(e.target.value)
-          }
-          className="px-4 py-3 border rounded-2xl dark:bg-slate-700 dark:text-white"
-        >
-          <option value="All">All</option>
-<option value="new">New</option>
-<option value="contacted">Contacted</option>
-<option value="qualified">Qualified</option>
-<option value="converted">Converted</option>
-<option value="lost">Lost</option>
-        </select>
+      {/* Search */}
+      <div className="relative flex-1 min-w-[260px]">
+
+        <Search
+          size={18}
+          className="absolute -translate-y-1/2 left-4 top-1/2 text-slate-400"
+        />
+
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by Name, Email, Phone..."
+          className="w-full py-3 pl-12 pr-4 transition border outline-none rounded-2xl border-slate-200 bg-slate-50 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+        />
 
       </div>
+
+      {/* Status */}
+      <select
+        value={statusFilter}
+        onChange={(e) => setStatusFilter(e.target.value)}
+        className="px-4 py-3 bg-white border rounded-2xl border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+      >
+        <option>All Status</option>
+        <option>New</option>
+        <option>Contacted</option>
+        <option>Qualified</option>
+        <option>Converted</option>
+        <option>Lost</option>
+      </select>
+
+      {/* Source */}
+      <select className="px-4 py-3 bg-white border rounded-2xl border-slate-200">
+        <option>Lead Source</option>
+        <option>Website</option>
+        <option>Facebook</option>
+        <option>LinkedIn</option>
+        <option>Referral</option>
+      </select>
+
+      {/* Date */}
+      <input
+        type="date"
+        className="px-4 py-3 border rounded-2xl border-slate-200"
+      />
+
     </div>
+
+    {/* Right */}
+    <div className="flex flex-wrap items-center gap-3">
+
+      <span className="px-4 py-2 text-sm font-medium text-indigo-700 rounded-full bg-indigo-50">
+        {filteredLeads.length} Results
+      </span>
+
+      <button
+        className="flex items-center gap-2 px-4 py-3 border rounded-2xl border-slate-200 hover:bg-slate-50"
+      >
+        <RotateCcw size={17} />
+        Reset
+      </button>
+
+      <button
+        className="flex items-center gap-2 px-5 py-3 font-medium text-white bg-indigo-600 rounded-2xl hover:bg-indigo-700"
+      >
+        <Filter size={17} />
+        Apply Filters
+      </button>
+
+    </div>
+
+  </div>
+
+</div>
 
     {/* TABLE */}
     <div className="overflow-hidden bg-white border shadow-2xl rounded-3xl dark:bg-slate-800">
@@ -459,128 +656,185 @@ const kpis = useMemo(() => {
       <div className="overflow-x-auto">
         <table className="min-w-full">
 
-          <thead className="text-white bg-gradient-to-r from-blue-600 to-indigo-700">
-            <tr>
-              <th className="px-5 py-4 text-left">Name</th>
-              <th className="px-5 py-4 text-left">Email</th>
-              <th className="px-5 py-4 text-left">Phone</th>
-              <th className="px-5 py-4 text-left">Status</th>
-              <th className="px-5 py-4 text-left">Source</th>
-              <th className="px-5 py-4 text-left">Department</th>
-              <th className="px-5 py-4 text-left">Notes</th>
-              <th className="px-5 py-4 text-center">Actions</th>
-            </tr>
-          </thead>
+          <thead className="sticky top-0 z-10 text-white bg-gradient-to-r from-slate-900 via-indigo-900 to-blue-900">
+
+<tr>
+  <th className="px-5 py-4">
+    <input type="checkbox" />
+  </th>
+
+  <th className="px-5 py-4 text-left">Lead</th>
+
+  <th className="px-5 py-4 text-left">Company</th>
+
+  <th className="px-5 py-4 text-left">Contact</th>
+
+  <th className="px-5 py-4 text-left">Owner</th>
+
+  <th className="px-5 py-4 text-left">Priority</th>
+
+  <th className="px-5 py-4 text-left">Status</th>
+
+  <th className="px-5 py-4 text-left">Source</th>
+
+  <th className="px-5 py-4 text-left">Value</th>
+
+  <th className="px-5 py-4 text-left">Last Activity</th>
+
+  <th className="px-5 py-4 text-left">Created</th>
+
+  <th className="px-5 py-4 text-center">Actions</th>
+</tr>
+
+</thead>
 
           <tbody>
 
-            {loading && (
-              <tr>
-                <td
-                  colSpan={8}
-                  className="py-10 text-center"
-                >
-                  Loading Leads...
-                </td>
-              </tr>
-            )}
+          {loading && (
+  <tr>
+    <td colSpan={12} className="py-16 text-center">
+      <div className="flex flex-col items-center gap-3">
+        <Loader2
+          size={32}
+          className="text-indigo-600 animate-spin"
+        />
+        <span className="text-slate-500">
+          Loading Leads...
+        </span>
+      </div>
+    </td>
+  </tr>
+)}
 
-            {!loading &&
-              paginatedLeads.map((l) => (
-                <tr
-                  key={l._id}
-                  className="transition border-b hover:bg-slate-50 dark:hover:bg-slate-700"
-                >
-                  <td className="px-5 py-4 font-medium">
-                    {l.name}
-                  </td>
+           {!loading &&
+  paginatedLeads.map((l) => (
+    <tr
+      key={l._id}
+      className="transition-all duration-200 border-b border-slate-100 hover:bg-slate-50"
+    >
+      {/* Checkbox */}
+      <td className="px-5 py-4">
+        <input type="checkbox" />
+      </td>
 
-                  <td className="px-5 py-4">
-                    {l.email}
-                  </td>
+      {/* Lead */}
+      <td className="px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center font-bold text-white rounded-full h-11 w-11 bg-gradient-to-r from-blue-600 to-indigo-600">
+            {l.name?.charAt(0)?.toUpperCase()}
+          </div>
 
-                  <td className="px-5 py-4">
-                    {l.phone}
-                  </td>
+          <div>
+            <h4 className="font-semibold">{l.name}</h4>
+            <p className="text-xs text-slate-500">{l.email}</p>
+          </div>
+        </div>
+      </td>
 
-                  <td className="px-5 py-4">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        STATUS_COLORS[l.status]
-                      }`}
-                    >
-                      {l.status}
-                    </span>
-                  </td>
+      {/* Company */}
+      <td className="px-5 py-4">
+        {l.company || "-"}
+      </td>
 
-                  <td className="px-5 py-4">
-                    {l.source}
-                  </td>
+      {/* Contact */}
+      <td className="px-5 py-4">
+        <div className="space-y-1">
+          <div>{l.phone}</div>
+          <div className="text-xs text-slate-500">
+            {l.email}
+          </div>
+        </div>
+      </td>
 
-                  <td className="px-5 py-4">
-                    {l.department}
-                  </td>
+      {/* Owner */}
+      <td className="px-5 py-4">
+        {l.owner || "Admin"}
+      </td>
 
-                  <td className="max-w-[220px] truncate px-5 py-4 text-slate-500">
-                    {l.notes}
-                  </td>
+      {/* Priority */}
+      <td className="px-5 py-4">
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+            l.priority === "High"
+              ? "bg-red-100 text-red-700"
+              : l.priority === "Medium"
+              ? "bg-yellow-100 text-yellow-700"
+              : "bg-green-100 text-green-700"
+          }`}
+        >
+          {l.priority || "Low"}
+        </span>
+      </td>
 
-                  <td className="px-5 py-4">
-                    <div className="flex justify-center gap-2">
+      {/* Status */}
+      <td className="px-5 py-4">
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+            STATUS_COLORS[l.status]
+          }`}
+        >
+          {l.status}
+        </span>
+      </td>
 
-                      <button
-  type="button"
-  onClick={() => {
-    setForm({
-      _id: l._id,
-      name: l.name || "",
-      email: l.email || "",
-      phone: l.phone || "",
-      status: l.status || "new",
-      source: l.source || "Website",
-      department: l.department || "Salesforce",
-      notes: l.notes || "",
-    });
+      {/* Source */}
+      <td className="px-5 py-4">
+        {l.source}
+      </td>
 
-    setDrawerOpen(true);
-  }}
-  className="p-2 text-blue-600 bg-blue-100 rounded-xl hover:bg-blue-200"
->
-  <Pencil size={16} />
-</button>
+      {/* Value */}
+      <td className="px-5 py-4 font-semibold text-emerald-600">
+        ₹ {l.value?.toLocaleString() || "0"}
+      </td>
 
-                      <button
-                        onClick={() =>
-                          deleteLead(l._id)
-                        }
-                        className="p-2 text-red-600 bg-red-100 rounded-xl hover:bg-red-200"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+      {/* Last Activity */}
+      <td className="px-5 py-4 text-sm text-slate-500">
+        {l.lastActivity || "Today"}
+      </td>
 
-                      <button
-  disabled={l.status === "converted"}
-  onClick={() =>
-    setConvertModal({
-      open: true,
-      lead: l,
-    })
-  }
-  className={`px-3 py-2 text-xs font-medium text-white rounded-xl ${
-    l.status === "converted"
-      ? "bg-gray-400 cursor-not-allowed"
-      : "bg-green-600 hover:bg-green-700"
-  }`}
->
-  {l.status === "converted"
-    ? "Converted"
-    : "Convert"}
-</button>
+      {/* Created */}
+      <td className="px-5 py-4 text-sm text-slate-500">
+        {new Date(l.createdAt).toLocaleDateString()}
+      </td>
 
-                    </div>
-                  </td>
-                </tr>
-              ))}
+      {/* Actions */}
+      <td className="px-5 py-4">
+        <div className="flex justify-center gap-2">
+
+          <button
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200"
+          >
+            <Eye size={16} />
+          </button>
+
+          <button
+            className="p-2 text-blue-600 bg-blue-100 rounded-xl hover:bg-blue-200"
+          >
+            <Pencil size={16} />
+          </button>
+
+          <button
+            className="p-2 text-green-600 bg-green-100 rounded-xl hover:bg-green-200"
+          >
+            <Phone size={16} />
+          </button>
+
+          <button
+            className="p-2 text-purple-600 bg-purple-100 rounded-xl hover:bg-purple-200"
+          >
+            <Mail size={16} />
+          </button>
+
+          <button
+            className="p-2 text-red-600 bg-red-100 rounded-xl hover:bg-red-200"
+          >
+            <Trash2 size={16} />
+          </button>
+
+        </div>
+      </td>
+    </tr>
+))}
 
           </tbody>
         </table>
@@ -622,129 +876,269 @@ const kpis = useMemo(() => {
     <div className="w-full h-full max-w-lg overflow-y-auto bg-white shadow-2xl dark:bg-slate-900">
 
       <form
-        onSubmit={saveLead}
-        className="p-6 space-y-4"
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold">
-            {form._id ? "Edit Lead" : "Create Lead"}
-          </h2>
+  onSubmit={saveLead}
+  className="flex flex-col h-full"
+>
+  {/* Header */}
+  <div className="sticky top-0 z-10 flex items-center justify-between p-6 bg-white border-b">
+    <div>
+      <h2 className="text-2xl font-bold text-slate-800">
+        {form._id ? "Edit Lead" : "Create New Lead"}
+      </h2>
 
-          <button
-            type="button"
-            onClick={() => {
-  setDrawerOpen(false);
-  setForm(EMPTY_FORM);
+      <p className="mt-1 text-sm text-slate-500">
+        Manage lead information and sales pipeline.
+      </p>
+    </div>
 
-  if (setOpenLeadForm) {
-    setOpenLeadForm(false);
-  }
-}}
-          >
-            <X size={22} />
-          </button>
-        </div>
+    <button
+      type="button"
+      onClick={() => {
+        setDrawerOpen(false);
+        setForm(EMPTY_FORM);
+
+        if (setOpenLeadForm) {
+          setOpenLeadForm(false);
+        }
+      }}
+      className="p-2 transition rounded-xl hover:bg-slate-100"
+    >
+      <X size={22} />
+    </button>
+  </div>
+
+  {/* Body */}
+  <div className="flex-1 p-6 space-y-8 overflow-y-auto">
+
+    {/* Lead Information */}
+    <div>
+      <h3 className="pb-2 mb-5 text-lg font-semibold border-b text-slate-800">
+        Lead Information
+      </h3>
+
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
 
         <input
           value={form.name}
           onChange={(e) =>
-            setForm({
-              ...form,
-              name: e.target.value,
-            })
+            setForm({ ...form, name: e.target.value })
           }
-          placeholder="Lead Name"
-          className="w-full p-3 border rounded-xl"
+          placeholder="Lead Name *"
+          className="w-full p-3 transition border rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
           required
+        />
+
+        <input
+          value={form.company || ""}
+          onChange={(e) =>
+            setForm({ ...form, company: e.target.value })
+          }
+          placeholder="Company"
+          className="w-full p-3 transition border rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
         />
 
         <input
           value={form.email}
           onChange={(e) =>
-            setForm({
-              ...form,
-              email: e.target.value,
-            })
+            setForm({ ...form, email: e.target.value })
           }
           placeholder="Email"
-          className="w-full p-3 border rounded-xl"
+          className="w-full p-3 transition border rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
         />
 
         <input
           value={form.phone}
           onChange={(e) =>
-            setForm({
-              ...form,
-              phone: e.target.value,
-            })
+            setForm({ ...form, phone: e.target.value })
           }
           placeholder="Phone"
-          className="w-full p-3 border rounded-xl"
+          className="w-full p-3 transition border rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
         />
 
-        <select
-  value={form.status}
-  onChange={(e) =>
-    setForm({
-      ...form,
-      status: e.target.value,
-    })
-  }
-  className="w-full p-3 border rounded-xl"
->
-  <option value="new">New</option>
-  <option value="contacted">Contacted</option>
-  <option value="qualified">Qualified</option>
-  <option value="converted">Converted</option>
-  <option value="lost">Lost</option>
-</select>
-
         <input
-          value={form.source}
+          value={form.website || ""}
           onChange={(e) =>
-            setForm({
-              ...form,
-              source: e.target.value,
-            })
+            setForm({ ...form, website: e.target.value })
           }
-          placeholder="Source"
-          className="w-full p-3 border rounded-xl"
+          placeholder="Website"
+          className="w-full p-3 transition border rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
         />
 
         <input
           value={form.department}
           onChange={(e) =>
-            setForm({
-              ...form,
-              department: e.target.value,
-            })
+            setForm({ ...form, department: e.target.value })
           }
           placeholder="Department"
+          className="w-full p-3 transition border rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+        />
+
+      </div>
+    </div>
+
+    {/* Sales Information */}
+    <div>
+      <h3 className="pb-2 mb-5 text-lg font-semibold border-b text-slate-800">
+        Sales Information
+      </h3>
+
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+
+        <select
+          value={form.status}
+          onChange={(e) =>
+            setForm({ ...form, status: e.target.value })
+          }
+          className="w-full p-3 border rounded-xl"
+        >
+          <option value="new">New</option>
+          <option value="contacted">Contacted</option>
+          <option value="qualified">Qualified</option>
+          <option value="converted">Converted</option>
+          <option value="lost">Lost</option>
+        </select>
+
+        <select
+          value={form.priority || "Medium"}
+          onChange={(e) =>
+            setForm({ ...form, priority: e.target.value })
+          }
+          className="w-full p-3 border rounded-xl"
+        >
+          <option>High</option>
+          <option>Medium</option>
+          <option>Low</option>
+        </select>
+
+        <input
+          value={form.source}
+          onChange={(e) =>
+            setForm({ ...form, source: e.target.value })
+          }
+          placeholder="Lead Source"
           className="w-full p-3 border rounded-xl"
         />
 
-        <textarea
-          value={form.notes}
+        <input
+          value={form.owner || ""}
+          onChange={(e) =>
+            setForm({ ...form, owner: e.target.value })
+          }
+          placeholder="Assigned Owner"
+          className="w-full p-3 border rounded-xl"
+        />
+
+      </div>
+    </div>
+
+    {/* Opportunity */}
+    <div>
+      <h3 className="pb-2 mb-5 text-lg font-semibold border-b text-slate-800">
+        Opportunity
+      </h3>
+
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+
+        <input
+          type="number"
+          value={form.value || ""}
+          onChange={(e) =>
+            setForm({ ...form, value: e.target.value })
+          }
+          placeholder="Expected Deal Value"
+          className="w-full p-3 border rounded-xl"
+        />
+
+        <input
+          type="date"
+          value={form.expectedCloseDate || ""}
           onChange={(e) =>
             setForm({
               ...form,
-              notes: e.target.value,
+              expectedCloseDate: e.target.value,
             })
           }
-          placeholder="Notes"
-          rows={4}
           className="w-full p-3 border rounded-xl"
         />
 
-        <button
-          type="submit"
-          className="w-full py-3 font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700"
-        >
-          {form._id
-            ? "Update Lead"
-            : "Create Lead"}
-        </button>
-      </form>
+      </div>
+
+      <div className="mt-5">
+
+        <label className="block mb-2 text-sm font-medium text-slate-600">
+          Lead Score ({form.leadScore || 50})
+        </label>
+
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={form.leadScore || 50}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              leadScore: e.target.value,
+            })
+          }
+          className="w-full"
+        />
+
+      </div>
+    </div>
+
+    {/* Additional Information */}
+    <div>
+      <h3 className="pb-2 mb-5 text-lg font-semibold border-b text-slate-800">
+        Additional Information
+      </h3>
+
+      <textarea
+        rows={3}
+        value={form.address || ""}
+        onChange={(e) =>
+          setForm({ ...form, address: e.target.value })
+        }
+        placeholder="Address"
+        className="w-full p-3 border rounded-xl"
+      />
+
+      <textarea
+        rows={5}
+        value={form.notes}
+        onChange={(e) =>
+          setForm({ ...form, notes: e.target.value })
+        }
+        placeholder="Notes"
+        className="w-full p-3 mt-5 border rounded-xl"
+      />
+
+    </div>
+
+  </div>
+
+  {/* Footer */}
+  <div className="sticky bottom-0 flex justify-end gap-3 p-6 bg-white border-t">
+
+    <button
+      type="button"
+      onClick={() => {
+        setDrawerOpen(false);
+        setForm(EMPTY_FORM);
+      }}
+      className="px-6 py-3 font-medium transition border rounded-xl hover:bg-slate-100"
+    >
+      Cancel
+    </button>
+
+    <button
+      type="submit"
+      className="px-8 py-3 font-semibold text-white transition rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:shadow-xl"
+    >
+      {form._id ? "Update Lead" : "Create Lead"}
+    </button>
+
+  </div>
+</form>
     </div>
   </div>
 )}

@@ -180,29 +180,159 @@ export default function SalesforceDashboard() {
   /* ================= RENDER ================= */
   return (
     <div className="p-4 space-y-6 sm:p-6">
-      {/* ============ HEADER ============ */}
-      <div className="relative overflow-hidden text-white shadow-sm rounded-3xl bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600">
-        <div className="absolute top-0 right-0 rounded-full w-72 h-72 bg-white/10 blur-3xl" />
-        <div className="relative flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 mb-2 text-xs font-semibold rounded-full bg-white/15">
-              <span className="w-2 h-2 bg-green-300 rounded-full animate-pulse" />
-              ReadyTech CRM
-            </div>
-            <h1 className="text-2xl font-bold sm:text-3xl">CRM Dashboard</h1>
-            <p className="mt-1 text-sm text-white/80">
-              Track leads, pipeline health and sales activity in real time.
-            </p>
-          </div>
-          <button
-            onClick={load}
-            disabled={loading}
-            className="flex items-center self-start gap-2 px-4 py-2 text-sm font-medium transition rounded-xl bg-white/15 hover:bg-white/25 disabled:opacity-60"
-          >
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Refresh
-          </button>
+      {/* ================= ENTERPRISE CRM HEADER ================= */}
+
+<div className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-slate-950 via-indigo-900 to-blue-900 shadow-2xl">
+
+  {/* Background Effects */}
+
+  <div className="absolute rounded-full -top-20 -right-20 h-72 w-72 bg-indigo-500/20 blur-3xl" />
+  <div className="absolute rounded-full -bottom-20 -left-20 h-72 w-72 bg-cyan-500/10 blur-3xl" />
+  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.08),transparent_40%)]" />
+
+  <div className="relative p-8 lg:p-10">
+
+    <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+
+      {/* Left */}
+
+      <div className="max-w-4xl">
+
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+
+          <span className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold tracking-widest text-blue-100 uppercase rounded-full bg-white/10 backdrop-blur">
+
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+
+            ReadyTech Solutions
+
+          </span>
+
+          <span className="px-3 py-1 text-xs font-bold text-white rounded-full bg-emerald-500">
+            Enterprise CRM
+          </span>
+
+          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-amber-400/20 text-amber-200">
+            Version 2.0
+          </span>
+
         </div>
+
+        <h1 className="text-4xl font-bold tracking-tight text-white lg:text-5xl">
+
+          ReadyTech CRM Dashboard
+
+        </h1>
+
+        <p className="max-w-3xl mt-5 text-lg leading-8 text-slate-300">
+
+          Manage customer relationships, sales opportunities, leads,
+          follow-ups, and business performance through a centralized
+          enterprise CRM platform designed for modern organizations.
+
+        </p>
+
+        {/* Feature Tags */}
+
+        <div className="flex flex-wrap gap-3 mt-6">
+
+          <span className="px-4 py-2 text-sm text-white border rounded-full border-white/10 bg-white/10 backdrop-blur">
+            Lead Management
+          </span>
+
+          <span className="px-4 py-2 text-sm text-white border rounded-full border-white/10 bg-white/10 backdrop-blur">
+            Sales Pipeline
+          </span>
+
+          <span className="px-4 py-2 text-sm text-white border rounded-full border-white/10 bg-white/10 backdrop-blur">
+            Customer Analytics
+          </span>
+
+          <span className="px-4 py-2 text-sm text-white border rounded-full border-white/10 bg-white/10 backdrop-blur">
+            AI Insights
+          </span>
+
+        </div>
+
       </div>
+
+      {/* Right */}
+
+      <div className="flex flex-col gap-4 lg:items-end">
+
+        <button
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-3 px-6 py-3 font-semibold transition bg-white shadow-xl rounded-2xl text-slate-900 hover:scale-105 disabled:opacity-60"
+        >
+          <RefreshCw
+            size={18}
+            className={loading ? "animate-spin" : ""}
+          />
+          Refresh Dashboard
+        </button>
+
+        {/* Quick Stats */}
+
+        <div className="grid grid-cols-2 gap-4">
+
+          <div className="p-4 text-center border rounded-2xl border-white/10 bg-white/10 backdrop-blur">
+
+            <p className="text-xs tracking-wider uppercase text-slate-300">
+              Platform
+            </p>
+
+            <h3 className="mt-2 text-xl font-bold text-white">
+              MERN Stack
+            </h3>
+
+          </div>
+
+          <div className="p-4 text-center border rounded-2xl border-white/10 bg-white/10 backdrop-blur">
+
+            <p className="text-xs tracking-wider uppercase text-slate-300">
+              Status
+            </p>
+
+            <h3 className="mt-2 font-bold text-emerald-400">
+              ● Online
+            </h3>
+
+          </div>
+
+          <div className="p-4 text-center border rounded-2xl border-white/10 bg-white/10 backdrop-blur">
+
+            <p className="text-xs tracking-wider uppercase text-slate-300">
+              CRM
+            </p>
+
+            <h3 className="mt-2 text-xl font-bold text-white">
+              Enterprise
+            </h3>
+
+          </div>
+
+          <div className="p-4 text-center border rounded-2xl border-white/10 bg-white/10 backdrop-blur">
+
+            <p className="text-xs tracking-wider uppercase text-slate-300">
+              Company
+            </p>
+
+            <h3 className="mt-2 text-lg font-bold text-white">
+              ReadyTech
+            </h3>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
 
       {error && (
         <div className="flex items-center justify-between px-4 py-3 text-sm text-red-700 border border-red-200 bg-red-50 rounded-2xl">
@@ -315,7 +445,7 @@ export default function SalesforceDashboard() {
                 <span className="grid rounded-full h-9 w-9 shrink-0 bg-slate-50 place-items-center">
                   {a.icon}
                 </span>
-                <div className="min-w-0 flex-1">
+                <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate text-slate-800">{a.title}</p>
                   <p className="text-xs truncate text-slate-500">{a.desc}</p>
                 </div>

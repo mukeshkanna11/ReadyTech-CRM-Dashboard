@@ -209,126 +209,460 @@ export default function Leads() {
   return (
     <div className="min-h-screen p-4 space-y-6 sm:p-6 lg:p-8 lg:space-y-8 bg-gradient-to-b from-slate-100 via-slate-50 to-slate-100">
 
-      {/* ============ HERO HEADER ============ */}
-      <div className="relative overflow-hidden text-white shadow-xl rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-900">
-        <div className="absolute rounded-full -right-24 -top-24 h-72 w-72 bg-indigo-500/20 blur-3xl" />
-        <div className="absolute rounded-full -bottom-24 -left-24 h-72 w-72 bg-violet-500/10 blur-3xl" />
+      {/* ================= ENTERPRISE HERO HEADER ================= */}
+<div className="relative overflow-hidden text-white shadow-2xl rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-900">
 
-        <div className="relative flex flex-col gap-6 p-6 lg:flex-row lg:items-center lg:justify-between sm:p-8">
-          <div className="flex items-start gap-4">
-            <div className="grid text-white shadow-lg h-14 w-14 shrink-0 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 place-items-center">
-              <Users size={28} />
-            </div>
-            <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 mb-2 text-xs font-semibold tracking-wider uppercase border rounded-full border-white/10 bg-white/10 backdrop-blur">
-                <Sparkles size={13} /> ReadyTech CRM
-              </div>
-              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Lead Management</h1>
-              <p className="max-w-2xl mt-2 text-sm leading-relaxed text-slate-300">
-                Capture, nurture and convert prospects into revenue — track every
-                interaction from first contact to deal closure.
-              </p>
-            </div>
-          </div>
+  {/* Background Effects */}
+  <div className="absolute rounded-full -right-28 -top-28 h-80 w-80 bg-indigo-500/20 blur-3xl" />
+  <div className="absolute rounded-full -bottom-24 -left-24 h-72 w-72 bg-violet-500/10 blur-3xl" />
+  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.08),transparent_45%)]" />
 
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={fetchLeads}
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition rounded-xl bg-white/10 hover:bg-white/20"
-            >
-              <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Refresh
-            </button>
-            <button
-              onClick={() => { setForm(EMPTY_FORM); setDrawerOpen(true); }}
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition bg-white shadow-sm text-slate-900 rounded-xl hover:bg-slate-100 hover:scale-[1.03] active:scale-95"
-            >
-              <Plus size={16} /> Add New Lead
-            </button>
-          </div>
+  <div className="relative p-6 sm:p-8">
+
+    <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+
+      {/* Left */}
+      <div className="space-y-5">
+
+        <div className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold tracking-wider uppercase border rounded-full border-white/10 bg-white/10 backdrop-blur">
+
+          <Sparkles size={13} />
+
+          ReadyTech Solutions CRM
+
         </div>
+
+        <div className="flex items-start gap-4">
+
+          <div className="flex items-center justify-center w-16 h-16 shadow-xl rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-indigo-900/40">
+
+            <Users size={30} />
+
+          </div>
+
+          <div>
+
+            <h1 className="text-3xl font-bold tracking-tight lg:text-4xl">
+              Lead Management
+            </h1>
+
+            <p className="max-w-3xl mt-3 text-sm leading-7 text-slate-300">
+
+              Centralize customer acquisition, monitor lead pipelines,
+              automate follow-ups, and improve conversion rates using the
+              ReadyTech CRM platform. Manage every prospect from initial
+              inquiry to successful deal closure with real-time visibility.
+
+            </p>
+
+          </div>
+
+        </div>
+
+        {/* Enterprise Highlights */}
+        <div className="flex flex-wrap gap-3">
+
+          {[
+            "Lead Tracking",
+            "Sales Pipeline",
+            "CRM Automation",
+            "Customer Engagement",
+            "Analytics Dashboard",
+          ].map((item) => (
+
+            <span
+              key={item}
+              className="px-3 py-1 text-xs font-medium border rounded-full border-white/10 bg-white/10 backdrop-blur"
+            >
+              {item}
+            </span>
+
+          ))}
+
+        </div>
+
       </div>
 
-      {/* ============ KPI CARDS ============ */}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Kpi title="Total Leads" value={totalLeads} icon={Users} accent="indigo" hint="All captured leads" />
-        <Kpi title="New Leads" value={newLeads} icon={TrendingUp} accent="blue" hint="Awaiting first contact" />
-        <Kpi title="Qualified" value={qualifiedLeads} icon={CheckCircle} accent="green" hint="Sales-ready" />
-        <Kpi title="Conversion Rate" value={`${conversionRate}%`} icon={Target} accent="violet" hint="Qualified / total" />
-      </div>
+      {/* Right */}
+      <div className="flex flex-col gap-5">
 
-      {/* ============ SEARCH & FILTERS ============ */}
-      <div className="p-4 bg-white border shadow-sm rounded-2xl border-slate-200 sm:p-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="relative w-full lg:max-w-md">
-            <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, email, phone or company…"
-              className="w-full py-3 pr-4 text-sm transition border outline-none bg-slate-50 border-slate-200 pl-11 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/40"
+        {/* System Status */}
+        <div className="p-5 border rounded-2xl border-white/10 bg-white/10 backdrop-blur">
+
+          <div className="flex items-center gap-2">
+
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
+
+            <span className="text-sm font-semibold">
+              CRM Services Online
+            </span>
+
+          </div>
+
+          <p className="mt-2 text-xs text-slate-300">
+            Lead synchronization, customer workflows and automation are
+            operating normally.
+          </p>
+
+        </div>
+
+        {/* Buttons */}
+        <div className="flex flex-wrap gap-3">
+
+          <button
+            onClick={fetchLeads}
+            className="flex items-center gap-2 px-5 py-3 text-sm font-medium transition rounded-xl bg-white/10 backdrop-blur hover:bg-white/20"
+          >
+            <RefreshCw
+              size={16}
+              className={loading ? "animate-spin" : ""}
             />
-          </div>
+            Refresh Data
+          </button>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="hidden text-slate-400 sm:inline"><Filter size={16} /></span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3.5 py-2.5 text-sm transition border outline-none bg-slate-50 border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/40"
-            >
-              <option value="All">All Status</option>
-              {LEAD_STATUSES.map((s) => (<option key={s} value={s}>{s}</option>))}
-            </select>
-            <select
-              value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value)}
-              className="px-3.5 py-2.5 text-sm transition border outline-none bg-slate-50 border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/40"
-            >
-              <option value="All">All Priority</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              className="px-3.5 py-2.5 text-sm transition border outline-none bg-slate-50 border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/40"
-            >
-              {sources.map((s) => (<option key={s} value={s}>{s === "All" ? "All Sources" : s}</option>))}
-            </select>
-            {hasFilters && (
-              <button
-                onClick={clearFilters}
-                className="flex items-center gap-1 px-3 py-2.5 text-sm transition text-slate-500 hover:text-slate-800"
-              >
-                <X size={14} /> Clear
-              </button>
-            )}
-          </div>
+          <button
+            onClick={() => {
+              setForm(EMPTY_FORM);
+              setDrawerOpen(true);
+            }}
+            className="flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-lg transition hover:-translate-y-0.5 hover:bg-slate-100"
+          >
+            <Plus size={16} />
+            Add New Lead
+          </button>
+
         </div>
 
-        <p className="mt-3 text-xs text-slate-500">
-          Showing <span className="font-semibold text-slate-700">{filteredLeads.length}</span> of {leads.length} leads
-        </p>
       </div>
+
+    </div>
+
+    {/* Bottom Statistics */}
+    <div className="grid gap-4 pt-6 mt-8 border-t border-white/10 sm:grid-cols-2 xl:grid-cols-4">
+
+      <div>
+        <p className="text-xs tracking-wide uppercase text-slate-400">
+          Total Leads
+        </p>
+        <h3 className="mt-1 text-2xl font-bold">
+          {leads.length}
+        </h3>
+      </div>
+
+      <div>
+        <p className="text-xs tracking-wide uppercase text-slate-400">
+          Qualified Leads
+        </p>
+        <h3 className="mt-1 text-2xl font-bold">
+          {qualifiedLeads}
+        </h3>
+      </div>
+
+      <div>
+        <p className="text-xs tracking-wide uppercase text-slate-400">
+          Conversion Rate
+        </p>
+        <h3 className="mt-1 text-2xl font-bold">
+          {conversionRate}%
+        </h3>
+      </div>
+
+      <div>
+        <p className="text-xs tracking-wide uppercase text-slate-400">
+          CRM Status
+        </p>
+
+        <div className="inline-flex items-center gap-2 px-3 py-1 mt-2 text-sm font-semibold rounded-full bg-emerald-500/20 text-emerald-300">
+
+          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+
+          Operational
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+      {/* ================= ENTERPRISE KPI DASHBOARD ================= */}
+<div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+
+  <Kpi
+    title="Total Leads"
+    value={totalLeads}
+    icon={Users}
+    accent="indigo"
+    hint="All captured prospects"
+    trend="+12%"
+    trendType="up"
+  />
+
+  <Kpi
+    title="New Leads"
+    value={newLeads}
+    icon={TrendingUp}
+    accent="blue"
+    hint="Awaiting first contact"
+    trend="+8%"
+    trendType="up"
+  />
+
+  <Kpi
+    title="Qualified Leads"
+    value={qualifiedLeads}
+    icon={CheckCircle}
+    accent="emerald"
+    hint="Sales-ready opportunities"
+    trend="+5%"
+    trendType="up"
+  />
+
+  <Kpi
+    title="Conversion Rate"
+    value={`${conversionRate}%`}
+    icon={Target}
+    accent="violet"
+    hint="Qualified vs Total Leads"
+    trend={`${conversionRate}%`}
+    trendType="neutral"
+  />
+
+</div>
+
+     {/* ================= ENTERPRISE SEARCH & FILTERS ================= */}
+<div className="overflow-hidden bg-white border shadow-sm rounded-3xl border-slate-200">
+
+  {/* Header */}
+  <div className="px-6 py-5 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white">
+
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+      <div>
+
+        <h2 className="text-xl font-bold text-slate-900">
+          Search & Lead Filters
+        </h2>
+
+        <p className="mt-1 text-sm text-slate-500">
+          Search prospects instantly and refine your sales pipeline using
+          advanced CRM filters.
+        </p>
+
+      </div>
+
+      <div className="flex items-center gap-3">
+
+        <div className="px-4 py-2 bg-white border shadow-sm rounded-xl border-slate-200">
+
+          <p className="text-xs text-slate-500">
+            Results
+          </p>
+
+          <p className="text-lg font-bold text-slate-900">
+            {filteredLeads.length}
+          </p>
+
+        </div>
+
+        <div className="px-4 py-2 border rounded-xl border-emerald-100 bg-emerald-50">
+
+          <div className="flex items-center gap-2">
+
+            <span className="w-2 h-2 rounded-full animate-pulse bg-emerald-500" />
+
+            <span className="text-xs font-semibold text-emerald-700">
+              Live Search Enabled
+            </span>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  {/* Search & Filters */}
+  <div className="p-6 space-y-5">
+
+    {/* Search */}
+    <div className="relative max-w-xl">
+
+      <Search
+        size={18}
+        className="absolute -translate-y-1/2 left-4 top-1/2 text-slate-400"
+      />
+
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search by Lead Name, Email, Phone Number, Company..."
+        className="w-full py-3 pl-12 pr-12 text-sm transition-all duration-300 bg-white border shadow-sm outline-none rounded-2xl border-slate-200 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+      />
+
+      {search && (
+        <button
+          onClick={() => setSearch("")}
+          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+        >
+          <X size={16} />
+        </button>
+      )}
+
+    </div>
+
+    {/* Filters */}
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+
+      <select
+        value={statusFilter}
+        onChange={(e) => setStatusFilter(e.target.value)}
+        className="px-4 py-3 text-sm transition bg-white border outline-none rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+      >
+        <option value="All">All Status</option>
+
+        {LEAD_STATUSES.map((status) => (
+          <option
+            key={status}
+            value={status}
+          >
+            {status}
+          </option>
+        ))}
+
+      </select>
+
+      <select
+        value={priorityFilter}
+        onChange={(e) => setPriorityFilter(e.target.value)}
+        className="px-4 py-3 text-sm transition bg-white border outline-none rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+      >
+        <option value="All">
+          All Priority
+        </option>
+
+        <option value="High">
+          High
+        </option>
+
+        <option value="Medium">
+          Medium
+        </option>
+
+        <option value="Low">
+          Low
+        </option>
+
+      </select>
+
+      <select
+        value={sourceFilter}
+        onChange={(e) => setSourceFilter(e.target.value)}
+        className="px-4 py-3 text-sm transition bg-white border outline-none rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+      >
+        {sources.map((source) => (
+
+          <option
+            key={source}
+            value={source}
+          >
+            {source === "All"
+              ? "All Sources"
+              : source}
+          </option>
+
+        ))}
+
+      </select>
+
+      <button
+        onClick={clearFilters}
+        disabled={!hasFilters}
+        className={`
+          rounded-xl
+          px-4
+          py-3
+          text-sm
+          font-medium
+          transition-all
+          ${
+            hasFilters
+              ? "bg-red-50 text-red-600 hover:bg-red-100"
+              : "cursor-not-allowed bg-slate-100 text-slate-400"
+          }
+        `}
+      >
+        Clear All Filters
+      </button>
+
+    </div>
+
+    {/* Footer */}
+    <div className="flex flex-col gap-3 pt-5 text-sm border-t border-slate-200 text-slate-600 md:flex-row md:items-center md:justify-between">
+
+      <p>
+        Showing
+        <span className="mx-1 font-bold text-slate-900">
+          {filteredLeads.length}
+        </span>
+        of
+        <span className="mx-1 font-bold text-slate-900">
+          {leads.length}
+        </span>
+        total leads.
+      </p>
+
+      <div className="flex items-center gap-2 px-3 py-1 text-xs font-semibold text-indigo-700 rounded-full bg-indigo-50">
+
+        <Filter size={14} />
+
+        Enterprise CRM Filters
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
 
       {/* ============ TABLE ============ */}
       <div className="overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-200">
         {/* ERROR STATE */}
         {error ? (
-          <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-            <div className="grid mb-4 rounded-2xl h-14 w-14 place-items-center bg-red-50 text-red-500">
-              <AlertTriangle size={26} />
-            </div>
-            <h3 className="text-base font-semibold text-slate-800">Unable to load leads</h3>
-            <p className="max-w-sm mt-1 text-sm text-slate-500">{error}</p>
-            <button
-              onClick={fetchLeads}
-              className="inline-flex items-center gap-2 px-5 py-2.5 mt-5 text-sm font-semibold text-white transition bg-indigo-600 rounded-xl hover:bg-indigo-700"
-            >
-              <RefreshCw size={16} /> Try again
-            </button>
-          </div>
+          <div className="flex flex-col gap-4 p-6 border-b lg:flex-row lg:items-center lg:justify-between">
+
+  <div>
+    <h2 className="text-xl font-bold text-slate-900">
+      Lead Directory
+    </h2>
+
+    <p className="mt-1 text-sm text-slate-500">
+      Manage customer leads, monitor sales progress, and track every interaction from one centralized workspace.
+    </p>
+  </div>
+
+  <div className="flex gap-3">
+
+    <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50">
+      <Download size={16}/>
+      Export
+    </button>
+
+    <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50">
+      <Upload size={16}/>
+      Import
+    </button>
+
+  </div>
+
+</div>
         ) : loading ? (
           /* LOADING STATE */
           <div className="p-4 space-y-3 sm:p-6">
@@ -339,14 +673,14 @@ export default function Leads() {
                   <div className="w-1/3 h-3 rounded bg-slate-100 animate-pulse" />
                   <div className="w-1/4 h-2.5 rounded bg-slate-100 animate-pulse" />
                 </div>
-                <div className="h-6 rounded-full w-20 bg-slate-100 animate-pulse" />
+                <div className="w-20 h-6 rounded-full bg-slate-100 animate-pulse" />
               </div>
             ))}
           </div>
         ) : paginatedLeads.length === 0 ? (
           /* EMPTY STATE */
           <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-            <div className="grid mb-4 rounded-2xl h-14 w-14 place-items-center bg-indigo-50 text-indigo-500">
+            <div className="grid mb-4 text-indigo-500 rounded-2xl h-14 w-14 place-items-center bg-indigo-50">
               <Users size={26} />
             </div>
             <h3 className="text-base font-semibold text-slate-800">
@@ -373,7 +707,7 @@ export default function Leads() {
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="border-b bg-slate-50 text-slate-500 border-slate-200">
+              <thead className="sticky top-0 z-20 border-b bg-slate-50">
                 <tr>
                   <th className="px-6 py-3.5 text-xs font-semibold tracking-wider uppercase text-left">Lead</th>
                   <th className="hidden px-6 py-3.5 text-xs font-semibold tracking-wider uppercase text-left md:table-cell">Contact</th>
@@ -498,28 +832,223 @@ export default function Leads() {
         )}
       </div>
 
-      {/* ============ INFO STRIP ============ */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="p-6 bg-white border shadow-sm rounded-2xl border-slate-200">
-          <h3 className="mb-2 text-base font-semibold text-slate-900">What are Leads in ReadyTech CRM?</h3>
-          <p className="text-sm leading-relaxed text-slate-600">
-            Leads are individuals or organizations that show interest in your services.
-            ReadyTech CRM helps your sales team capture leads from websites, calls, emails
-            and campaigns, track engagement, and convert them into real business opportunities.
+      {/* ================= ENTERPRISE CRM INFORMATION ================= */}
+<div className="grid gap-6 xl:grid-cols-3">
+
+  {/* About CRM */}
+  <div className="overflow-hidden bg-white border shadow-sm xl:col-span-2 rounded-3xl border-slate-200">
+
+    <div className="px-6 py-5 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white">
+
+      <div className="flex items-center gap-4">
+
+        <div className="flex items-center justify-center shadow-lg h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600">
+          <Users size={26} className="text-white" />
+        </div>
+
+        <div>
+
+          <h2 className="text-xl font-bold text-slate-900">
+            About ReadyTech CRM Lead Management
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Intelligent customer acquisition and sales pipeline management.
           </p>
+
         </div>
-        <div className="p-6 text-white shadow-sm bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl">
-          <h3 className="flex items-center gap-2 mb-3 text-base font-semibold">
-            How ReadyTech Helps <ArrowRight size={16} />
-          </h3>
-          <ul className="space-y-2 text-sm text-slate-300">
-            <li className="flex items-center gap-2"><CheckCircle size={15} className="text-emerald-400" /> Centralized lead database</li>
-            <li className="flex items-center gap-2"><CheckCircle size={15} className="text-emerald-400" /> Status-based sales pipeline</li>
-            <li className="flex items-center gap-2"><CheckCircle size={15} className="text-emerald-400" /> Faster follow-ups & better conversions</li>
-            <li className="flex items-center gap-2"><CheckCircle size={15} className="text-emerald-400" /> Clear visibility for sales managers</li>
-          </ul>
-        </div>
+
       </div>
+
+    </div>
+
+    <div className="p-6 space-y-5">
+
+      <p className="leading-7 text-slate-600">
+        The <strong>Lead Management</strong> module in
+        <span className="font-semibold text-indigo-600">
+          {" "}ReadyTech CRM
+        </span>{" "}
+        helps organizations capture, organize, nurture, and convert
+        potential customers into long-term business opportunities.
+        Every interaction—from enquiries and website forms to phone calls
+        and marketing campaigns—is stored in one centralized platform,
+        allowing sales teams to improve productivity and close deals faster.
+      </p>
+
+      <div className="grid gap-4 md:grid-cols-2">
+
+        <div className="p-5 border rounded-2xl border-slate-200 bg-slate-50">
+
+          <h3 className="font-semibold text-slate-900">
+            Business Benefits
+          </h3>
+
+          <ul className="mt-3 space-y-3 text-sm text-slate-600">
+
+            <li className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-emerald-500"/>
+              Centralized lead database
+            </li>
+
+            <li className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-emerald-500"/>
+              Smart lead qualification
+            </li>
+
+            <li className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-emerald-500"/>
+              Automated follow-up process
+            </li>
+
+            <li className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-emerald-500"/>
+              Sales pipeline tracking
+            </li>
+
+          </ul>
+
+        </div>
+
+        <div className="p-5 border rounded-2xl border-slate-200 bg-slate-50">
+
+          <h3 className="font-semibold text-slate-900">
+            Enterprise Features
+          </h3>
+
+          <ul className="mt-3 space-y-3 text-sm text-slate-600">
+
+            <li className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-indigo-500"/>
+              Customer interaction history
+            </li>
+
+            <li className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-indigo-500"/>
+              AI-powered lead insights
+            </li>
+
+            <li className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-indigo-500"/>
+              Team collaboration
+            </li>
+
+            <li className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-indigo-500"/>
+              Real-time analytics dashboard
+            </li>
+
+          </ul>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  {/* Quick Summary */}
+  <div className="overflow-hidden text-white shadow-lg rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900">
+
+    <div className="px-6 py-5 border-b border-white/10">
+
+      <h2 className="flex items-center gap-2 text-xl font-bold">
+        <Sparkles size={20}/>
+        CRM Overview
+      </h2>
+
+      <p className="mt-1 text-sm text-slate-300">
+        ReadyTech Enterprise Platform
+      </p>
+
+    </div>
+
+    <div className="p-6 space-y-5">
+
+      <div className="flex items-start gap-3">
+
+        <div className="p-2 rounded-xl bg-white/10">
+          <Target size={18}/>
+        </div>
+
+        <div>
+
+          <h4 className="font-semibold">
+            Sales Growth
+          </h4>
+
+          <p className="mt-1 text-sm text-slate-300">
+            Convert more prospects into customers with structured sales
+            workflows.
+          </p>
+
+        </div>
+
+      </div>
+
+      <div className="flex items-start gap-3">
+
+        <div className="p-2 rounded-xl bg-white/10">
+          <Users size={18}/>
+        </div>
+
+        <div>
+
+          <h4 className="font-semibold">
+            Customer Management
+          </h4>
+
+          <p className="mt-1 text-sm text-slate-300">
+            Maintain complete customer records and communication history.
+          </p>
+
+        </div>
+
+      </div>
+
+      <div className="flex items-start gap-3">
+
+        <div className="p-2 rounded-xl bg-white/10">
+          <TrendingUp size={18}/>
+        </div>
+
+        <div>
+
+          <h4 className="font-semibold">
+            Performance Analytics
+          </h4>
+
+          <p className="mt-1 text-sm text-slate-300">
+            Monitor KPIs, conversion rates, and sales performance with
+            real-time dashboards.
+          </p>
+
+        </div>
+
+      </div>
+
+      <div className="p-4 mt-6 border rounded-2xl border-white/10 bg-white/10">
+
+        <div className="flex items-center justify-between">
+
+          <span className="text-sm text-slate-300">
+            CRM Status
+          </span>
+
+          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-300">
+            Operational
+          </span>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
 
       {/* ============ CREATE / EDIT DRAWER ============ */}
       <Drawer
@@ -530,58 +1059,259 @@ export default function Leads() {
         onClose={() => setDrawerOpen(false)}
       >
         <form onSubmit={saveLead} className="flex flex-col h-full">
-          <div className="flex-1 px-6 py-5 space-y-4 overflow-y-auto">
-            <Field label="Full Name" required>
-              <input
-                value={form.name}
-                required
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. Jane Cooper"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 focus:ring-indigo-500/40"
-              />
-            </Field>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Email">
-                <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@company.com" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 focus:ring-indigo-500/40" />
-              </Field>
-              <Field label="Phone">
-                <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+91 98765 43210" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 focus:ring-indigo-500/40" />
-              </Field>
-            </div>
-            <Field label="Company">
-              <input value={form.company || ""} onChange={(e) => setForm({ ...form, company: e.target.value })} placeholder="Company name" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 focus:ring-indigo-500/40" />
-            </Field>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Status">
-                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 focus:ring-indigo-500/40">
-                  {LEAD_STATUSES.map((s) => (<option key={s} value={s}>{s}</option>))}
-                </select>
-              </Field>
-              <Field label="Source">
-                <select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 focus:ring-indigo-500/40">
-                  {LEAD_SOURCES.map((s) => (<option key={s} value={s}>{s}</option>))}
-                </select>
-              </Field>
-            </div>
-            <Field label="Notes">
-              <textarea
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                placeholder="Add context, requirements or next steps…"
-                rows={4}
-                className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 focus:ring-indigo-500/40"
-              />
-            </Field>
-          </div>
-          <div className="flex gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
-            <button type="button" onClick={() => setDrawerOpen(false)} className="flex-1 py-3 text-sm font-medium transition border rounded-xl border-slate-200 text-slate-600 hover:bg-white">
-              Cancel
-            </button>
-            <button type="submit" className="flex-1 py-3 text-sm font-semibold text-white transition bg-indigo-600 rounded-xl hover:bg-indigo-700">
-              {form._id ? "Save Changes" : "Create Lead"}
-            </button>
-          </div>
-        </form>
+
+  <div className="flex-1 px-6 py-6 space-y-8 overflow-y-auto">
+
+    {/* ================= PERSONAL INFORMATION ================= */}
+
+    <div className="p-5 bg-white border rounded-2xl border-slate-200">
+
+      <h3 className="mb-5 text-lg font-semibold text-slate-900">
+        👤 Personal Information
+      </h3>
+
+      <div className="grid gap-5 md:grid-cols-2">
+
+        <Field label="Full Name" required>
+          <input
+            required
+            value={form.name}
+            onChange={(e)=>setForm({...form,name:e.target.value})}
+            placeholder="John Smith"
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          />
+        </Field>
+
+        <Field label="Designation">
+          <input
+            value={form.designation || ""}
+            onChange={(e)=>setForm({...form,designation:e.target.value})}
+            placeholder="Sales Manager"
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          />
+        </Field>
+
+        <Field label="Email">
+          <input
+            type="email"
+            value={form.email}
+            onChange={(e)=>setForm({...form,email:e.target.value})}
+            placeholder="john@company.com"
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          />
+        </Field>
+
+        <Field label="Phone">
+          <input
+            value={form.phone}
+            onChange={(e)=>setForm({...form,phone:e.target.value})}
+            placeholder="+91 9876543210"
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          />
+        </Field>
+
+      </div>
+
+    </div>
+
+    {/* ================= COMPANY ================= */}
+
+    <div className="p-5 bg-white border rounded-2xl border-slate-200">
+
+      <h3 className="mb-5 text-lg font-semibold text-slate-900">
+        🏢 Company Information
+      </h3>
+
+      <div className="grid gap-5 md:grid-cols-2">
+
+        <Field label="Company">
+          <input
+            value={form.company || ""}
+            onChange={(e)=>setForm({...form,company:e.target.value})}
+            placeholder="ABC Technologies"
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          />
+        </Field>
+
+        <Field label="Industry">
+          <input
+            value={form.industry || ""}
+            onChange={(e)=>setForm({...form,industry:e.target.value})}
+            placeholder="Software"
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          />
+        </Field>
+
+        <Field label="Website">
+          <input
+            value={form.website || ""}
+            onChange={(e)=>setForm({...form,website:e.target.value})}
+            placeholder="https://company.com"
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          />
+        </Field>
+
+        <Field label="Company Size">
+          <select
+            value={form.companySize || ""}
+            onChange={(e)=>setForm({...form,companySize:e.target.value})}
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          >
+            <option value="">Select</option>
+            <option>1-10</option>
+            <option>11-50</option>
+            <option>51-200</option>
+            <option>201-500</option>
+            <option>500+</option>
+          </select>
+        </Field>
+
+      </div>
+
+    </div>
+
+    {/* ================= LEAD DETAILS ================= */}
+
+    <div className="p-5 bg-white border rounded-2xl border-slate-200">
+
+      <h3 className="mb-5 text-lg font-semibold text-slate-900">
+        🎯 Lead Details
+      </h3>
+
+      <div className="grid gap-5 md:grid-cols-2">
+
+        <Field label="Status">
+          <select
+            value={form.status}
+            onChange={(e)=>setForm({...form,status:e.target.value})}
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          >
+            {LEAD_STATUSES.map((s)=>(
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Lead Source">
+          <select
+            value={form.source}
+            onChange={(e)=>setForm({...form,source:e.target.value})}
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          >
+            {LEAD_SOURCES.map((s)=>(
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Priority">
+          <select
+            value={form.priority || "Medium"}
+            onChange={(e)=>setForm({...form,priority:e.target.value})}
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          >
+            <option>High</option>
+            <option>Medium</option>
+            <option>Low</option>
+          </select>
+        </Field>
+
+        <Field label="Assigned To">
+          <input
+            value={form.assignedTo || ""}
+            onChange={(e)=>setForm({...form,assignedTo:e.target.value})}
+            placeholder="Sales Executive"
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          />
+        </Field>
+
+      </div>
+
+    </div>
+
+    {/* ================= SALES ================= */}
+
+    <div className="p-5 bg-white border rounded-2xl border-slate-200">
+
+      <h3 className="mb-5 text-lg font-semibold text-slate-900">
+        💰 Sales Information
+      </h3>
+
+      <div className="grid gap-5 md:grid-cols-2">
+
+        <Field label="Expected Deal Value">
+          <input
+            type="number"
+            value={form.expectedValue || ""}
+            onChange={(e)=>setForm({...form,expectedValue:e.target.value})}
+            placeholder="50000"
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          />
+        </Field>
+
+        <Field label="Follow-up Date">
+          <input
+            type="date"
+            value={form.followUpDate || ""}
+            onChange={(e)=>setForm({...form,followUpDate:e.target.value})}
+            className="w-full px-4 py-3 border rounded-xl border-slate-200 bg-slate-50"
+          />
+        </Field>
+
+      </div>
+
+    </div>
+
+    {/* ================= NOTES ================= */}
+
+    <div className="p-5 bg-white border rounded-2xl border-slate-200">
+
+      <h3 className="mb-4 text-lg font-semibold text-slate-900">
+        📝 Notes
+      </h3>
+
+      <textarea
+        rows={5}
+        value={form.notes}
+        onChange={(e)=>setForm({...form,notes:e.target.value})}
+        placeholder="Enter customer requirements, follow-up details, meeting notes..."
+        className="w-full px-4 py-3 border resize-none rounded-xl border-slate-200 bg-slate-50"
+      />
+
+    </div>
+
+  </div>
+
+  {/* ================= FOOTER ================= */}
+
+  <div className="flex items-center justify-between px-6 py-5 border-t border-slate-200 bg-slate-50">
+
+    <p className="text-xs text-slate-500">
+      ReadyTech CRM • Enterprise Lead Management
+    </p>
+
+    <div className="flex gap-3">
+
+      <button
+        type="button"
+        onClick={()=>setDrawerOpen(false)}
+        className="px-6 py-3 font-medium border rounded-xl border-slate-300"
+      >
+        Cancel
+      </button>
+
+      <button
+        type="submit"
+        className="px-8 py-3 font-semibold text-white shadow-lg rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:shadow-xl"
+      >
+        {form._id ? "Update Lead" : "Create Lead"}
+      </button>
+
+    </div>
+
+  </div>
+
+</form>
       </Drawer>
 
       {/* ============ PROFILE DRAWER ============ */}
@@ -593,49 +1323,224 @@ export default function Leads() {
         onClose={() => setProfileOpen(false)}
       >
         {activeLead && (
-          <div className="flex flex-col h-full">
-            <div className="flex-1 px-6 py-5 space-y-6 overflow-y-auto">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[activeLead.status] || "bg-slate-100 text-slate-600"}`}>
-                  {activeLead.status}
-                </span>
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${PRIORITY_STYLES[priorityOf(activeLead.status)]}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${PRIORITY_DOT[priorityOf(activeLead.status)]}`} />
-                  {priorityOf(activeLead.status)} priority
-                </span>
-              </div>
+         <div className="flex flex-col h-full">
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Detail icon={Mail} label="Email" value={activeLead.email} />
-                <Detail icon={Phone} label="Phone" value={activeLead.phone} />
-                <Detail icon={Building2} label="Company" value={activeLead.company} />
-                <Detail icon={Activity} label="Source" value={activeLead.source} />
-                <Detail icon={CalendarClock} label="Created" value={activeLead.createdAt ? new Date(activeLead.createdAt).toLocaleString() : null} />
-              </div>
+  <div className="flex-1 overflow-y-auto">
 
-              <div>
-                <h4 className="mb-1.5 text-xs font-semibold tracking-wide uppercase text-slate-400">Notes</h4>
-                <p className="text-sm leading-relaxed text-slate-600">{activeLead.notes || "No notes added yet."}</p>
-              </div>
-            </div>
+    {/* ================= HERO ================= */}
 
-            <div className="flex gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
-              <button
-                type="button"
-                onClick={() => { setForm(activeLead); setProfileOpen(false); setDrawerOpen(true); }}
-                className="flex items-center justify-center flex-1 gap-2 py-3 text-sm font-medium transition border rounded-xl border-slate-200 text-slate-700 hover:bg-white"
-              >
-                <Pencil size={16} /> Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => setAiLead(activeLead)}
-                className="flex items-center justify-center flex-1 gap-2 py-3 text-sm font-semibold text-white transition bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl hover:opacity-90"
-              >
-                <Bot size={16} /> Ask AI
-              </button>
-            </div>
+    <div className="p-6 text-white bg-gradient-to-r from-slate-950 via-indigo-900 to-blue-900">
+
+      <div className="flex items-start gap-5">
+
+        <div className="flex items-center justify-center w-20 h-20 text-3xl font-bold rounded-full shadow-lg bg-white/10">
+          {activeLead.name?.charAt(0)}
+        </div>
+
+        <div className="flex-1">
+
+          <div className="flex flex-wrap items-center gap-2">
+
+            <h2 className="text-2xl font-bold">
+              {activeLead.name}
+            </h2>
+
+            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-300">
+              {activeLead.status}
+            </span>
+
           </div>
+
+          <p className="mt-1 text-slate-300">
+            {activeLead.designation || "Lead"}
+          </p>
+
+          <p className="mt-2 text-sm text-slate-300">
+            {activeLead.company || "ReadyTech CRM Customer"}
+          </p>
+
+          <div className="flex flex-wrap gap-2 mt-4">
+
+            <span className="px-3 py-1 text-xs rounded-full bg-white/10">
+              Lead ID : RTS-{activeLead._id?.slice(-6)}
+            </span>
+
+            <span className="px-3 py-1 text-xs rounded-full bg-indigo-500/20">
+              Source : {activeLead.source || "Website"}
+            </span>
+
+            <span className="px-3 py-1 text-xs text-yellow-300 rounded-full bg-yellow-500/20">
+              Priority : {activeLead.priority || "Medium"}
+            </span>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    {/* ================= QUICK STATS ================= */}
+
+    <div className="grid grid-cols-3 gap-4 p-6">
+
+      <div className="p-4 text-center bg-white border shadow-sm rounded-2xl">
+        <p className="text-xs text-slate-500">Lead Score</p>
+        <h3 className="mt-2 text-2xl font-bold text-indigo-600">
+          {activeLead.leadScore || 82}
+        </h3>
+      </div>
+
+      <div className="p-4 text-center bg-white border shadow-sm rounded-2xl">
+        <p className="text-xs text-slate-500">Expected Deal</p>
+        <h3 className="mt-2 text-xl font-bold text-emerald-600">
+          ₹{activeLead.expectedValue || "0"}
+        </h3>
+      </div>
+
+      <div className="p-4 text-center bg-white border shadow-sm rounded-2xl">
+        <p className="text-xs text-slate-500">Follow-up</p>
+        <h3 className="mt-2 text-sm font-semibold">
+          {activeLead.followUpDate || "Not Scheduled"}
+        </h3>
+      </div>
+
+    </div>
+
+    {/* ================= CONTACT DETAILS ================= */}
+
+    <div className="p-6 mx-6 bg-white border shadow-sm rounded-2xl">
+
+      <h3 className="mb-5 text-lg font-semibold">
+        Contact Information
+      </h3>
+
+      <div className="grid gap-4 md:grid-cols-2">
+
+        <Detail icon={Mail} label="Email" value={activeLead.email} />
+
+        <Detail icon={Phone} label="Phone" value={activeLead.phone} />
+
+        <Detail icon={Building2} label="Company" value={activeLead.company} />
+
+        <Detail icon={Globe} label="Website" value={activeLead.website} />
+
+        <Detail icon={Briefcase} label="Industry" value={activeLead.industry} />
+
+        <Detail
+          icon={CalendarClock}
+          label="Created"
+          value={
+            activeLead.createdAt
+              ? new Date(activeLead.createdAt).toLocaleString()
+              : "-"
+          }
+        />
+
+      </div>
+
+    </div>
+
+    {/* ================= SALES INFORMATION ================= */}
+
+    <div className="p-6 mx-6 mt-6 bg-white border shadow-sm rounded-2xl">
+
+      <h3 className="mb-5 text-lg font-semibold">
+        Sales Information
+      </h3>
+
+      <div className="grid gap-4 md:grid-cols-2">
+
+        <Detail
+          icon={Target}
+          label="Lead Status"
+          value={activeLead.status}
+        />
+
+        <Detail
+          icon={Flag}
+          label="Priority"
+          value={activeLead.priority || "Medium"}
+        />
+
+        <Detail
+          icon={User}
+          label="Assigned To"
+          value={activeLead.assignedTo || "Not Assigned"}
+        />
+
+        <Detail
+          icon={IndianRupee}
+          label="Expected Deal"
+          value={`₹${activeLead.expectedValue || 0}`}
+        />
+
+      </div>
+
+    </div>
+
+    {/* ================= NOTES ================= */}
+
+    <div className="p-6 mx-6 mt-6 mb-6 bg-white border shadow-sm rounded-2xl">
+
+      <h3 className="mb-4 text-lg font-semibold">
+        Notes
+      </h3>
+
+      <p className="leading-7 text-slate-600">
+        {activeLead.notes || "No notes have been added for this lead yet."}
+      </p>
+
+    </div>
+
+  </div>
+
+  {/* ================= FOOTER ================= */}
+
+  <div className="p-5 border-t bg-slate-50">
+
+    <div className="flex flex-wrap gap-3">
+
+      <button
+        onClick={() => {
+          setForm(activeLead);
+          setProfileOpen(false);
+          setDrawerOpen(true);
+        }}
+        className="flex items-center justify-center flex-1 gap-2 px-4 py-3 font-medium border rounded-xl hover:bg-white"
+      >
+        <Pencil size={16} />
+        Edit Lead
+      </button>
+
+      <button
+        className="flex items-center justify-center flex-1 gap-2 px-4 py-3 border rounded-xl hover:bg-white"
+      >
+        <Phone size={16} />
+        Call
+      </button>
+
+      <button
+        className="flex items-center justify-center flex-1 gap-2 px-4 py-3 border rounded-xl hover:bg-white"
+      >
+        <Mail size={16} />
+        Email
+      </button>
+
+      <button
+        onClick={() => setAiLead(activeLead)}
+        className="flex items-center justify-center flex-1 gap-2 px-4 py-3 font-semibold text-white rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600"
+      >
+        <Bot size={16} />
+        Ask AI
+      </button>
+
+    </div>
+
+  </div>
+
+</div>
         )}
       </Drawer>
 
@@ -646,100 +1551,227 @@ export default function Leads() {
 }
 
 /* ================= UI HELPERS ================= */
-function Kpi({ title, value, icon: Icon, accent, hint }) {
-  const colors = {
-    indigo: "bg-indigo-50 text-indigo-600",
-    blue: "bg-blue-50 text-blue-600",
-    amber: "bg-amber-50 text-amber-600",
-    green: "bg-green-50 text-green-600",
-    violet: "bg-violet-50 text-violet-600",
+function Kpi({
+  title,
+  value,
+  icon: Icon,
+  accent = "indigo",
+  hint,
+  trend,
+  trendType = "up",
+}) {
+  const gradients = {
+    indigo: "from-indigo-500 to-indigo-700",
+    blue: "from-sky-500 to-blue-700",
+    emerald: "from-emerald-500 to-green-700",
+    violet: "from-violet-500 to-purple-700",
+    red: "from-red-500 to-rose-700",
   };
+
   return (
-    <div className="p-5 transition bg-white border shadow-sm rounded-2xl border-slate-200 hover:-translate-y-0.5 hover:shadow-md">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-slate-500">{title}</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
-          {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+    <div className="relative p-6 overflow-hidden transition-all duration-300 bg-white border shadow-sm group rounded-3xl border-slate-200 hover:-translate-y-1 hover:shadow-xl">
+
+      {/* Background Glow */}
+      <div
+        className={`absolute -right-10 -top-10 h-36 w-36 rounded-full bg-gradient-to-br ${gradients[accent]} opacity-10 blur-3xl`}
+      />
+
+      <div className="relative flex items-start justify-between">
+
+        <div>
+
+          <p className="text-sm font-medium text-slate-500">
+            {title}
+          </p>
+
+          <h2 className="mt-3 text-3xl font-bold text-slate-900">
+            {value}
+          </h2>
+
+          <p className="mt-2 text-xs text-slate-500">
+            {hint}
+          </p>
+
+          <div
+            className={`mt-4 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+              trendType === "up"
+                ? "bg-emerald-50 text-emerald-700"
+                : trendType === "down"
+                ? "bg-red-50 text-red-700"
+                : "bg-slate-100 text-slate-700"
+            }`}
+          >
+            {trend}
+          </div>
+
         </div>
-        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${colors[accent] || colors.indigo}`}>
-          <Icon size={20} />
+
+        <div
+          className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${gradients[accent]} text-white shadow-lg transition-transform duration-300 group-hover:scale-110`}
+        >
+          <Icon size={24} />
         </div>
+
       </div>
+
     </div>
   );
 }
 
-function IconButton({ children, onClick, title, className = "" }) {
+function IconButton({
+  children,
+  onClick,
+  title,
+  color = "slate",
+  className = "",
+}) {
+  const colors = {
+    slate:
+      "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+    blue:
+      "text-blue-600 hover:bg-blue-50 hover:text-blue-700",
+    green:
+      "text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700",
+    red:
+      "text-red-600 hover:bg-red-50 hover:text-red-700",
+    violet:
+      "text-violet-600 hover:bg-violet-50 hover:text-violet-700",
+  };
+
   return (
-    <button onClick={onClick} title={title} className={`grid h-8 w-8 place-items-center rounded-lg transition ${className}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${colors[color]} ${className}`}
+    >
       {children}
     </button>
   );
 }
 
-function Detail({ icon: Icon, label, value }) {
-  return (
-    <div className="flex items-start gap-2.5">
-      <Icon size={16} className="mt-0.5 shrink-0 text-slate-400" />
-      <div className="min-w-0">
-        <p className="text-xs text-slate-400">{label}</p>
-        <p className="text-sm break-words text-slate-700">{value || "—"}</p>
-      </div>
-    </div>
-  );
-}
-
-function Drawer({ open, title, subtitle, icon: Icon, children, onClose }) {
+function Drawer({
+  open,
+  title,
+  subtitle,
+  icon: Icon,
+  children,
+  onClose,
+}) {
   return (
     <AnimatePresence>
+
       {open && (
         <>
+
           <motion.div
-            className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
+            className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-md"
           />
+
           <motion.aside
-            className="fixed inset-y-0 right-0 z-[61] flex w-full max-w-md flex-col bg-white shadow-2xl"
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
-            transition={{ type: "spring", damping: 30, stiffness: 300 }}
+            transition={{
+              duration: .35,
+              ease: "easeOut",
+            }}
+            className="fixed inset-y-0 right-0 z-[61] flex h-screen w-full max-w-3xl flex-col overflow-hidden bg-slate-50 shadow-[0_20px_80px_rgba(0,0,0,.35)]"
           >
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-200">
-              <div className="flex items-center gap-3">
-                {Icon && (
-                  <div className="grid text-indigo-600 rounded-xl h-10 w-10 place-items-center bg-indigo-50">
-                    <Icon size={18} />
+
+            {/* Header */}
+
+            <div className="px-8 py-6 text-white bg-gradient-to-r from-slate-950 via-indigo-900 to-blue-900">
+
+              <div className="flex items-center justify-between">
+
+                <div className="flex items-center gap-4">
+
+                  {Icon && (
+                    <div className="flex items-center justify-center h-14 w-14 rounded-2xl bg-white/10 backdrop-blur">
+
+                      <Icon size={24} />
+
+                    </div>
+                  )}
+
+                  <div>
+
+                    <h2 className="text-2xl font-bold">
+                      {title}
+                    </h2>
+
+                    {subtitle && (
+                      <p className="mt-1 text-sm text-slate-300">
+                        {subtitle}
+                      </p>
+                    )}
+
                   </div>
-                )}
-                <div>
-                  <h2 className="text-base font-semibold leading-tight text-slate-900">{title}</h2>
-                  {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+
                 </div>
+
+                <button
+                  onClick={onClose}
+                  className="p-2 transition rounded-xl hover:bg-white/10"
+                >
+                  <X size={22} />
+                </button>
+
               </div>
-              <button onClick={onClose} className="grid transition rounded-lg h-9 w-9 place-items-center text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close">
-                <X size={20} />
-              </button>
+
             </div>
-            <div className="flex flex-col flex-1 min-h-0">{children}</div>
+
+            {/* Body */}
+
+            <div className="flex-1 overflow-y-auto">
+              {children}
+            </div>
+
           </motion.aside>
+
         </>
       )}
+
     </AnimatePresence>
   );
 }
 
-function Field({ label, required, children }) {
+function Field({
+  label,
+  required,
+  hint,
+  children,
+}) {
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-medium text-slate-600">
-        {label} {required && <span className="text-red-500">*</span>}
-      </span>
+    <div>
+
+      <div className="flex items-center justify-between mb-2">
+
+        <label className="text-sm font-semibold text-slate-700">
+
+          {label}
+
+          {required && (
+            <span className="ml-1 text-red-500">*</span>
+          )}
+
+        </label>
+
+        {hint && (
+          <span className="text-xs text-slate-400">
+            {hint}
+          </span>
+        )}
+
+      </div>
+
       {children}
-    </label>
+
+    </div>
   );
 }

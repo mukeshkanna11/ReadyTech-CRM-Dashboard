@@ -8,6 +8,9 @@ import {
   TrendingUp,
   CheckCircle2,
   DollarSign,
+  Building2,
+  BadgeCheck,
+  ArrowRight,
   ArrowUpRight,
   BarChart3,
   Target,
@@ -28,19 +31,29 @@ const API_URL =
 const tabs = [
   {
     id: "leads",
-    label: "Leads",
+    label: "Lead Management",
     icon: Users,
+    description: "Capture, qualify and convert sales leads.",
   },
+  
   {
     id: "opportunities",
-    label: "Opportunities",
-    icon: Briefcase,
+    label: "Sales Pipeline",
+    icon: Target,
+    description: "Track opportunities and deal progress.",
   },
   {
-    id: "activities",
-    label: "Activities",
-    icon: Activity,
+    id: "analytics",
+    label: "Analytics",
+    icon: BarChart3,
+    description: "Monitor sales performance and business insights.",
   },
+  {
+    id: "customers",
+    label: "Customers",
+    icon: Building2,
+    description: "Manage customer profiles and relationships.",
+  }
 ];
 
 export default function SalesforceModule() {
@@ -201,40 +214,91 @@ useEffect(() => {
   return (
   <div className="min-h-screen p-6 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 lg:p-8">
 
-    {/* HERO */}
-    <motion.div
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="relative overflow-hidden rounded-[36px] bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-700 p-8 lg:p-10 shadow-2xl"
-    >
-      <div className="absolute inset-0 bg-black/10" />
+   {/* ================= ENTERPRISE HERO ================= */}
 
-      <div className="relative z-10 flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+<motion.div
+  initial={{ opacity: 0, y: -20 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.5 }}
+  className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-slate-950 via-indigo-900 to-blue-900 shadow-2xl"
+>
 
-        <div>
-          <h1 className="text-3xl font-bold text-white lg:text-3xl">
-            Salesforce CRM Dashboard
-          </h1>
+  {/* Background Effects */}
 
-          <p className="max-w-3xl mt-4 text-lg text-blue-100">
-            Manage leads, opportunities, customer engagement,
-            sales activities and revenue performance from one
-            enterprise-grade platform.
-          </p>
+  <div className="absolute rounded-full -top-24 -right-24 h-72 w-72 bg-indigo-500/20 blur-3xl" />
+  <div className="absolute rounded-full -bottom-24 -left-24 h-72 w-72 bg-blue-500/10 blur-3xl" />
+  <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10" />
+
+  <div className="relative z-10 p-8 lg:p-10">
+
+    <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+
+      {/* Left */}
+
+      <div className="max-w-4xl">
+
+        <div className="inline-flex items-center gap-2 px-4 py-2 mb-4 text-xs font-semibold tracking-wider text-blue-100 uppercase border rounded-full border-white/10 bg-white/10 backdrop-blur">
+
+          🚀 ReadyTech Solutions
+
+          <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
+            Enterprise CRM
+          </span>
+
         </div>
+
+        <h1 className="text-4xl font-extrabold leading-tight text-white lg:text-5xl">
+
+          ReadyTech CRM Dashboard
+
+        </h1>
+
+        <p className="max-w-3xl mt-5 text-lg leading-8 text-slate-300">
+
+          Centralize customer relationships, manage leads, monitor sales
+          performance, automate follow-ups, and drive business growth through
+          an enterprise-grade CRM platform built by ReadyTech Solutions.
+
+        </p>
+
+        <div className="flex flex-wrap gap-3 mt-6">
+
+          <span className="px-4 py-2 text-sm text-white rounded-full bg-white/10 backdrop-blur">
+            Lead Management
+          </span>
+
+          <span className="px-4 py-2 text-sm text-white rounded-full bg-white/10 backdrop-blur">
+            Sales Pipeline
+          </span>
+
+          <span className="px-4 py-2 text-sm text-white rounded-full bg-white/10 backdrop-blur">
+            AI Insights
+          </span>
+
+          <span className="px-4 py-2 text-sm text-white rounded-full bg-white/10 backdrop-blur">
+            Customer Analytics
+          </span>
+
+        </div>
+
+      </div>
+
+      {/* Right */}
+
+      <div className="flex flex-col gap-4 lg:items-end">
 
         <div className="flex flex-wrap gap-3">
 
           <button
             onClick={handleRefresh}
             disabled={loading}
-            className="flex items-center gap-2 px-5 py-3 font-semibold text-blue-700 transition bg-white shadow-xl rounded-2xl hover:scale-105"
+            className="flex items-center gap-2 px-6 py-3 font-semibold transition bg-white shadow-xl rounded-2xl text-slate-900 hover:scale-105"
           >
             <RefreshCw
               size={18}
               className={loading ? "animate-spin" : ""}
             />
-            Refresh
+            Refresh Dashboard
           </button>
 
           <button
@@ -242,109 +306,383 @@ useEffect(() => {
               setActiveTab("leads");
               setOpenLeadForm(true);
             }}
-            className="flex items-center gap-2 px-5 py-3 font-semibold text-white transition shadow-xl rounded-2xl bg-emerald-500 hover:bg-emerald-600"
+            className="flex items-center gap-2 px-6 py-3 font-semibold text-white transition shadow-xl rounded-2xl bg-emerald-500 hover:bg-emerald-600 hover:scale-105"
           >
             <Plus size={18} />
-            Add Lead
+            Create Lead
           </button>
 
         </div>
+
+        {/* Enterprise KPI */}
+
+        <div className="grid grid-cols-3 gap-4 mt-3">
+
+          <div className="p-4 text-center border rounded-2xl border-white/10 bg-white/10 backdrop-blur">
+
+            <p className="text-xs tracking-wide uppercase text-slate-300">
+              CRM
+            </p>
+
+            <h3 className="mt-2 text-2xl font-bold text-white">
+              Enterprise
+            </h3>
+
+          </div>
+
+          <div className="p-4 text-center border rounded-2xl border-white/10 bg-white/10 backdrop-blur">
+
+            <p className="text-xs tracking-wide uppercase text-slate-300">
+              Platform
+            </p>
+
+            <h3 className="mt-2 text-2xl font-bold text-white">
+              MERN
+            </h3>
+
+          </div>
+
+          <div className="p-4 text-center border rounded-2xl border-white/10 bg-white/10 backdrop-blur">
+
+            <p className="text-xs tracking-wide uppercase text-slate-300">
+              Company
+            </p>
+
+            <h3 className="mt-2 text-xl font-bold text-white">
+              ReadyTech
+            </h3>
+
+          </div>
+
+        </div>
+
       </div>
-    </motion.div>
-
-    {/* KPI CARDS */}
-    <div className="grid gap-6 mt-8 md:grid-cols-2 xl:grid-cols-4">
-
-      <Kpi
-        title="Total Leads"
-        value={kpis.total}
-        icon={Users}
-        gradient="from-blue-600 to-indigo-700"
-      />
-
-      <Kpi
-        title="Active Leads"
-        value={kpis.activeLeads}
-        icon={TrendingUp}
-        gradient="from-cyan-500 to-sky-700"
-      />
-
-      <Kpi
-        title="Converted"
-        value={kpis.converted}
-        icon={CheckCircle2}
-        gradient="from-emerald-500 to-green-700"
-      />
-
-      <Kpi
-        title="Conversion Rate"
-        value={`${kpis.conversionRate}%`}
-        icon={Target}
-        gradient="from-pink-500 to-violet-700"
-      />
 
     </div>
 
+  </div>
 
-    {/* NAVIGATION */}
-    <div className="p-4 mt-10 bg-white border shadow-xl rounded-3xl border-slate-100">
+</motion.div>
 
-      <div className="flex flex-wrap gap-4">
+   {/* ================= ENTERPRISE KPI CARDS ================= */}
 
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.id;
+<div className="grid gap-6 mt-8 sm:grid-cols-2 xl:grid-cols-4">
 
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-3 rounded-2xl px-7 py-4 font-semibold transition-all duration-300 ${
+  <Kpi
+    title="Total Leads"
+    value={kpis.total}
+    subtitle="All customer enquiries"
+    icon={Users}
+    gradient="from-blue-600 via-indigo-600 to-violet-700"
+    trend="+12.5%"
+    trendUp
+  />
+
+  <Kpi
+    title="Qualified Leads"
+    value={kpis.activeLeads}
+    subtitle="Ready for sales team"
+    icon={BadgeCheck}
+    gradient="from-cyan-500 via-sky-600 to-blue-700"
+    trend="+8.2%"
+    trendUp
+  />
+
+  <Kpi
+    title="Converted Customers"
+    value={kpis.converted}
+    subtitle="Successful conversions"
+    icon={CheckCircle2}
+    gradient="from-emerald-500 via-green-600 to-emerald-700"
+    trend="+5.8%"
+    trendUp
+  />
+
+  <Kpi
+    title="Conversion Rate"
+    value={`${kpis.conversionRate}%`}
+    subtitle="Overall sales performance"
+    icon={Target}
+    gradient="from-pink-500 via-violet-600 to-purple-700"
+    trend="+2.1%"
+    trendUp
+  />
+
+</div>
+
+
+    {/* ================= ENTERPRISE NAVIGATION ================= */}
+
+<div className="mt-10 overflow-hidden bg-white border shadow-xl rounded-3xl border-slate-200">
+
+  {/* Header */}
+
+  <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
+
+    <div>
+
+      <h3 className="text-lg font-bold text-slate-900">
+        CRM Workspace
+      </h3>
+
+      <p className="text-sm text-slate-500">
+        Access all ReadyTech CRM business modules from one place.
+      </p>
+
+    </div>
+
+    <span className="px-3 py-1 text-xs font-semibold text-indigo-700 bg-indigo-100 rounded-full">
+      {tabs.length} Modules
+    </span>
+
+  </div>
+
+  {/* Navigation */}
+
+  <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
+
+    {tabs.map((tab) => {
+
+      const Icon = tab.icon;
+      const active = activeTab === tab.id;
+
+      return (
+
+        <button
+          key={tab.id}
+          onClick={() => setActiveTab(tab.id)}
+          className={`group relative overflow-hidden rounded-2xl border p-5 text-left transition-all duration-300 ${
+            active
+              ? "border-indigo-600 bg-gradient-to-r from-indigo-600 via-blue-600 to-violet-600 text-white shadow-xl"
+              : "border-slate-200 bg-white hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg"
+          }`}
+        >
+
+          {/* Active Glow */}
+
+          {active && (
+            <div className="absolute top-0 right-0 w-24 h-24 rounded-full bg-white/10 blur-2xl" />
+          )}
+
+          <div className="relative flex items-start justify-between">
+
+            <div>
+
+              <div
+                className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
+                  active
+                    ? "bg-white/15"
+                    : "bg-indigo-50 text-indigo-600"
+                }`}
+              >
+                <Icon size={22} />
+              </div>
+
+              <h4 className="mt-4 text-lg font-semibold">
+                {tab.label}
+              </h4>
+
+              <p
+                className={`mt-2 text-sm ${
+                  active
+                    ? "text-indigo-100"
+                    : "text-slate-500"
+                }`}
+              >
+                {tab.description ||
+                  "Manage your CRM operations efficiently."}
+              </p>
+
+            </div>
+
+            {active && (
+              <div className="px-2 py-1 text-xs font-semibold rounded-full bg-white/20">
+                Active
+              </div>
+            )}
+
+          </div>
+
+          <div className="flex items-center justify-between mt-5">
+
+            <span
+              className={`text-xs font-medium ${
                 active
-                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg"
-                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  ? "text-indigo-100"
+                  : "text-slate-400"
               }`}
             >
-              <Icon size={18} />
-              {tab.label}
-            </button>
-          );
-        })}
+              Enterprise Module
+            </span>
+
+            <ArrowRight
+              size={18}
+              className={`transition ${
+                active
+                  ? "translate-x-1"
+                  : "text-slate-400 group-hover:translate-x-1"
+              }`}
+            />
+
+          </div>
+
+        </button>
+
+      );
+
+    })}
+
+  </div>
+
+</div>
+
+    {/* CONTENT */}
+   {/* ================= ENTERPRISE CONTENT ================= */}
+
+{/* ================= ENTERPRISE MODULE ================= */}
+
+<motion.div
+  key={activeTab}
+  initial={{ opacity: 0, y: 15 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.35 }}
+  className="mt-8 overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)]"
+>
+
+  {/* Header */}
+
+  <div className="relative px-8 overflow-hidden border-b border-slate-200 bg-gradient-to-r from-slate-900 via-indigo-900 to-blue-900 py-7">
+
+    <div className="absolute w-56 h-56 rounded-full -right-16 -top-16 bg-white/5 blur-3xl" />
+    <div className="absolute bottom-0 w-40 h-40 rounded-full -left-10 bg-indigo-500/20 blur-3xl" />
+
+    <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+
+      <div>
+
+        <div className="flex items-center gap-2 mb-3">
+
+          <span className="px-3 py-1 text-xs font-semibold tracking-wider text-blue-100 uppercase rounded-full bg-white/10">
+            ReadyTech CRM
+          </span>
+
+          <span className="px-3 py-1 text-xs font-bold text-white rounded-full bg-emerald-500">
+            Enterprise
+          </span>
+
+        </div>
+
+        <h2 className="text-3xl font-bold text-white">
+          {tabs.find((t) => t.id === activeTab)?.label}
+        </h2>
+
+        <p className="max-w-3xl mt-2 text-sm leading-7 text-slate-300">
+          {tabs.find((t) => t.id === activeTab)?.description}
+        </p>
+
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+
+        <button
+          onClick={handleRefresh}
+          className="flex items-center gap-2 px-5 py-3 text-sm font-semibold transition bg-white shadow-lg rounded-2xl text-slate-900 hover:scale-105"
+        >
+          <RefreshCw
+            size={17}
+            className={loading ? "animate-spin" : ""}
+          />
+          Refresh
+        </button>
+
+        <button
+          onClick={() => {
+            if (activeTab === "leads") {
+              setOpenLeadForm(true);
+            }
+          }}
+          className="flex items-center gap-2 px-5 py-3 text-sm font-semibold text-white transition shadow-lg rounded-2xl bg-emerald-500 hover:bg-emerald-600 hover:scale-105"
+        >
+          <Plus size={17} />
+          New Record
+        </button>
 
       </div>
 
     </div>
 
-    {/* CONTENT */}
-    <motion.div
-      key={activeTab}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="mt-8 rounded-[32px] border border-slate-100 bg-white p-8 shadow-2xl"
-    >
+  </div>
 
-      {activeTab === "leads" && (
-        <LeadsTab
-          key={`leads-${refreshKey}`}
-          openLeadForm={openLeadForm}
-          setOpenLeadForm={setOpenLeadForm}
-          onLeadCreated={fetchDashboardStats}
-        />
-      )}
+  {/* Stats */}
 
-      {activeTab === "opportunities" && (
-        <OpportunitiesTab
-          key={`opportunities-${refreshKey}`}
-        />
-      )}
+  <div className="grid gap-6 px-8 py-5 border-b border-slate-200 bg-slate-50 md:grid-cols-4">
 
-      {activeTab === "activities" && (
-        <ActivitiesTab
-          key={`activities-${refreshKey}`}
-        />
-      )}
+    <div>
+      <p className="text-xs tracking-wider uppercase text-slate-400">
+        Module
+      </p>
+      <h3 className="mt-2 text-lg font-bold text-slate-900">
+        {tabs.find((t) => t.id === activeTab)?.label}
+      </h3>
+    </div>
 
-    </motion.div>
+    <div>
+      <p className="text-xs tracking-wider uppercase text-slate-400">
+        Status
+      </p>
+      <h3 className="mt-2 font-semibold text-emerald-600">
+        ● Operational
+      </h3>
+    </div>
+
+    <div>
+      <p className="text-xs tracking-wider uppercase text-slate-400">
+        Platform
+      </p>
+      <h3 className="mt-2 font-semibold text-slate-800">
+        ReadyTech CRM
+      </h3>
+    </div>
+
+    <div>
+      <p className="text-xs tracking-wider uppercase text-slate-400">
+        Last Refresh
+      </p>
+      <h3 className="mt-2 font-semibold text-slate-800">
+        {new Date().toLocaleTimeString()}
+      </h3>
+    </div>
+
+  </div>
+
+  {/* Body */}
+
+  <div className="p-8 bg-gradient-to-b from-white to-slate-50">
+
+    {activeTab === "leads" && (
+      <LeadsTab
+        key={`leads-${refreshKey}`}
+        openLeadForm={openLeadForm}
+        setOpenLeadForm={setOpenLeadForm}
+        onLeadCreated={fetchDashboardStats}
+      />
+    )}
+
+    {activeTab === "opportunities" && (
+      <OpportunitiesTab
+        key={`opportunities-${refreshKey}`}
+      />
+    )}
+
+    {activeTab === "activities" && (
+      <ActivitiesTab
+        key={`activities-${refreshKey}`}
+      />
+    )}
+
+  </div>
+
+</motion.div>
 
   </div>
 );
@@ -352,62 +690,125 @@ useEffect(() => {
 function Kpi({
   title,
   value,
+  subtitle,
   icon: Icon,
   gradient,
+  trend,
+  trendUp = true,
 }) {
   return (
-    <motion.div
-      whileHover={{
-        y: -8,
-      }}
-      className={`relative overflow-hidden rounded-3xl bg-gradient-to-br ${gradient} p-7 text-white shadow-2xl`}
-    >
-      <div className="absolute w-24 h-24 rounded-full -right-4 -top-4 bg-white/10" />
+    <div className="relative overflow-hidden transition-all duration-300 bg-white shadow-lg group rounded-3xl hover:-translate-y-1 hover:shadow-2xl">
 
-      <Icon
-        size={34}
-        className="absolute right-6 top-6 opacity-20"
+      {/* Background Glow */}
+      <div
+        className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-5 group-hover:opacity-10 transition`}
       />
 
-      <p className="text-sm font-medium opacity-90">
-        {title}
-      </p>
+      <div className="relative p-6">
 
-      <h2 className="mt-4 text-4xl font-bold">
-        {value}
-      </h2>
-    </motion.div>
+        <div className="flex items-start justify-between">
+
+          <div>
+
+            <p className="text-sm font-medium text-slate-500">
+              {title}
+            </p>
+
+            <h2 className="mt-2 text-4xl font-bold text-slate-900">
+              {value}
+            </h2>
+
+            <p className="mt-2 text-sm text-slate-500">
+              {subtitle}
+            </p>
+
+          </div>
+
+          <div
+            className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-lg`}
+          >
+            <Icon size={28} />
+          </div>
+
+        </div>
+
+        <div className="flex items-center justify-between pt-4 mt-6 border-t border-slate-100">
+
+          <span
+            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+              trendUp
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-red-100 text-red-700"
+            }`}
+          >
+            {trendUp ? "▲" : "▼"} {trend}
+          </span>
+
+          <span className="text-xs font-medium text-slate-400">
+            This Month
+          </span>
+
+        </div>
+
+      </div>
+
+    </div>
   );
 }
-
 function InsightCard({
   title,
   value,
   icon: Icon,
-  color,
+  color = "text-indigo-600",
+  bg = "from-indigo-500 to-blue-600",
+  trend = "+12%",
+  subtitle = "Compared to last month",
 }) {
   return (
     <motion.div
-      whileHover={{
-        y: -4,
-      }}
-      className="p-6 bg-white border shadow-xl rounded-3xl border-slate-100"
+      whileHover={{ y: -6, scale: 1.02 }}
+      transition={{ duration: 0.25 }}
+      className="relative p-6 overflow-hidden transition-all bg-white border shadow-lg group rounded-3xl border-slate-200 hover:shadow-2xl"
     >
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-slate-500">
-          {title}
-        </h3>
-
-        <Icon
-          size={22}
-          className={color}
-        />
-      </div>
-
+      {/* Background Glow */}
       <div
-        className={`mt-4 text-4xl font-bold ${color}`}
-      >
-        {value}
+        className={`absolute -right-10 -top-10 h-32 w-32 rounded-full bg-gradient-to-br ${bg} opacity-10 blur-3xl`}
+      />
+
+      <div className="relative">
+
+        <div className="flex items-center justify-between">
+
+          <div>
+            <p className="text-sm font-medium text-slate-500">
+              {title}
+            </p>
+
+            <h2 className="mt-2 text-4xl font-bold text-slate-900">
+              {value}
+            </h2>
+          </div>
+
+          <div
+            className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${bg} text-white shadow-lg`}
+          >
+            <Icon size={26} />
+          </div>
+
+        </div>
+
+        <div className="flex items-center justify-between pt-4 mt-6 border-t border-slate-100">
+
+          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">
+            ▲ {trend}
+          </span>
+
+          <span className="text-xs text-slate-400">
+            {subtitle}
+          </span>
+
+        </div>
+
       </div>
     </motion.div>
   );
@@ -416,17 +817,49 @@ function InsightCard({
 function SummaryRow({
   label,
   value,
+  icon: Icon,
+  color = "text-indigo-600",
 }) {
   return (
-    <div className="flex items-center justify-between p-4 transition border rounded-2xl border-slate-100 bg-slate-50 hover:bg-slate-100">
-      <span className="font-medium text-slate-600">
-        {label}
-      </span>
+    <motion.div
+      whileHover={{ x: 4 }}
+      className="flex items-center justify-between p-5 transition bg-white border shadow-sm rounded-2xl border-slate-200 hover:border-indigo-300 hover:shadow-md"
+    >
 
-      <span className="text-lg font-bold text-slate-800">
-        {value}
-      </span>
-    </div>
+      <div className="flex items-center gap-4">
+
+        {Icon && (
+          <div className="flex items-center justify-center h-11 w-11 rounded-xl bg-indigo-50">
+            <Icon
+              size={20}
+              className={color}
+            />
+          </div>
+        )}
+
+        <div>
+
+          <p className="text-sm font-medium text-slate-500">
+            {label}
+          </p>
+
+          <p className="text-xs text-slate-400">
+            ReadyTech CRM Analytics
+          </p>
+
+        </div>
+
+      </div>
+
+      <div className="text-right">
+
+        <h3 className="text-2xl font-bold text-slate-900">
+          {value}
+        </h3>
+
+      </div>
+
+    </motion.div>
   );
 }
 
