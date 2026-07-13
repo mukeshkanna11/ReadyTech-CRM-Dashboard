@@ -3,14 +3,15 @@ import API from "../services/api";
 import { Briefcase, IndianRupee, Search, Filter } from "lucide-react";
 import toast from "react-hot-toast";
 import {
+  RefreshCw,
   BriefcaseBusiness,
+  TrendingUp,
+  CheckCircle2,
   Home,
   ChevronRight,
-  RefreshCw,
   Download,
   Plus,
-  CheckCircle2,
-  TrendingUp,
+  Inbox,
 } from "lucide-react";
 import {
   ArrowRight,

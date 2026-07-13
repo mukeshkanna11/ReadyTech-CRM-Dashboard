@@ -70,7 +70,7 @@ export default function InvoiceList() {
   const updateStatus = async (invoice, status) => {
   try {
     const res = await API.put(
-      `/api/invoices/${invoice._id}/status`,
+      `/invoices/${invoice._id}/status`,
       {
         paymentStatus: status, // ✔ MUST be paymentStatus
       }
@@ -544,13 +544,13 @@ export default function InvoiceList() {
                 <div key={i} className="flex items-center gap-4">
                   <div className="flex-1 h-4 rounded bg-slate-100 animate-pulse" />
                   <div className="w-24 h-4 rounded bg-slate-100 animate-pulse" />
-                  <div className="h-6 rounded-full w-20 bg-slate-100 animate-pulse" />
+                  <div className="w-20 h-6 rounded-full bg-slate-100 animate-pulse" />
                 </div>
               ))}
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-              <div className="grid mb-4 rounded-2xl h-14 w-14 place-items-center bg-indigo-50 text-indigo-500">
+              <div className="grid mb-4 text-indigo-500 rounded-2xl h-14 w-14 place-items-center bg-indigo-50">
                 <FileText size={26} />
               </div>
               <h3 className="text-base font-semibold text-slate-800">
