@@ -23,7 +23,7 @@ export default function Navbar({ onMenu }) {
 
           <div className="flex-col hidden leading-tight sm:flex">
             <span className="text-sm font-semibold text-slate-800">
-              Ready Tech CRM
+              ReadyTech CRM
             </span>
             <span className="text-xs text-slate-500">
               Smart Business Platform

@@ -29,6 +29,8 @@ import {
   TrendingUp,
   User,
   KeyRound,
+  SlidersHorizontal,
+  ArrowLeftRight,
 } from "lucide-react";
 import { Cloud } from "lucide-react";
 
@@ -79,6 +81,8 @@ const ERP_LINKS = [
   { to: "/stocks/purchase-orders", icon: ClipboardList, label: "Purchase Orders" },
   { to: "/stocks/sales-orders", icon: ShoppingCart, label: "Sales Orders" },
   { to: "/stocks/inventory", icon: Layers, label: "Inventory" },
+  { to: "/stocks/stock-adjustment", icon: SlidersHorizontal, label: "Stock Adjustment" },
+  { to: "/stocks/warehouse-transfer", icon: ArrowLeftRight, label: "Warehouse Transfer" },
 ];
 
 /* AI tools reuse existing routes where the feature lives; those without a page are marked "Soon" */
@@ -289,7 +293,7 @@ function Topbar({ onMenu }) {
         </button>
 
         <div className="hidden leading-tight md:block">
-          <p className="text-sm font-semibold text-slate-800">ReadyTech CRM</p>
+          <p className="text-sm font-semibold text-slate-800">ReadyTechS CRM + ERP</p>
           <p className="text-xs text-slate-500">Business Intelligence Platform</p>
         </div>
 
@@ -353,7 +357,7 @@ function Topbar({ onMenu }) {
             </button>
 
             {profileOpen && (
-              <div className="absolute right-0 z-50 mt-3 overflow-hidden border shadow-xl w-56 rounded-2xl border-slate-200/70 bg-white/90 shadow-slate-900/10 backdrop-blur-xl">
+              <div className="absolute right-0 z-50 w-56 mt-3 overflow-hidden border shadow-xl rounded-2xl border-slate-200/70 bg-white/90 shadow-slate-900/10 backdrop-blur-xl">
                 <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100">
                   <div className="flex items-center justify-center text-sm font-semibold text-white rounded-full w-9 h-9 bg-gradient-to-br from-indigo-600 to-violet-600">
                     A

@@ -44,6 +44,13 @@ const SalesOrderSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Fulfilling warehouse — set at approval when stock is reserved
+    warehouse: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Warehouse",
+      default: null,
+    },
+
     items: {
       type: [SalesOrderItemSchema],
       validate: {

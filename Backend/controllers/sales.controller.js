@@ -1,6 +1,9 @@
+import mongoose from "mongoose";
 import SalesOrder from "../models/SalesOrder.model.js";
 import Inventory from "../models/Inventory.model.js";
 import Product from "../models/Product.model.js";
+import Warehouse from "../models/Warehouse.model.js";
+import { applyReserve, applyRelease } from "./inventory.controller.js";
 
 /* ==========================================
    GENERATE SALES ORDER NUMBER
@@ -184,30 +187,46 @@ export const getSalesOrderById = async (req, res) => {
    APPROVE SALES ORDER
 ========================================== */
 export const approveSalesOrder = async (req, res) => {
+  const { warehouse } = req.body;
+  const session = await mongoose.startSession();
   try {
-    const salesOrder = await SalesOrder.findById(
-      req.params.id
-    );
+    let salesOrder;
+    await session.withTransaction(async () => {
+      salesOrder = await SalesOrder.findById(req.params.id).session(session);
 
-    if (!salesOrder) {
-      return res.status(404).json({
-        success: false,
-        message: "Sales order not found",
-      });
-    }
+      if (!salesOrder) {
+        const e = new Error("Sales order not found");
+        e.status = 404;
+        throw e;
+      }
 
-    if (salesOrder.status !== "DRAFT") {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot approve order in ${salesOrder.status} status`,
-      });
-    }
+      if (salesOrder.status !== "DRAFT") {
+        const e = new Error(`Cannot approve order in ${salesOrder.status} status`);
+        e.status = 400;
+        throw e;
+      }
 
-    salesOrder.status = "APPROVED";
-    salesOrder.approvedAt = new Date();
-    salesOrder.approvedBy = req.user.id;
+      // Reserve stock when a fulfilling warehouse is supplied
+      if (warehouse) {
+        const wh = await Warehouse.findById(warehouse).session(session);
+        if (!wh) {
+          const e = new Error("Invalid warehouse ID");
+          e.status = 400;
+          throw e;
+        }
 
-    await salesOrder.save();
+        for (const item of salesOrder.items) {
+          await applyReserve(item.product, warehouse, item.qty, session);
+        }
+        salesOrder.warehouse = warehouse;
+      }
+
+      salesOrder.status = "APPROVED";
+      salesOrder.approvedAt = new Date();
+      salesOrder.approvedBy = req.user.id;
+
+      await salesOrder.save({ session });
+    });
 
     return res.status(200).json({
       success: true,
@@ -215,12 +234,13 @@ export const approveSalesOrder = async (req, res) => {
       salesOrder,
     });
   } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ success: false, message: err.message });
+    }
     console.error("Approve SO Error:", err);
-
-    return res.status(500).json({
-      success: false,
-      message: err.message,
-    });
+    return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -228,59 +248,83 @@ export const approveSalesOrder = async (req, res) => {
    DELIVER SALES ORDER
 ========================================== */
 export const deliverSalesOrder = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const { warehouse } = req.body;
+    let salesOrder;
+    await session.withTransaction(async () => {
+      salesOrder = await SalesOrder.findById(req.params.id)
+        .populate("items.product")
+        .session(session);
 
-    if (!warehouse) {
-      return res.status(400).json({
-        success: false,
-        message: "Warehouse is required",
-      });
-    }
-
-    const salesOrder = await SalesOrder.findById(
-      req.params.id
-    ).populate("items.product");
-
-    if (!salesOrder) {
-      return res.status(404).json({
-        success: false,
-        message: "Sales order not found",
-      });
-    }
-
-    if (salesOrder.status !== "APPROVED") {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Only approved sales orders can be delivered",
-      });
-    }
-
-    for (const item of salesOrder.items) {
-      if (!item.product) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "One or more products no longer exist",
-        });
+      if (!salesOrder) {
+        const e = new Error("Sales order not found");
+        e.status = 404;
+        throw e;
       }
 
-      await Inventory.create({
-        product: item.product._id,
-        warehouse,
-        outQty: item.qty,
-        type: "SALE",
-        reference: salesOrder._id,
-        createdBy: req.user.id,
-      });
-    }
+      if (salesOrder.status !== "APPROVED") {
+        const e = new Error("Only approved sales orders can be delivered");
+        e.status = 400;
+        throw e;
+      }
 
-    salesOrder.status = "DELIVERED";
-    salesOrder.deliveredAt = new Date();
-    salesOrder.deliveredBy = req.user.id;
+      // Deliver from the reserved warehouse when present, else from the body
+      const warehouse = salesOrder.warehouse
+        ? String(salesOrder.warehouse)
+        : req.body.warehouse;
+      if (!warehouse) {
+        const e = new Error("Warehouse is required");
+        e.status = 400;
+        throw e;
+      }
 
-    await salesOrder.save();
+      for (const item of salesOrder.items) {
+        if (!item.product) {
+          const e = new Error("One or more products no longer exist");
+          e.status = 400;
+          throw e;
+        }
+
+        // Negative-stock prevention for each line item (physical on-hand)
+        const available = await Inventory.getAvailable(
+          item.product._id,
+          warehouse,
+          session
+        );
+        if (item.qty > available) {
+          const e = new Error(
+            `Insufficient stock for ${item.product.name || item.product._id}. Available: ${available}, required: ${item.qty}`
+          );
+          e.status = 400;
+          throw e;
+        }
+
+        await Inventory.create(
+          [
+            {
+              product: item.product._id,
+              warehouse,
+              outQty: item.qty,
+              type: "SALE",
+              reference: salesOrder._id,
+              createdBy: req.user.id,
+            },
+          ],
+          { session }
+        );
+
+        // Release the reservation held for this order (clamped)
+        if (salesOrder.warehouse) {
+          await applyRelease(item.product._id, warehouse, item.qty, session);
+        }
+      }
+
+      salesOrder.status = "DELIVERED";
+      salesOrder.deliveredAt = new Date();
+      salesOrder.deliveredBy = req.user.id;
+
+      await salesOrder.save({ session });
+    });
 
     return res.status(200).json({
       success: true,
@@ -288,12 +332,17 @@ export const deliverSalesOrder = async (req, res) => {
       salesOrder,
     });
   } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ success: false, message: err.message });
+    }
     console.error("Deliver SO Error:", err);
 
     return res.status(500).json({
       success: false,
       message: err.message,
     });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -301,31 +350,37 @@ export const deliverSalesOrder = async (req, res) => {
    CANCEL SALES ORDER
 ========================================== */
 export const cancelSalesOrder = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const salesOrder = await SalesOrder.findById(
-      req.params.id
-    );
+    let salesOrder;
+    await session.withTransaction(async () => {
+      salesOrder = await SalesOrder.findById(req.params.id).session(session);
 
-    if (!salesOrder) {
-      return res.status(404).json({
-        success: false,
-        message: "Sales order not found",
-      });
-    }
+      if (!salesOrder) {
+        const e = new Error("Sales order not found");
+        e.status = 404;
+        throw e;
+      }
 
-    if (salesOrder.status === "DELIVERED") {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Delivered sales orders cannot be cancelled",
-      });
-    }
+      if (salesOrder.status === "DELIVERED") {
+        const e = new Error("Delivered sales orders cannot be cancelled");
+        e.status = 400;
+        throw e;
+      }
 
-    salesOrder.status = "CANCELLED";
-    salesOrder.cancelledAt = new Date();
-    salesOrder.cancelledBy = req.user.id;
+      // Release any stock reserved for this order
+      if (salesOrder.status === "APPROVED" && salesOrder.warehouse) {
+        for (const item of salesOrder.items) {
+          await applyRelease(item.product, String(salesOrder.warehouse), item.qty, session);
+        }
+      }
 
-    await salesOrder.save();
+      salesOrder.status = "CANCELLED";
+      salesOrder.cancelledAt = new Date();
+      salesOrder.cancelledBy = req.user.id;
+
+      await salesOrder.save({ session });
+    });
 
     return res.status(200).json({
       success: true,
@@ -333,11 +388,12 @@ export const cancelSalesOrder = async (req, res) => {
       salesOrder,
     });
   } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ success: false, message: err.message });
+    }
     console.error("Cancel SO Error:", err);
-
-    return res.status(500).json({
-      success: false,
-      message: err.message,
-    });
+    return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    session.endSession();
   }
 };

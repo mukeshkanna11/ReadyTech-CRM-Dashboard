@@ -30,6 +30,11 @@ const STOCK_STATUS = {
 const limitOf = (s) => s.lowStockLimit ?? s.product?.lowStockLimit ?? 10;
 const statusOf = (qty, limit) => (qty <= 0 ? "out" : qty <= limit ? "low" : "ok");
 
+// on-hand = physical ledger qty; available = on-hand − reserved (ATP)
+const onHandOf = (s) => s.onHand ?? s.available ?? 0;
+const reservedOf = (s) => s.reserved ?? 0;
+const availableOf = (s) => s.available ?? onHandOf(s) - reservedOf(s);
+
 export default function Inventory() {
   const [stocks, setStocks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -93,14 +98,38 @@ export default function Inventory() {
     }
   };
 
+  /* ================= EXPORT (CSV / PDF) ================= */
+  const downloadReport = async (format) => {
+    try {
+      const base = import.meta.env.VITE_API_URL;
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${base}/inventory/export?type=inventory&format=${format}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `inventory-report.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${format.toUpperCase()}`);
+    } catch {
+      toast.error("Export failed");
+    }
+  };
+
   /* ================= KPI DATA ================= */
   const totalProducts = stocks.length;
-  const totalStockQty = stocks.reduce((sum, s) => sum + (s.available ?? 0), 0);
+  const totalStockQty = stocks.reduce((sum, s) => sum + onHandOf(s), 0);
   const lowStockCount = stocks.filter((s) => {
-    const q = s.available ?? 0;
+    const q = availableOf(s);
     return q > 0 && q <= limitOf(s);
   }).length;
-  const outOfStockCount = stocks.filter((s) => (s.available ?? 0) <= 0).length;
+  const outOfStockCount = stocks.filter((s) => availableOf(s) <= 0).length;
 
 const warehouseCount = useMemo(
   () => new Set(stocks.map((s) => s.warehouse?._id || s.warehouse?.name)).size,
@@ -109,8 +138,7 @@ const warehouseCount = useMemo(
 
 const inventoryValue = stocks.reduce((sum, s) => {
   const price = s.product?.price || 0;
-  const qty = s.available || 0;
-  return sum + price * qty;
+  return sum + price * onHandOf(s);
 }, 0);
   
   /* ================= FILTERS ================= */
@@ -130,7 +158,7 @@ const inventoryValue = stocks.reduce((sum, s) => {
       const matchesWarehouse =
         warehouseFilter === "All" || s.warehouse?.name === warehouseFilter;
       const matchesStatus =
-        statusFilter === "All" || statusOf(s.available ?? 0, limitOf(s)) === statusFilter;
+        statusFilter === "All" || statusOf(availableOf(s), limitOf(s)) === statusFilter;
       return matchesSearch && matchesWarehouse && matchesStatus;
     });
   }, [stocks, search, warehouseFilter, statusFilter]);
@@ -176,9 +204,17 @@ const inventoryValue = stocks.reduce((sum, s) => {
         </button>
 
         <button
+          onClick={() => downloadReport("csv")}
           className="px-6 py-3 font-semibold transition border rounded-xl border-white/20 bg-white/10 backdrop-blur hover:bg-white/20"
         >
-          Export Report
+          Export CSV
+        </button>
+
+        <button
+          onClick={() => downloadReport("pdf")}
+          className="px-6 py-3 font-semibold transition border rounded-xl border-white/20 bg-white/10 backdrop-blur hover:bg-white/20"
+        >
+          Export PDF
         </button>
 
       </div>
@@ -427,6 +463,8 @@ const inventoryValue = stocks.reduce((sum, s) => {
 
 <Th>Product</Th>
 <Th>Warehouse</Th>
+<Th>On Hand</Th>
+<Th>Reserved</Th>
 <Th>Available</Th>
 <Th>Status</Th>
 <Th>Movement</Th>
@@ -440,11 +478,15 @@ const inventoryValue = stocks.reduce((sum, s) => {
 
 {filteredStocks.map((s,index)=>{
 
-const qty=s.available??0;
+const onHand=onHandOf(s);
+
+const reserved=reservedOf(s);
+
+const available=availableOf(s);
 
 const limit=limitOf(s);
 
-const status=statusOf(qty,limit);
+const status=statusOf(available,limit);
 
 const tok=STOCK_STATUS[status];
 
@@ -524,13 +566,27 @@ Warehouse
 
 <Td>
 
+<span className="font-bold text-slate-900">{onHand}</span>
+<span className="ml-1 text-xs text-slate-400">Units</span>
+
+</Td>
+
+<Td>
+
+<span className={`font-semibold ${reserved > 0 ? "text-amber-600" : "text-slate-400"}`}>{reserved}</span>
+<span className="ml-1 text-xs text-slate-400">Units</span>
+
+</Td>
+
+<Td>
+
 <div className="space-y-2">
 
 <div className="flex justify-between">
 
 <span className={`font-bold ${tok.text}`}>
 
-{qty} Units
+{available} Units
 
 </span>
 
@@ -543,7 +599,7 @@ Limit {limit}
 </div>
 
 <StockBar
-qty={qty}
+qty={available}
 limit={limit}
 status={status}
 />
@@ -597,7 +653,7 @@ onClick={()=>handleStockIn(s)}
 label="OUT"
 icon={Minus}
 color="red"
-disabled={qty<=0}
+disabled={onHand<=0}
 onClick={()=>handleStockOut(s)}
 />
 

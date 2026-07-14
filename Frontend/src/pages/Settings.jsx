@@ -17,14 +17,36 @@ const TABS = [
 
 const DEFAULTS = {
   company: {
-    name: "ReadyTech Solutions",
+    // Basic Information
+    companyName: "ReadyTech Solutions",
+    logo: "",
+
+    // Contact
     email: "admin@crm.com",
     phone: "+91 98765 43210",
-    website: "www.readytechsolutions.com",
-    taxId: "",
-    currency: "INR",
+    website: "https://www.readytechsolutions.com",
+
+    // Business Registration
+    gstNumber: "",
+    panNumber: "",
+    registrationNumber: "",
+
+    // Address
     address: "",
+    city: "",
+    state: "",
+    country: "India",
+    postalCode: "",
+
+    // Localization
+    timezone: "Asia/Kolkata",
+    currency: "INR",
+    language: "English",
+
+    // Financial
+    fiscalYear: "April - March",
   },
+
   email: {
     smtpHost: "",
     smtpPort: "587",
@@ -35,11 +57,12 @@ const DEFAULTS = {
     encryption: "TLS",
     notifications: true,
   },
+
   system: {
-    timezone: "Asia/Kolkata",
     dateFormat: "DD/MM/YYYY",
-    language: "English",
+    timeFormat: "12 Hours",
     perPage: "20",
+
     maintenance: false,
     autoBackup: true,
   },
@@ -501,7 +524,7 @@ export default function Settings() {
               }
             />
           </Field>
-        </div>
+        </div>@
 
       </div>
     </div>

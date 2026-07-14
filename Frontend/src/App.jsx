@@ -44,6 +44,8 @@ const Vendors = lazy(() => import("./pages/Stcoks/Vendors"));
 const PurchaseOrders = lazy(() => import("./pages/Stcoks/PurchaseOrders"));
 const SalesOrders = lazy(() => import("./pages/Stcoks/SalesOrders"));
 const Inventory = lazy(() => import("./pages/Stcoks/Inventory"));
+const StockAdjustment = lazy(() => import("./pages/Stcoks/StockAdjustment"));
+const WarehouseTransfer = lazy(() => import("./pages/Stcoks/WarehouseTransfer"));
 
 /* Info / Settings */
 const WhyReadyTech = lazy(() => import("./pages/WhyReadyTech"));
@@ -127,6 +129,8 @@ export default function App() {
               <Route path="purchase-orders" element={<PurchaseOrders />} />
               <Route path="sales-orders" element={<SalesOrders />} />
               <Route path="inventory" element={<Inventory />} />
+              <Route path="stock-adjustment" element={<StockAdjustment />} />
+              <Route path="warehouse-transfer" element={<WarehouseTransfer />} />
             </Route>
 
             {/* ======================================================
