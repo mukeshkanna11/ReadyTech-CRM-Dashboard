@@ -152,8 +152,32 @@ export default function CreateInvoice() {
   /* ================= SUBMIT ================= */
   const handleSubmit = async () => {
   try {
+    /* ===== MANDATORY VALIDATION ===== */
     if (!invoice.customer) {
       return toast.error("Please select a customer");
+    }
+
+    const client = clients.find((c) => c._id === invoice.customer);
+    if (client) {
+      if (!client.email) return toast.error("Selected customer has no email. Update the client profile first.");
+      if (!client.phone) return toast.error("Selected customer has no phone. Update the client profile first.");
+      if (!client.billingAddress?.addressLine1)
+        return toast.error("Selected customer has no billing address. Update the client profile first.");
+    }
+
+    if (!invoice.dueDate) return toast.error("Due date is required");
+    if (!invoice.paymentMode) return toast.error("Payment method is required");
+
+    if (!invoice.items?.length) return toast.error("Add at least one item");
+    for (let i = 0; i < invoice.items.length; i++) {
+      const it = invoice.items[i];
+      const n = i + 1;
+      if (!it.description?.trim()) return toast.error(`Item ${n}: product/service name is required`);
+      if (!it.hsnCode?.trim()) return toast.error(`Item ${n}: HSN/SAC code is required`);
+      if (!(Number(it.quantity) > 0)) return toast.error(`Item ${n}: quantity must be greater than 0`);
+      if (!(Number(it.unitPrice) >= 0)) return toast.error(`Item ${n}: unit price is invalid`);
+      if (it.taxPercent === "" || it.taxPercent === null || Number(it.taxPercent) < 0)
+        return toast.error(`Item ${n}: tax percentage is required`);
     }
 
     setLoading(true);
@@ -293,6 +317,7 @@ return (
             <thead className="bg-gray-100">
               <tr>
                 <th>Description</th>
+                <th>HSN/SAC</th>
                 <th>Qty</th>
                 <th>Price</th>
                 <th>Tax %</th>
@@ -320,6 +345,17 @@ return (
                           updateItem(i, "description", e.target.value)
                         }
                         className="w-full p-2"
+                      />
+                    </td>
+
+                    <td>
+                      <input
+                        value={item.hsnCode}
+                        onChange={(e) =>
+                          updateItem(i, "hsnCode", e.target.value)
+                        }
+                        className="w-24 p-2"
+                        placeholder="HSN/SAC"
                       />
                     </td>
 
