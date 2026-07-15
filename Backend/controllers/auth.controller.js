@@ -37,7 +37,7 @@ export const register = async (req, res) => {
     });
 
     // Generate JWT
-    const token = generateToken(user._id);
+    const token = generateToken(user);
 
     res.status(201).json({
       success: true,
@@ -89,7 +89,7 @@ export const login = async (req, res) => {
     }
 
     // Generate JWT
-    const token = generateToken(user._id);
+    const token = generateToken(user);
 
     // Optional: Update last login
     user.lastLogin = new Date();

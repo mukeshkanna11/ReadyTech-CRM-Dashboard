@@ -283,38 +283,72 @@ export const getStockSummary = async (req, res, next) => {
    delta > 0 → increase, delta < 0 → decrease.
    Requires a reason (audited). Prevents negative stock.
 ================================ */
-export const adjustStock = async (req, res, next) => {
+export const adjustStock = async (req, res) => {
   const { product, warehouse, delta, reason } = req.body;
 
+  // Validate request body
   if (!product || !warehouse || delta === undefined || delta === null) {
-    return res.status(400).json({ success: false, message: "Missing required fields" });
+    return res.status(400).json({
+      success: false,
+      message: "Missing required fields",
+    });
   }
 
   const d = Number(delta);
+
   if (!Number.isFinite(d) || d === 0) {
-    return res.status(400).json({ success: false, message: "Adjustment quantity must be a non-zero number" });
+    return res.status(400).json({
+      success: false,
+      message: "Adjustment quantity must be a non-zero number",
+    });
   }
 
   if (!reason || !String(reason).trim()) {
-    return res.status(400).json({ success: false, message: "A reason is required for stock adjustments" });
+    return res.status(400).json({
+      success: false,
+      message: "A reason is required for stock adjustments",
+    });
+  }
+
+  // Get authenticated user id
+  const userId = req.user?._id || req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: "Authenticated user not found",
+    });
   }
 
   const session = await mongoose.startSession();
+
   try {
     let stock;
+
     await session.withTransaction(async () => {
+      // Validate Product & Warehouse
       await validateRefs(product, warehouse, session);
 
-      // Negative-stock prevention for decreases
+      // Prevent negative stock
       if (d < 0) {
-        const available = await Inventory.getAvailable(product, warehouse, session);
+        const available = await Inventory.getAvailable(
+          product,
+          warehouse,
+          session
+        );
+
         if (Math.abs(d) > available) {
-          const e = new Error(`Insufficient stock. Available: ${available}, requested decrease: ${Math.abs(d)}`);
-          e.status = 400;
-          throw e;
+          const error = new Error(
+            `Insufficient stock. Available: ${available}, Requested: ${Math.abs(
+              d
+            )}`
+          );
+          error.status = 400;
+          throw error;
         }
       }
 
+      // Create inventory transaction
       const [doc] = await Inventory.create(
         [
           {
@@ -323,38 +357,50 @@ export const adjustStock = async (req, res, next) => {
             inQty: d > 0 ? d : 0,
             outQty: d < 0 ? Math.abs(d) : 0,
             type: "ADJUSTMENT",
-            reason: String(reason).trim(),
-            createdBy: req.user.id,
+            reason: reason.trim(),
+            createdBy: userId,
           },
         ],
         { session }
       );
+
       stock = doc;
 
+      // Audit Log
       await AuditLog.create(
         [
           {
-            user: req.user.id,
+            user: userId,
             action: "UPDATE",
             entity: "Inventory",
             entityId: doc._id,
             description: `Stock adjusted by ${d > 0 ? "+" : ""}${d}`,
-            meta: { product, warehouse, delta: d, reason: String(reason).trim() },
+            meta: {
+              product,
+              warehouse,
+              delta: d,
+              reason: reason.trim(),
+            },
           },
         ],
         { session }
       );
     });
 
-    return res.json({ success: true, data: stock });
+    return res.status(200).json({
+      success: true,
+      message: "Stock adjusted successfully",
+      data: stock,
+    });
   } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({ success: false, message: err.message });
-    }
     console.error("❌ STOCK ADJUSTMENT ERROR:", err);
-    return res.status(500).json({ success: false, message: err.message });
+
+    return res.status(err.status || 500).json({
+      success: false,
+      message: err.message || "Internal Server Error",
+    });
   } finally {
-    session.endSession();
+    await session.endSession();
   }
 };
 
@@ -364,90 +410,145 @@ export const adjustStock = async (req, res, next) => {
    Creates two linked ledger legs (TRANSFER_OUT + TRANSFER_IN)
    atomically. Prevents negative stock in the source warehouse.
 ================================ */
-export const transferStock = async (req, res, next) => {
+export const transferStock = async (req, res) => {
   const { product, fromWarehouse, toWarehouse, quantity, reason } = req.body;
 
-  if (!product || !fromWarehouse || !toWarehouse || !quantity) {
-    return res.status(400).json({ success: false, message: "Missing required fields" });
+  // Validate request
+  if (!product || !fromWarehouse || !toWarehouse || quantity === undefined || quantity === null) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing required fields",
+    });
   }
 
   if (String(fromWarehouse) === String(toWarehouse)) {
-    return res.status(400).json({ success: false, message: "Source and destination warehouses must differ" });
+    return res.status(400).json({
+      success: false,
+      message: "Source and destination warehouses must be different",
+    });
   }
 
   const qty = Number(quantity);
+
   if (!Number.isFinite(qty) || qty <= 0) {
-    return res.status(400).json({ success: false, message: "Quantity must be a positive number" });
+    return res.status(400).json({
+      success: false,
+      message: "Quantity must be a positive number",
+    });
+  }
+
+  // Authenticated user
+  const userId = req.user?._id || req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: "Authenticated user not found",
+    });
   }
 
   const session = await mongoose.startSession();
+
   try {
-    let legs;
+    let transferEntries = [];
+
     await session.withTransaction(async () => {
-      // product + source warehouse
+      // Validate product & warehouses
       await validateRefs(product, fromWarehouse, session);
-      // destination warehouse
       await ensureWarehouse(toWarehouse, session);
 
-      const available = await Inventory.getAvailable(product, fromWarehouse, session);
+      // Check available stock
+      const available = await Inventory.getAvailable(
+        product,
+        fromWarehouse,
+        session
+      );
+
       if (qty > available) {
-        const e = new Error(`Insufficient stock in source warehouse. Available: ${available}, requested: ${qty}`);
-        e.status = 400;
-        throw e;
+        const error = new Error(
+          `Insufficient stock. Available: ${available}, Requested: ${qty}`
+        );
+        error.status = 400;
+        throw error;
       }
 
-      // Shared reference links both legs of the transfer
+      // Shared reference id
       const transferRef = new mongoose.Types.ObjectId();
-      const note = reason ? String(reason).trim() : "";
 
-      legs = await Inventory.create(
+      const transferReason = reason
+        ? String(reason).trim()
+        : "Warehouse Stock Transfer";
+
+      // Create OUT and IN transactions
+      transferEntries = await Inventory.create(
         [
           {
             product,
             warehouse: fromWarehouse,
             outQty: qty,
+            inQty: 0,
             type: "TRANSFER_OUT",
             reference: transferRef,
-            reason: note,
-            createdBy: req.user.id,
+            reason: transferReason,
+            createdBy: userId,
           },
           {
             product,
             warehouse: toWarehouse,
             inQty: qty,
+            outQty: 0,
             type: "TRANSFER_IN",
             reference: transferRef,
-            reason: note,
-            createdBy: req.user.id,
+            reason: transferReason,
+            createdBy: userId,
           },
         ],
-        { session, ordered: true }
+        {
+          session,
+          ordered: true,
+        }
       );
 
+      // Audit Log
       await AuditLog.create(
         [
           {
-            user: req.user.id,
+            user: userId,
             action: "UPDATE",
             entity: "Inventory",
             entityId: transferRef,
-            description: `Transferred ${qty} units between warehouses`,
-            meta: { product, fromWarehouse, toWarehouse, quantity: qty, reason: note, transferRef },
+            description: `Transferred ${qty} unit(s) from warehouse ${fromWarehouse} to ${toWarehouse}`,
+            meta: {
+              product,
+              fromWarehouse,
+              toWarehouse,
+              quantity: qty,
+              reason: transferReason,
+              transferReference: transferRef,
+            },
           },
         ],
         { session }
       );
     });
 
-    return res.json({ success: true, data: legs });
+    return res.status(200).json({
+      success: true,
+      message: "Stock transferred successfully",
+      data: {
+        transferReference: transferEntries[0]?.reference,
+        transactions: transferEntries,
+      },
+    });
   } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({ success: false, message: err.message });
-    }
-    console.error("❌ WAREHOUSE TRANSFER ERROR:", err);
-    return res.status(500).json({ success: false, message: err.message });
+    console.error("❌ STOCK TRANSFER ERROR:", err);
+
+    return res.status(err.status || 500).json({
+      success: false,
+      message: err.message || "Internal Server Error",
+    });
   } finally {
-    session.endSession();
+    await session.endSession();
   }
 };
 
@@ -455,48 +556,87 @@ export const transferStock = async (req, res, next) => {
    RESERVE STOCK
    Body: { product, warehouse, quantity, reference? }
 ================================ */
-export const reserveStock = async (req, res, next) => {
+export const reserveStock = async (req, res) => {
   const { product, warehouse, quantity, reference } = req.body;
 
-  if (!product || !warehouse || !quantity) {
-    return res.status(400).json({ success: false, message: "Missing required fields" });
+  // Validate request
+  if (!product || !warehouse || quantity === undefined || quantity === null) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing required fields",
+    });
   }
 
   const qty = Number(quantity);
+
   if (!Number.isFinite(qty) || qty <= 0) {
-    return res.status(400).json({ success: false, message: "Quantity must be a positive number" });
+    return res.status(400).json({
+      success: false,
+      message: "Quantity must be a positive number",
+    });
+  }
+
+  // Authenticated user
+  const userId = req.user?._id || req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: "Authenticated user not found",
+    });
   }
 
   const session = await mongoose.startSession();
+
   try {
     await session.withTransaction(async () => {
+      // Validate Product & Warehouse
       await validateRefs(product, warehouse, session);
+
+      // Reserve Stock
       await applyReserve(product, warehouse, qty, session);
 
+      // Audit Log
       await AuditLog.create(
         [
           {
-            user: req.user.id,
+            user: userId,
             action: "UPDATE",
             entity: "Inventory",
-            description: `Reserved ${qty} units`,
-            meta: { product, warehouse, quantity: qty, reference: reference || null },
+            description: `Reserved ${qty} unit(s) of stock`,
+            meta: {
+              product,
+              warehouse,
+              quantity: qty,
+              reference: reference || null,
+            },
           },
         ],
         { session }
       );
     });
 
+    // Fetch latest reserved quantity
     const reserved = await StockLevel.getReserved(product, warehouse);
-    return res.json({ success: true, data: { product, warehouse, reserved } });
+
+    return res.status(200).json({
+      success: true,
+      message: "Stock reserved successfully",
+      data: {
+        product,
+        warehouse,
+        reserved,
+      },
+    });
   } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({ success: false, message: err.message });
-    }
     console.error("❌ RESERVE STOCK ERROR:", err);
-    return res.status(500).json({ success: false, message: err.message });
+
+    return res.status(err.status || 500).json({
+      success: false,
+      message: err.message || "Internal Server Error",
+    });
   } finally {
-    session.endSession();
+    await session.endSession();
   }
 };
 
@@ -504,47 +644,88 @@ export const reserveStock = async (req, res, next) => {
    RELEASE STOCK
    Body: { product, warehouse, quantity, reference? }
 ================================ */
-export const releaseStock = async (req, res, next) => {
+export const releaseStock = async (req, res) => {
   const { product, warehouse, quantity, reference } = req.body;
 
-  if (!product || !warehouse || !quantity) {
-    return res.status(400).json({ success: false, message: "Missing required fields" });
+  // Validate request
+  if (!product || !warehouse || quantity === undefined || quantity === null) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing required fields",
+    });
   }
 
   const qty = Number(quantity);
+
   if (!Number.isFinite(qty) || qty <= 0) {
-    return res.status(400).json({ success: false, message: "Quantity must be a positive number" });
+    return res.status(400).json({
+      success: false,
+      message: "Quantity must be a positive number",
+    });
+  }
+
+  // Authenticated User
+  const userId = req.user?._id || req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: "Authenticated user not found",
+    });
   }
 
   const session = await mongoose.startSession();
+
   try {
     await session.withTransaction(async () => {
+      // Validate Product & Warehouse
       await validateRefs(product, warehouse, session);
-      await applyRelease(product, warehouse, qty, session, { strict: true });
 
+      // Release Reserved Stock
+      await applyRelease(product, warehouse, qty, session, {
+        strict: true,
+      });
+
+      // Create Audit Log
       await AuditLog.create(
         [
           {
-            user: req.user.id,
+            user: userId,
             action: "UPDATE",
             entity: "Inventory",
-            description: `Released ${qty} reserved units`,
-            meta: { product, warehouse, quantity: qty, reference: reference || null },
+            description: `Released ${qty} reserved unit(s)`,
+            meta: {
+              product,
+              warehouse,
+              quantity: qty,
+              reference: reference || null,
+            },
           },
         ],
         { session }
       );
     });
 
+    // Latest Reserved Quantity
     const reserved = await StockLevel.getReserved(product, warehouse);
-    return res.json({ success: true, data: { product, warehouse, reserved } });
+
+    return res.status(200).json({
+      success: true,
+      message: "Reserved stock released successfully",
+      data: {
+        product,
+        warehouse,
+        reserved,
+      },
+    });
   } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({ success: false, message: err.message });
-    }
     console.error("❌ RELEASE STOCK ERROR:", err);
-    return res.status(500).json({ success: false, message: err.message });
+
+    return res.status(err.status || 500).json({
+      success: false,
+      message: err.message || "Internal Server Error",
+    });
   } finally {
-    session.endSession();
+    await session.endSession();
   }
 };
