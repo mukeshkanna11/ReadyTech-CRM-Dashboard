@@ -612,9 +612,7 @@ export default function InvoiceList() {
                           <IconBtn title="View" className="text-blue-500 hover:bg-blue-50" onClick={() => navigate(`/invoices/${invoice._id}`)}>
                             <Eye size={16} />
                           </IconBtn>
-                          <IconBtn title="Download PDF" className="text-emerald-500 hover:bg-emerald-50" onClick={() => downloadPDF(invoice)}>
-                            <FileDown size={16} />
-                          </IconBtn>
+                          
                           <IconBtn title="Mark Paid" className="text-green-500 hover:bg-green-50" onClick={() => updateStatus(invoice, "Paid")}>
                             <CheckCircle size={16} />
                           </IconBtn>

@@ -183,44 +183,57 @@ export default function CreateInvoice() {
     setLoading(true);
 
     const payload = {
-      customer: invoice.customer,
-      invoiceType: invoice.invoiceType,
-      orderNumber: invoice.orderNumber,
-      purchaseDate: invoice.purchaseDate,
-      issueDate: invoice.issueDate,
-      dueDate: invoice.dueDate,
-      currency: invoice.currency,
+  customer: invoice.customer,
 
-      /* DISCOUNT */
-      discountType: invoice.discountType,
-      discountValue: Number(invoice.discountValue || 0),
+  invoiceType: invoice.invoiceType,
+  orderNumber: invoice.orderNumber,
 
-      /* TAX */
-      taxType: invoice.taxType,
-      cgstRate: Number(invoice.cgstRate || 0),
-      sgstRate: Number(invoice.sgstRate || 0),
-      igstRate: Number(invoice.igstRate || 0),
+  orderDate: invoice.purchaseDate,
+  purchaseDate: invoice.purchaseDate,
+  issueDate: invoice.issueDate,
+  dueDate: invoice.dueDate,
 
-      paymentMode: invoice.paymentMode,
+  currency: invoice.currency,
 
-      notes: invoice.notes,
-      termsAndConditions: invoice.termsAndConditions,
+  billingDetails: {},
+  shippingDetails: {},
 
-      subscriptionStart: invoice.subscriptionStart || null,
-      subscriptionEnd: invoice.subscriptionEnd || null,
+  subtotal: calculations.subtotal,
+  taxableAmount: calculations.taxableAmount,
 
-      /* ITEMS */
-      items: (invoice.items || []).map((item) => ({
-        description: item.description || "",
-        hsnCode: item.hsnCode || "",
-        planType: item.planType || "One-Time",
-        users: Number(item.users || 0),
-        quantity: Number(item.quantity || 0),
-        unitPrice: Number(item.unitPrice || 0),
-        taxPercent: Number(item.taxPercent || 0),
-      })),
-    };
+  discountType: invoice.discountType,
+  discountValue: Number(invoice.discountValue || 0),
+  discountAmount: calculations.discountAmount,
 
+  taxType: invoice.taxType,
+
+  cgstRate: Number(invoice.cgstRate || 0),
+  sgstRate: Number(invoice.sgstRate || 0),
+  igstRate: Number(invoice.igstRate || 0),
+
+  totalTax: calculations.totalTax,
+
+  grandTotal: calculations.grandTotal,
+  balanceDue: calculations.grandTotal,
+
+  paymentMode: invoice.paymentMode,
+
+  notes: invoice.notes,
+  termsAndConditions: invoice.termsAndConditions,
+
+  subscriptionStart: invoice.subscriptionStart || null,
+  subscriptionEnd: invoice.subscriptionEnd || null,
+
+  items: invoice.items.map(item => ({
+    description: item.description,
+    hsnCode: item.hsnCode,
+    planType: item.planType,
+    users: Number(item.users),
+    quantity: Number(item.quantity),
+    unitPrice: Number(item.unitPrice),
+    taxPercent: Number(item.taxPercent)
+  }))
+};
     const res = await API.post("/invoices", payload);
 
     toast.success(
@@ -517,11 +530,13 @@ return (
 
         {/* SAVE */}
         <button
-          onClick={handleSubmit}
-          className="w-full py-4 mt-6 text-white bg-indigo-600 rounded-2xl hover:bg-indigo-700"
-        >
-          Create Invoice
-        </button>
+  type="button"
+  onClick={handleSubmit}
+  disabled={loading}
+  className="w-full py-4 mt-6 text-white bg-indigo-600 rounded-2xl hover:bg-indigo-700 disabled:opacity-50"
+>
+  {loading ? "Creating..." : "Create Invoice"}
+</button>
 
       </div>
     </div>
