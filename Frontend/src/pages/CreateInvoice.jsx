@@ -1,119 +1,207 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import API from "../services/api";
 import toast from "react-hot-toast";
 
 export default function CreateInvoice() {
-  const [clients, setClients] = useState([]);
-  const [loading, setLoading] = useState(false);
-
   const today = new Date().toISOString().split("T")[0];
 
-  /* ================= INITIAL STATE ================= */
-  const getInitialInvoice = () => ({
+  const [loading, setLoading] = useState(false);
+  const [clients, setClients] = useState([]);
+
+  /* ==================================================
+      INITIAL INVOICE
+  =================================================== */
+
+  const createInvoiceState = () => ({
     customer: "",
+
     invoiceType: "Subscription",
+
     orderNumber: "",
+
     purchaseDate: today,
+
     issueDate: today,
+
     dueDate: today,
+
     currency: "INR",
 
+    taxType: "INTRA",
+
+    cgstRate: 9,
+
+    sgstRate: 9,
+
+    igstRate: 18,
+
     discountType: "Percentage",
+
     discountValue: 0,
 
     paymentMode: "UPI",
 
-    taxType: "INTRA",
-    cgstRate: 9,
-    sgstRate: 9,
-    igstRate: 18,
-
     notes: "Thank you for your business.",
-    termsAndConditions: "Payment due within 15 days.",
+
+    termsAndConditions:
+      "Payment due within 15 days.",
 
     subscriptionStart: "",
+
     subscriptionEnd: "",
 
     items: [
       {
         description: "",
+
         hsnCode: "",
+
         planType: "Annual",
+
         users: 1,
+
         quantity: 1,
+
         unitPrice: 0,
-        taxPercent: 0,
+
+        taxPercent: 18,
       },
     ],
   });
 
-  const [invoice, setInvoice] = useState(getInitialInvoice());
+  const [invoice, setInvoice] =
+    useState(createInvoiceState());
 
-  /* ================= FETCH CLIENTS ================= */
+  /* ==================================================
+      LOAD CLIENTS
+  =================================================== */
+
   useEffect(() => {
-    const fetchClients = async () => {
-      try {
-        const res = await API.get("/clients");
-        setClients(res.data?.data || res.data || []);
-      } catch (err) {
-        console.error(err);
-        toast.error("Failed to load clients");
-      }
-    };
-    fetchClients();
+    loadClients();
   }, []);
 
-  /* ================= ITEM UPDATE ================= */
-  const updateItem = (index, field, value) => {
+  const loadClients = async () => {
+    try {
+      const res = await API.get("/clients");
+
+      const data =
+        res.data?.data || res.data || [];
+
+      setClients(data);
+    } catch (err) {
+      console.error(err);
+
+      toast.error("Unable to load customers");
+    }
+  };
+
+  /* ==================================================
+      UPDATE FIELD
+  =================================================== */
+
+  const updateField = (field, value) => {
+    setInvoice((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  /* ==================================================
+      UPDATE ITEM
+  =================================================== */
+
+  const updateItem = (
+    index,
+    field,
+    value
+  ) => {
     const items = [...invoice.items];
 
     items[index] = {
       ...items[index],
-      [field]: ["quantity", "users", "unitPrice", "taxPercent"].includes(field)
-        ? Number(value)
-        : value,
+
+      [field]:
+        field === "quantity" ||
+        field === "users" ||
+        field === "unitPrice" ||
+        field === "taxPercent"
+          ? Number(value)
+          : value,
     };
 
-    setInvoice((prev) => ({ ...prev, items }));
+    setInvoice((prev) => ({
+      ...prev,
+      items,
+    }));
   };
+
+
+  
+  /* ==================================================
+      ADD ITEM
+  =================================================== */
 
   const addItem = () => {
     setInvoice((prev) => ({
       ...prev,
+
       items: [
         ...prev.items,
+
         {
           description: "",
+
           hsnCode: "",
+
           planType: "One-Time",
+
           users: 1,
+
           quantity: 1,
+
           unitPrice: 0,
-          taxPercent: 0,
+
+          taxPercent: 18,
         },
       ],
     }));
   };
 
+  /* ==================================================
+      REMOVE ITEM
+  =================================================== */
+
   const removeItem = (index) => {
     if (invoice.items.length === 1) {
-      return toast.error("At least one item is required");
+      toast.error(
+        "Minimum one item required."
+      );
+      return;
     }
 
     setInvoice((prev) => ({
       ...prev,
-      items: prev.items.filter((_, i) => i !== index),
+
+      items: prev.items.filter(
+        (_, i) => i !== index
+      ),
     }));
   };
 
-  /* ================= CALCULATIONS ================= */
-  const calculations = useMemo(() => {
+/* ==================================================
+   CALCULATIONS
+================================================== */
+
+const calculations = useMemo(() => {
   const subtotal = (invoice.items || []).reduce((sum, item) => {
     return (
       sum +
-      Number(item.quantity || 0) * Number(item.unitPrice || 0)
+      Number(item.quantity || 0) *
+        Number(item.unitPrice || 0)
     );
   }, 0);
+
+  /* ---------------- Discount ---------------- */
 
   const discountAmount =
     invoice.discountType === "Percentage"
@@ -122,423 +210,1844 @@ export default function CreateInvoice() {
 
   const safeDiscount = Math.min(discountAmount, subtotal);
 
-  const taxableAmount = Math.max(subtotal - safeDiscount, 0);
+  /* ---------------- Taxable ---------------- */
 
-  let totalTax = 0;
+  const taxableAmount = Math.max(
+    subtotal - safeDiscount,
+    0
+  );
 
-  const cgstRate = Number(invoice.cgstRate || 0);
-  const sgstRate = Number(invoice.sgstRate || 0);
-  const igstRate = Number(invoice.igstRate || 0);
+  /* ---------------- GST ---------------- */
+
+  let cgst = 0;
+  let sgst = 0;
+  let igst = 0;
 
   if (invoice.taxType === "INTRA") {
-    const cgst = (taxableAmount * cgstRate) / 100;
-    const sgst = (taxableAmount * sgstRate) / 100;
-    totalTax = cgst + sgst;
+    cgst =
+      (taxableAmount *
+        Number(invoice.cgstRate || 0)) /
+      100;
+
+    sgst =
+      (taxableAmount *
+        Number(invoice.sgstRate || 0)) /
+      100;
   } else {
-    totalTax = (taxableAmount * igstRate) / 100;
+    igst =
+      (taxableAmount *
+        Number(invoice.igstRate || 0)) /
+      100;
   }
+
+  const totalTax = cgst + sgst + igst;
+
+  /* ---------------- Grand Total ---------------- */
 
   const grandTotal = taxableAmount + totalTax;
 
+  /* ---------------- Round Off ---------------- */
+
+  const roundOff =
+    Math.round(grandTotal) - grandTotal;
+
+  const payable =
+    grandTotal + roundOff;
+
   return {
     subtotal: Number(subtotal.toFixed(2)),
-    discountAmount: Number(safeDiscount.toFixed(2)),
-    taxableAmount: Number(taxableAmount.toFixed(2)),
+
+    discountAmount: Number(
+      safeDiscount.toFixed(2)
+    ),
+
+    taxableAmount: Number(
+      taxableAmount.toFixed(2)
+    ),
+
+    cgst: Number(cgst.toFixed(2)),
+
+    sgst: Number(sgst.toFixed(2)),
+
+    igst: Number(igst.toFixed(2)),
+
     totalTax: Number(totalTax.toFixed(2)),
-    grandTotal: Number(grandTotal.toFixed(2)),
+
+    grandTotal: Number(
+      grandTotal.toFixed(2)
+    ),
+
+    roundOff: Number(
+      roundOff.toFixed(2)
+    ),
+
+    payable: Number(
+      payable.toFixed(2)
+    ),
   };
 }, [invoice]);
 
-  /* ================= SUBMIT ================= */
-  const handleSubmit = async () => {
+/* ================= CREATE INVOICE ================= */
+
+const handleSubmit = async () => {
+
+  console.log("========== BUTTON CLICKED ==========");
+
+
+  if (loading) {
+    console.log("STOP : LOADING TRUE");
+    return;
+  }
+
+
   try {
-    /* ===== MANDATORY VALIDATION ===== */
-    if (!invoice.customer) {
-      return toast.error("Please select a customer");
-    }
 
-    const client = clients.find((c) => c._id === invoice.customer);
-    if (client) {
-      if (!client.email) return toast.error("Selected customer has no email. Update the client profile first.");
-      if (!client.phone) return toast.error("Selected customer has no phone. Update the client profile first.");
-      if (!client.billingAddress?.addressLine1)
-        return toast.error("Selected customer has no billing address. Update the client profile first.");
-    }
-
-    if (!invoice.dueDate) return toast.error("Due date is required");
-    if (!invoice.paymentMode) return toast.error("Payment method is required");
-
-    if (!invoice.items?.length) return toast.error("Add at least one item");
-    for (let i = 0; i < invoice.items.length; i++) {
-      const it = invoice.items[i];
-      const n = i + 1;
-      if (!it.description?.trim()) return toast.error(`Item ${n}: product/service name is required`);
-      if (!it.hsnCode?.trim()) return toast.error(`Item ${n}: HSN/SAC code is required`);
-      if (!(Number(it.quantity) > 0)) return toast.error(`Item ${n}: quantity must be greater than 0`);
-      if (!(Number(it.unitPrice) >= 0)) return toast.error(`Item ${n}: unit price is invalid`);
-      if (it.taxPercent === "" || it.taxPercent === null || Number(it.taxPercent) < 0)
-        return toast.error(`Item ${n}: tax percentage is required`);
-    }
+    console.log("STEP 1 : START");
 
     setLoading(true);
 
+
+
+    console.log(
+      "STEP 2 : INVOICE STATE",
+      invoice
+    );
+
+
+
+    console.log(
+      "STEP 3 : CLIENT LIST",
+      clients
+    );
+
+
+
+    // ================= CUSTOMER =================
+
+
+    const client = clients.find(
+      (c) =>
+        String(c._id) === String(invoice.customer)
+    );
+
+
+    console.log(
+      "STEP 4 : SELECTED CLIENT",
+      client
+    );
+
+
+
+    if (!client) {
+
+      toast.error(
+        "Please select customer"
+      );
+
+      return;
+
+    }
+
+
+
+
+    // ================= ITEMS =================
+
+
+    console.log(
+      "STEP 5 : ITEMS",
+      invoice.items
+    );
+
+
+
+    if (
+      !invoice.items ||
+      invoice.items.length === 0
+    ) {
+
+      toast.error(
+        "Please add invoice items"
+      );
+
+      return;
+
+    }
+
+
+
+
+    for (
+      let i = 0;
+      i < invoice.items.length;
+      i++
+    ) {
+
+
+      const item = invoice.items[i];
+
+
+      console.log(
+        "VALIDATING ITEM",
+        item
+      );
+
+
+
+      if (
+        !item.description ||
+        !item.description.trim()
+      ) {
+
+        toast.error(
+          `Item ${i+1} description required`
+        );
+
+        return;
+
+      }
+
+
+
+      if (
+        !item.hsnCode
+      ) {
+
+        toast.error(
+          `Item ${i+1} HSN required`
+        );
+
+        return;
+
+      }
+
+
+
+      if (
+        Number(item.quantity) <= 0
+      ) {
+
+        toast.error(
+          `Item ${i+1} quantity invalid`
+        );
+
+        return;
+
+      }
+
+
+
+    }
+
+
+
+
+
+    // ================= PAYMENT =================
+
+
+    console.log(
+      "STEP 6 : PAYMENT",
+      invoice.paymentMode
+    );
+
+
+
+    if(!invoice.paymentMode){
+
+      toast.error(
+        "Payment Mode Required"
+      );
+
+      return;
+
+    }
+
+
+
+
+
+    // ================= ADDRESS =================
+
+
+    const billing =
+      client.billingAddress || {};
+
+
+
+    const shipping =
+      client.shippingAddress || {};
+
+
+
+    console.log(
+      "STEP 7 : ADDRESS",
+      {
+        billing,
+        shipping
+      }
+    );
+
+
+
+
+
+
+    // ================= PAYLOAD =================
+
+
     const payload = {
-  customer: invoice.customer,
 
-  invoiceType: invoice.invoiceType,
-  orderNumber: invoice.orderNumber,
 
-  orderDate: invoice.purchaseDate,
-  purchaseDate: invoice.purchaseDate,
-  issueDate: invoice.issueDate,
-  dueDate: invoice.dueDate,
+      customer:
+        client._id,
 
-  currency: invoice.currency,
 
-  billingDetails: {},
-  shippingDetails: {},
 
-  subtotal: calculations.subtotal,
-  taxableAmount: calculations.taxableAmount,
+      invoiceType:
+        invoice.invoiceType || "Subscription",
 
-  discountType: invoice.discountType,
-  discountValue: Number(invoice.discountValue || 0),
-  discountAmount: calculations.discountAmount,
 
-  taxType: invoice.taxType,
 
-  cgstRate: Number(invoice.cgstRate || 0),
-  sgstRate: Number(invoice.sgstRate || 0),
-  igstRate: Number(invoice.igstRate || 0),
+      orderNumber:
+        invoice.orderNumber || "",
 
-  totalTax: calculations.totalTax,
 
-  grandTotal: calculations.grandTotal,
-  balanceDue: calculations.grandTotal,
 
-  paymentMode: invoice.paymentMode,
+      purchaseDate:
+        invoice.purchaseDate || new Date(),
 
-  notes: invoice.notes,
-  termsAndConditions: invoice.termsAndConditions,
 
-  subscriptionStart: invoice.subscriptionStart || null,
-  subscriptionEnd: invoice.subscriptionEnd || null,
 
-  items: invoice.items.map(item => ({
-    description: item.description,
-    hsnCode: item.hsnCode,
-    planType: item.planType,
-    users: Number(item.users),
-    quantity: Number(item.quantity),
-    unitPrice: Number(item.unitPrice),
-    taxPercent: Number(item.taxPercent)
-  }))
-};
-    const res = await API.post("/invoices", payload);
+      issueDate:
+        invoice.issueDate || new Date(),
+
+
+
+      dueDate:
+        invoice.dueDate,
+
+
+
+      currency:
+        invoice.currency || "INR",
+
+
+
+      paymentMode:
+        invoice.paymentMode,
+
+
+
+      discountType:
+        invoice.discountType || "Flat",
+
+
+
+      discountValue:
+        Number(invoice.discountValue || 0),
+
+
+
+      notes:
+        invoice.notes || "",
+
+
+
+      termsAndConditions:
+        invoice.termsAndConditions || "",
+
+
+
+
+
+      companyDetails:{
+
+
+        companyName:
+          "ReadyTech Solutions",
+
+
+        website:
+          "www.readytechsolutions.com",
+
+
+        email:
+          "quries.readytechsolutions@gmail.com",
+
+
+        phone:
+          "+91 7010797721",
+
+
+        gstNumber:
+          "29ABCDE1234F1Z5",
+
+
+        panNumber:
+          "ABCDE1234F",
+
+
+        address:
+          "149 Hope College",
+
+
+        city:
+          "Coimbatore",
+
+
+        state:
+          "Tamil Nadu",
+
+
+        pincode:
+          "641004",
+
+
+        country:
+          "India"
+
+      },
+
+
+
+
+
+     billingDetails: {
+
+  companyName:
+    client.companyName || "",
+
+
+  contactPerson:
+    client.contactPerson || "",
+
+
+  email:
+    client.email || "",
+
+
+  phone:
+    client.phone || "",
+
+
+  addressLine1:
+    billing.addressLine1 ||
+    billing.address ||
+    billing.street ||
+    billing.location ||
+    "",
+
+
+  addressLine2:
+    billing.addressLine2 ||
+    "",
+
+
+  city:
+    billing.city ||
+    billing.town ||
+    "",
+
+
+  state:
+    billing.state ||
+    "",
+
+
+  pincode:
+    billing.pincode ||
+    billing.zipCode ||
+    "",
+
+
+  country:
+    billing.country ||
+    "India",
+
+
+  gstNumber:
+    client.gstNumber || "",
+
+
+  panNumber:
+    client.panNumber || ""
+
+},
+
+
+
+
+      shippingDetails:{
+
+
+        companyName:
+          client.companyName || "",
+
+
+        contactPerson:
+          client.contactPerson || "",
+
+
+        phone:
+          client.phone || "",
+
+
+
+        addressLine1:
+          shipping.addressLine1 ||
+          billing.addressLine1 ||
+          "",
+
+
+
+        city:
+          shipping.city ||
+          billing.city ||
+          "",
+
+
+
+        state:
+          shipping.state ||
+          billing.state ||
+          "",
+
+
+
+        pincode:
+          shipping.pincode ||
+          billing.pincode ||
+          "",
+
+
+
+        country:
+          "India"
+
+      },
+
+
+
+
+
+      items:
+
+      invoice.items.map(
+        (item)=>{
+
+
+          const qty =
+            Number(item.quantity || 1);
+
+
+          const price =
+            Number(item.unitPrice || 0);
+
+
+          const taxable =
+            qty * price;
+
+
+          const tax =
+            Number(item.taxPercent || 18);
+
+
+
+          return {
+
+
+            description:
+              item.description,
+
+
+            hsnCode:
+              item.hsnCode,
+
+
+            sacCode:
+              item.sacCode || "",
+
+
+            planType:
+              item.planType || "One-Time",
+
+
+            users:
+              Number(item.users || 1),
+
+
+            quantity:
+              qty,
+
+
+            unitPrice:
+              price,
+
+
+            taxableAmount:
+              taxable,
+
+
+            taxPercent:
+              tax,
+
+
+            taxAmount:
+              taxable * tax / 100,
+
+
+            total:
+              taxable +
+              (taxable * tax / 100)
+
+          };
+
+
+        }
+
+      )
+
+
+
+    };
+
+
+
+
+
+    console.log(
+      "STEP 8 : FINAL PAYLOAD",
+      payload
+    );
+
+
+
+    console.log(
+      "STEP 9 : API CALL START"
+    );
+
+
+
+    const response =
+      await API.post(
+        "/invoices",
+        payload
+      );
+
+
+
+    console.log(
+      "STEP 10 : SUCCESS",
+      response.data
+    );
+
+
 
     toast.success(
-      `Invoice ${res.data.data.invoiceNumber} created successfully`
+      "Invoice Created Successfully"
     );
 
-    setInvoice(getInitialInvoice());
-  } catch (err) {
-    console.error(err);
-    toast.error(
-      err?.response?.data?.message || "Invoice creation failed"
+
+
+    setInvoice(
+      getInitialInvoice()
     );
-  } finally {
-    setLoading(false);
+
+
+
   }
+
+  catch(error){
+
+
+    console.error(
+      "========== ERROR ==========",
+      error
+    );
+
+
+    console.log(
+      "SERVER ERROR",
+      error.response?.data
+    );
+
+
+    toast.error(
+      error.response?.data?.message ||
+      "Invoice Creation Failed"
+    );
+
+
+  }
+
+
+  finally{
+
+
+    console.log(
+      "FINALLY EXECUTED"
+    );
+
+
+    setLoading(false);
+
+
+  }
+
+
 };
 
-return (
-  <div className="min-h-screen p-6 bg-slate-100">
-    <div className="mx-auto overflow-hidden bg-white shadow-2xl max-w-7xl rounded-3xl">
+    return (
+      <div className="min-h-screen p-6 bg-slate-100">
+  <div className="mx-auto overflow-hidden bg-white shadow-2xl max-w-7xl rounded-3xl">
 
-      {/* HEADER */}
-      <div className="p-8 text-white bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-800">
-        <h1 className="text-3xl font-bold">Create Invoice</h1>
-        <p className="mt-2 text-sm opacity-80">
-          GST compliant professional invoice generator
-        </p>
+    {/* ================= HEADER ================= */}
+
+    <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-indigo-900 to-blue-900 rounded-t-3xl">
+
+      <div className="absolute rounded-full -top-20 -right-20 w-72 h-72 bg-white/10 blur-3xl"></div>
+
+      <div className="absolute rounded-full -bottom-20 -left-20 w-72 h-72 bg-cyan-500/10 blur-3xl"></div>
+
+      <div className="relative flex flex-col justify-between gap-8 p-10 lg:flex-row">
+
+        <div>
+
+          <div className="inline-flex px-4 py-2 mb-5 text-xs font-bold tracking-widest uppercase rounded-full bg-white/10 text-cyan-300">
+
+            ReadyTech ERP Finance
+
+          </div>
+
+          <h1 className="text-5xl font-black text-white">
+
+            Create Tax Invoice
+
+          </h1>
+
+          <p className="max-w-2xl mt-4 leading-7 text-slate-300">
+
+            Generate GST compliant professional invoices for
+            Products, Services and SaaS Subscription billing with
+            automatic calculations and enterprise financial records.
+
+          </p>
+
+        </div>
+
+        <div className="grid grid-cols-2 gap-5">
+
+          <div className="p-5 border bg-white/10 border-white/20 rounded-2xl backdrop-blur">
+
+            <p className="text-xs uppercase text-slate-300">
+              Status
+            </p>
+
+            <h2 className="mt-2 text-2xl font-bold text-amber-300">
+              Draft
+            </h2>
+
+          </div>
+
+          <div className="p-5 border bg-white/10 border-white/20 rounded-2xl backdrop-blur">
+
+            <p className="text-xs uppercase text-slate-300">
+              Currency
+            </p>
+
+            <h2 className="mt-2 text-2xl font-bold text-emerald-300">
+              {invoice.currency}
+            </h2>
+
+          </div>
+
+          <div className="p-5 border bg-white/10 border-white/20 rounded-2xl backdrop-blur">
+
+            <p className="text-xs uppercase text-slate-300">
+              Invoice Type
+            </p>
+
+            <h2 className="mt-2 text-xl font-bold text-white">
+              {invoice.invoiceType}
+            </h2>
+
+          </div>
+
+          <div className="p-5 border bg-white/10 border-white/20 rounded-2xl backdrop-blur">
+
+            <p className="text-xs uppercase text-slate-300">
+              Due Date
+            </p>
+
+            <h2 className="mt-2 text-xl font-bold text-white">
+              {invoice.dueDate}
+            </h2>
+
+          </div>
+
+        </div>
+
       </div>
 
-      <div className="p-8">
+    </div>
 
-        {/* CUSTOMER + BASIC INFO */}
-        <div className="grid gap-6 mb-8 md:grid-cols-3">
+    <div className="p-8">
+
+      {/* ================= SALES DOCUMENT ================= */}
+
+      <div className="p-8 mb-8 bg-white border shadow-sm border-slate-200 rounded-3xl">
+
+        <div className="flex items-center justify-between mb-8">
+
           <div>
-            <label className="text-sm font-semibold">Customer</label>
+
+            <h2 className="text-2xl font-bold text-slate-800">
+              Sales Document Information
+            </h2>
+
+            <p className="mt-2 text-sm text-slate-500">
+
+              Select customer and configure invoice details.
+
+            </p>
+
+          </div>
+
+          <div className="px-4 py-2 font-semibold text-indigo-700 rounded-xl bg-indigo-50">
+
+            Finance Module
+
+          </div>
+
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-3">
+
+          {/* Customer */}
+
+          <div>
+
+            <label className="block mb-2 text-sm font-semibold">
+
+              Customer
+
+            </label>
+
             <select
               value={invoice.customer}
               onChange={(e) =>
-                setInvoice({ ...invoice, customer: e.target.value })
+                setInvoice({
+                  ...invoice,
+                  customer: e.target.value,
+                })
               }
-              className="w-full p-3 mt-2 border rounded-xl"
+              className="w-full px-4 py-3 border rounded-2xl"
             >
-              <option value="">Select Customer</option>
-              {clients.map((c) => (
-                <option key={c._id} value={c._id}>
-                  {c.companyName}
+              <option value="">
+                Select Customer
+              </option>
+
+              {clients.map((client) => (
+                <option
+                  key={client._id}
+                  value={client._id}
+                >
+                  {client.companyName}
                 </option>
               ))}
+
             </select>
+
           </div>
 
+          {/* Invoice Type */}
+
           <div>
-            <label className="text-sm font-semibold">Invoice Type</label>
+
+            <label className="block mb-2 text-sm font-semibold">
+
+              Invoice Type
+
+            </label>
+
             <select
               value={invoice.invoiceType}
               onChange={(e) =>
-                setInvoice({ ...invoice, invoiceType: e.target.value })
+                setInvoice({
+                  ...invoice,
+                  invoiceType: e.target.value,
+                })
               }
-              className="w-full p-3 mt-2 border rounded-xl"
+              className="w-full px-4 py-3 border rounded-2xl"
             >
-              <option>Subscription</option>
-              <option>Service</option>
-              <option>Product</option>
+
+              <option value="Subscription">
+                SaaS Subscription
+              </option>
+
+              <option value="Service">
+                Professional Service
+              </option>
+
+              <option value="Product">
+                Product Sale
+              </option>
+
             </select>
+
           </div>
 
+          {/* Order Number */}
+
           <div>
-            <label className="text-sm font-semibold">Order Number</label>
+
+            <label className="block mb-2 text-sm font-semibold">
+
+              Order Number
+
+            </label>
+
             <input
+              type="text"
               value={invoice.orderNumber}
               onChange={(e) =>
-                setInvoice({ ...invoice, orderNumber: e.target.value })
+                setInvoice({
+                  ...invoice,
+                  orderNumber: e.target.value,
+                })
               }
-              className="w-full p-3 mt-2 border rounded-xl"
-              placeholder="ORD-1001"
+              placeholder="ORD-0001"
+              className="w-full px-4 py-3 border rounded-2xl"
             />
-          </div>
-        </div>
 
-        {/* ITEMS */}
-        <div className="mb-8">
-          <div className="flex justify-between mb-4">
-            <h2 className="text-lg font-bold">Items</h2>
-
-            <button
-              onClick={addItem}
-              className="px-4 py-2 text-white bg-blue-600 rounded-xl"
-            >
-              + Add Item
-            </button>
           </div>
 
-          <table className="w-full border rounded-xl">
-            <thead className="bg-gray-100">
-              <tr>
-                <th>Description</th>
-                <th>HSN/SAC</th>
-                <th>Qty</th>
-                <th>Price</th>
-                <th>Tax %</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {invoice.items.map((item, i) => {
-                const qty = Number(item.quantity || 0);
-                const price = Number(item.unitPrice || 0);
-                const taxPercent = Number(item.taxPercent || 0);
-
-                const base = qty * price;
-                const tax = (base * taxPercent) / 100;
-                const total = base + tax;
-
-                return (
-                  <tr key={i} className="border-t">
-
-                    <td>
-                      <input
-                        value={item.description}
-                        onChange={(e) =>
-                          updateItem(i, "description", e.target.value)
-                        }
-                        className="w-full p-2"
-                      />
-                    </td>
-
-                    <td>
-                      <input
-                        value={item.hsnCode}
-                        onChange={(e) =>
-                          updateItem(i, "hsnCode", e.target.value)
-                        }
-                        className="w-24 p-2"
-                        placeholder="HSN/SAC"
-                      />
-                    </td>
-
-                    <td>
-                      <input
-                        type="number"
-                        value={item.quantity}
-                        onChange={(e) =>
-                          updateItem(i, "quantity", e.target.value)
-                        }
-                        className="w-20 p-2"
-                      />
-                    </td>
-
-                    <td>
-                      <input
-                        type="number"
-                        value={item.unitPrice}
-                        onChange={(e) =>
-                          updateItem(i, "unitPrice", e.target.value)
-                        }
-                        className="p-2 w-28"
-                      />
-                    </td>
-
-                    {/* TAX INPUT */}
-                    <td>
-                      <input
-                        type="number"
-                        value={item.taxPercent}
-                        onChange={(e) =>
-                          updateItem(i, "taxPercent", e.target.value)
-                        }
-                        className="w-20 p-2"
-                      />
-                    </td>
-
-                    <td>
-                      ₹ {total.toFixed(2)}
-                    </td>
-
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* DISCOUNT + TAX SETTINGS */}
-        <div className="grid gap-6 mb-8 md:grid-cols-3">
+          {/* Issue Date */}
 
           <div>
-            <label>Discount Type</label>
-            <select
-              value={invoice.discountType}
-              onChange={(e) =>
-                setInvoice({ ...invoice, discountType: e.target.value })
-              }
-              className="w-full p-3 border rounded-xl"
-            >
-              <option>Percentage</option>
-              <option>Flat</option>
-            </select>
-          </div>
 
-          <div>
-            <label>Discount</label>
+            <label className="block mb-2 text-sm font-semibold">
+
+              Issue Date
+
+            </label>
+
             <input
-              type="number"
-              value={invoice.discountValue}
+              type="date"
+              value={invoice.issueDate}
               onChange={(e) =>
-                setInvoice({ ...invoice, discountValue: e.target.value })
+                setInvoice({
+                  ...invoice,
+                  issueDate: e.target.value,
+                })
               }
-              className="w-full p-3 border rounded-xl"
+              className="w-full px-4 py-3 border rounded-2xl"
             />
+
           </div>
+
+          {/* Due Date */}
 
           <div>
-            <label>Tax Type</label>
-            <select
-              value={invoice.taxType}
+
+            <label className="block mb-2 text-sm font-semibold">
+
+              Due Date
+
+            </label>
+
+            <input
+              type="date"
+              value={invoice.dueDate}
               onChange={(e) =>
-                setInvoice({ ...invoice, taxType: e.target.value })
+                setInvoice({
+                  ...invoice,
+                  dueDate: e.target.value,
+                })
               }
-              className="w-full p-3 border rounded-xl"
-            >
-              <option value="INTRA">INTRA (CGST + SGST)</option>
-              <option value="INTER">INTER (IGST)</option>
-            </select>
+              className="w-full px-4 py-3 border rounded-2xl"
+            />
+
           </div>
+
+          {/* Payment Mode */}
+
+          <div>
+
+            <label className="block mb-2 text-sm font-semibold">
+
+              Payment Mode
+
+            </label>
+
+            <select
+              value={invoice.paymentMode}
+              onChange={(e) =>
+                setInvoice({
+                  ...invoice,
+                  paymentMode: e.target.value,
+                })
+              }
+              className="w-full px-4 py-3 border rounded-2xl"
+            >
+
+              <option value="UPI">UPI</option>
+              <option value="Cash">Cash</option>
+              <option value="Card">Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+              <option value="Razorpay">Razorpay</option>
+              <option value="Stripe">Stripe</option>
+
+            </select>
+
+          </div>
+
         </div>
 
-        {/* 💎 SUMMARY */}
-        <div className="p-6 mb-8 border shadow-sm rounded-2xl bg-slate-50">
+      </div>
+      {/* ================= SALES LINE ITEMS ================= */}
 
-          <h2 className="mb-4 text-lg font-bold">Invoice Summary</h2>
+<div className="mb-8 overflow-hidden bg-white border shadow-sm rounded-3xl border-slate-200">
 
-          {(() => {
-            let subtotal = 0;
-            let totalTax = 0;
+  {/* Header */}
 
-            invoice.items.forEach((item) => {
-              const qty = Number(item.quantity || 0);
-              const price = Number(item.unitPrice || 0);
-              const taxPercent = Number(item.taxPercent || 0);
+  <div className="flex items-center justify-between p-6 border-b bg-slate-50">
 
-              const base = qty * price;
-              const tax = (base * taxPercent) / 100;
+    <div>
 
-              subtotal += base;
-              totalTax += tax;
-            });
+      <h2 className="text-2xl font-bold text-slate-800">
+        Sales Line Items
+      </h2>
 
-            const discount =
-              invoice.discountType === "Percentage"
-                ? (subtotal * invoice.discountValue) / 100
-                : Number(invoice.discountValue || 0);
+      <p className="mt-1 text-sm text-slate-500">
+        Add Products, Services or SaaS Subscription Plans
+      </p>
 
-            const taxable = subtotal - discount;
-            const grandTotal = taxable + totalTax;
+    </div>
 
-            return (
-              <div className="space-y-2 text-sm">
+    <button
+      type="button"
+      onClick={addItem}
+      className="px-5 py-3 font-semibold text-white transition bg-indigo-600 rounded-2xl hover:bg-indigo-700"
+    >
+      + Add Item
+    </button>
 
-                <div className="flex justify-between">
-                  <span>Subtotal</span>
-                  <span>₹ {subtotal.toFixed(2)}</span>
-                </div>
+  </div>
 
-                <div className="flex justify-between">
-                  <span>Discount</span>
-                  <span>₹ {discount.toFixed(2)}</span>
-                </div>
+  <div className="overflow-x-auto">
 
-                <div className="flex justify-between">
-                  <span>Total Tax</span>
-                  <span>₹ {totalTax.toFixed(2)}</span>
-                </div>
+    <table className="min-w-full">
 
-                <div className="flex justify-between pt-3 text-lg font-bold border-t">
-                  <span>Grand Total</span>
-                  <span>₹ {grandTotal.toFixed(2)}</span>
-                </div>
+      <thead className="bg-slate-100">
 
-              </div>
-            );
-          })()}
+        <tr className="text-sm font-semibold text-slate-700">
+
+          <th className="px-4 py-4 text-left">
+            Description
+          </th>
+
+          <th className="px-4 py-4 text-left">
+            Plan
+          </th>
+
+          <th className="px-4 py-4 text-left">
+            HSN / SAC
+          </th>
+
+          <th className="px-4 py-4 text-center">
+            Users
+          </th>
+
+          <th className="px-4 py-4 text-center">
+            Qty
+          </th>
+
+          <th className="px-4 py-4 text-right">
+            Unit Price
+          </th>
+
+          <th className="px-4 py-4 text-center">
+            GST %
+          </th>
+
+          <th className="px-4 py-4 text-right">
+            Tax
+          </th>
+
+          <th className="px-4 py-4 text-right">
+            Total
+          </th>
+
+          <th className="px-4 py-4 text-center">
+            Action
+          </th>
+
+        </tr>
+
+      </thead>
+
+      <tbody>
+
+        {invoice.items.map((item, index) => {
+
+          const qty = Number(item.quantity || 0);
+
+          const users = Number(item.users || 1);
+
+          const price = Number(item.unitPrice || 0);
+
+          const gst = Number(item.taxPercent || 0);
+
+          const taxable = qty * price;
+
+          const tax = taxable * gst / 100;
+
+          const total = taxable + tax;
+
+          return (
+
+            <tr
+              key={index}
+              className="transition border-t hover:bg-slate-50"
+            >
+
+              {/* Description */}
+
+              <td className="p-3">
+
+                <input
+                  type="text"
+                  value={item.description}
+                  onChange={(e) =>
+                    updateItem(
+                      index,
+                      "description",
+                      e.target.value
+                    )
+                  }
+                  placeholder="Product / Service"
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+
+              </td>
+
+              {/* Plan */}
+
+              <td className="p-3">
+
+                <select
+                  value={item.planType}
+                  onChange={(e) =>
+                    updateItem(
+                      index,
+                      "planType",
+                      e.target.value
+                    )
+                  }
+                  className="px-3 py-2 border rounded-xl"
+                >
+
+                  <option value="Monthly">
+                    Monthly
+                  </option>
+
+                  <option value="Annual">
+                    Annual
+                  </option>
+
+                  <option value="One-Time">
+                    One-Time
+                  </option>
+
+                  <option value="Add-on">
+                    Add-on
+                  </option>
+
+                </select>
+
+              </td>
+
+              {/* HSN */}
+
+              <td className="p-3">
+
+                <input
+                  type="text"
+                  value={item.hsnCode}
+                  onChange={(e) =>
+                    updateItem(
+                      index,
+                      "hsnCode",
+                      e.target.value
+                    )
+                  }
+                  placeholder="998314"
+                  className="w-32 px-3 py-2 border rounded-xl"
+                />
+
+              </td>
+
+              {/* Users */}
+
+              <td className="p-3 text-center">
+
+                <input
+                  type="number"
+                  min="1"
+                  value={item.users}
+                  onChange={(e) =>
+                    updateItem(
+                      index,
+                      "users",
+                      e.target.value
+                    )
+                  }
+                  className="w-20 px-3 py-2 text-center border rounded-xl"
+                />
+
+              </td>
+                            {/* Quantity */}
+
+              <td className="p-3 text-center">
+
+                <input
+                  type="number"
+                  min="1"
+                  value={item.quantity}
+                  onChange={(e) =>
+                    updateItem(
+                      index,
+                      "quantity",
+                      e.target.value
+                    )
+                  }
+                  className="w-20 px-3 py-2 text-center border rounded-xl"
+                />
+
+              </td>
+
+              {/* Unit Price */}
+
+              <td className="p-3">
+
+                <input
+                  type="number"
+                  min="0"
+                  value={item.unitPrice}
+                  onChange={(e) =>
+                    updateItem(
+                      index,
+                      "unitPrice",
+                      e.target.value
+                    )
+                  }
+                  className="w-32 px-3 py-2 text-right border rounded-xl"
+                />
+
+              </td>
+
+              {/* GST */}
+
+              <td className="p-3 text-center">
+
+                <input
+                  type="number"
+                  min="0"
+                  value={item.taxPercent}
+                  onChange={(e) =>
+                    updateItem(
+                      index,
+                      "taxPercent",
+                      e.target.value
+                    )
+                  }
+                  className="w-20 px-3 py-2 text-center border rounded-xl"
+                />
+
+              </td>
+
+              {/* Tax */}
+
+              <td className="p-3 font-medium text-right text-slate-700">
+
+                ₹{" "}
+                {tax.toLocaleString("en-IN", {
+                  minimumFractionDigits: 2,
+                })}
+
+              </td>
+
+              {/* Total */}
+
+              <td className="p-3 font-bold text-right text-indigo-700">
+
+                ₹{" "}
+                {total.toLocaleString("en-IN", {
+                  minimumFractionDigits: 2,
+                })}
+
+              </td>
+
+              {/* Delete */}
+
+              <td className="p-3 text-center">
+
+                <button
+                  type="button"
+                  onClick={() => removeItem(index)}
+                  className="px-4 py-2 text-red-600 transition rounded-xl hover:bg-red-50"
+                >
+                  Delete
+                </button>
+
+              </td>
+
+            </tr>
+
+          );
+
+        })}
+
+      </tbody>
+
+    </table>
+
+  </div>
+
+</div>
+{/* ================= DISCOUNT & GST CONFIGURATION ================= */}
+
+<div className="p-8 mb-8 bg-white border shadow-sm rounded-3xl border-slate-200">
+
+  <div className="flex items-center justify-between mb-8">
+
+    <div>
+
+      <h2 className="text-2xl font-bold text-slate-800">
+        Discount & Tax Configuration
+      </h2>
+
+      <p className="mt-1 text-sm text-slate-500">
+        Configure discounts, GST type and currency.
+      </p>
+
+    </div>
+
+    <div className="px-4 py-2 text-sm font-semibold text-indigo-700 rounded-xl bg-indigo-50">
+      GST Enabled
+    </div>
+
+  </div>
+
+  <div className="grid gap-6 lg:grid-cols-4">
+
+    {/* Discount Type */}
+
+    <div>
+
+      <label className="block mb-2 text-sm font-semibold">
+        Discount Type
+      </label>
+
+      <select
+        value={invoice.discountType}
+        onChange={(e) =>
+          setInvoice({
+            ...invoice,
+            discountType: e.target.value,
+          })
+        }
+        className="w-full px-4 py-3 border rounded-2xl"
+      >
+        <option value="Percentage">
+          Percentage (%)
+        </option>
+
+        <option value="Flat">
+          Flat Amount (₹)
+        </option>
+
+      </select>
+
+    </div>
+
+    {/* Discount Value */}
+
+    <div>
+
+      <label className="block mb-2 text-sm font-semibold">
+        Discount Value
+      </label>
+
+      <input
+        type="number"
+        value={invoice.discountValue}
+        onChange={(e) =>
+          setInvoice({
+            ...invoice,
+            discountValue: Number(e.target.value),
+          })
+        }
+        className="w-full px-4 py-3 border rounded-2xl"
+      />
+
+    </div>
+
+    {/* GST Type */}
+
+    <div>
+
+      <label className="block mb-2 text-sm font-semibold">
+        GST Type
+      </label>
+
+      <select
+        value={invoice.taxType}
+        onChange={(e) =>
+          setInvoice({
+            ...invoice,
+            taxType: e.target.value,
+          })
+        }
+        className="w-full px-4 py-3 border rounded-2xl"
+      >
+
+        <option value="INTRA">
+          INTRA STATE
+        </option>
+
+        <option value="INTER">
+          INTER STATE
+        </option>
+
+      </select>
+
+    </div>
+
+    {/* Currency */}
+
+    <div>
+
+      <label className="block mb-2 text-sm font-semibold">
+        Currency
+      </label>
+
+      <select
+        value={invoice.currency}
+        onChange={(e) =>
+          setInvoice({
+            ...invoice,
+            currency: e.target.value,
+          })
+        }
+        className="w-full px-4 py-3 border rounded-2xl"
+      >
+
+        <option value="INR">
+          INR ₹
+        </option>
+
+        <option value="USD">
+          USD $
+        </option>
+
+        <option value="EUR">
+          EUR €
+        </option>
+
+      </select>
+
+    </div>
+
+  </div>
+
+  {/* GST Rates */}
+
+  <div className="grid gap-6 mt-8 lg:grid-cols-3">
+
+    {invoice.taxType === "INTRA" ? (
+
+      <>
+
+        <div>
+
+          <label className="block mb-2 text-sm font-semibold">
+            CGST %
+          </label>
+
+          <input
+            type="number"
+            value={invoice.cgstRate}
+            onChange={(e) =>
+              setInvoice({
+                ...invoice,
+                cgstRate: Number(e.target.value),
+              })
+            }
+            className="w-full px-4 py-3 border rounded-2xl"
+          />
+
         </div>
 
-        {/* NOTES */}
-        <textarea
-          value={invoice.notes}
-          onChange={(e) =>
-            setInvoice({ ...invoice, notes: e.target.value })
-          }
-          className="w-full p-4 border rounded-xl"
-          placeholder="Notes"
-        />
+        <div>
 
-        {/* SAVE */}
-        <button
-  type="button"
-  onClick={handleSubmit}
-  disabled={loading}
-  className="w-full py-4 mt-6 text-white bg-indigo-600 rounded-2xl hover:bg-indigo-700 disabled:opacity-50"
->
-  {loading ? "Creating..." : "Create Invoice"}
-</button>
+          <label className="block mb-2 text-sm font-semibold">
+            SGST %
+          </label>
 
+          <input
+            type="number"
+            value={invoice.sgstRate}
+            onChange={(e) =>
+              setInvoice({
+                ...invoice,
+                sgstRate: Number(e.target.value),
+              })
+            }
+            className="w-full px-4 py-3 border rounded-2xl"
+          />
+
+        </div>
+
+        <div className="flex items-end">
+
+          <div className="w-full p-5 text-center border rounded-2xl bg-emerald-50 border-emerald-200">
+
+            <div className="text-xs text-slate-500">
+              Total GST
+            </div>
+
+            <div className="mt-2 text-3xl font-bold text-emerald-700">
+
+              {Number(invoice.cgstRate || 0) +
+                Number(invoice.sgstRate || 0)}
+              %
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </>
+
+    ) : (
+
+      <>
+
+        <div>
+
+          <label className="block mb-2 text-sm font-semibold">
+            IGST %
+          </label>
+
+          <input
+            type="number"
+            value={invoice.igstRate}
+            onChange={(e) =>
+              setInvoice({
+                ...invoice,
+                igstRate: Number(e.target.value),
+              })
+            }
+            className="w-full px-4 py-3 border rounded-2xl"
+          />
+
+        </div>
+
+        <div className="flex items-end">
+
+          <div className="w-full p-5 text-center border border-blue-200 rounded-2xl bg-blue-50">
+
+            <div className="text-xs text-slate-500">
+              IGST
+            </div>
+
+            <div className="mt-2 text-3xl font-bold text-blue-700">
+              {invoice.igstRate}%
+            </div>
+
+          </div>
+
+        </div>
+
+      </>
+
+    )}
+
+  </div>
+
+</div>
+{/* ================= INVOICE SUMMARY ================= */}
+
+<div className="mb-10">
+
+  <div className="overflow-hidden bg-white border shadow-xl rounded-3xl border-slate-200">
+
+    {/* Header */}
+
+    <div className="px-8 py-5 bg-gradient-to-r from-indigo-600 via-blue-600 to-violet-600">
+
+      <div className="flex items-center justify-between">
+
+        <div>
+
+          <h2 className="text-2xl font-bold text-white">
+            Invoice Summary
+          </h2>
+
+          <p className="mt-1 text-sm text-indigo-100">
+            Live calculation based on line items
+          </p>
+
+        </div>
+
+        <div className="px-4 py-2 text-sm font-semibold text-white rounded-full bg-white/20">
+
+          {invoice.taxType}
+
+        </div>
+
+      </div>
+
+    </div>
+
+    {/* Body */}
+
+    <div className="grid gap-8 p-8 lg:grid-cols-2">
+
+      {/* LEFT */}
+
+      <div className="space-y-5">
+
+        <div className="flex justify-between">
+
+          <span className="text-slate-600">
+            Subtotal
+          </span>
+
+          <span className="font-semibold">
+
+            ₹ {calculations.subtotal.toLocaleString("en-IN",{
+              minimumFractionDigits:2
+            })}
+
+          </span>
+
+        </div>
+
+        <div className="flex justify-between">
+
+          <span className="text-slate-600">
+            Discount
+          </span>
+
+          <span className="font-semibold text-red-600">
+
+            - ₹ {calculations.discountAmount.toLocaleString("en-IN",{
+              minimumFractionDigits:2
+            })}
+
+          </span>
+
+        </div>
+
+        <div className="flex justify-between">
+
+          <span className="font-semibold text-slate-700">
+
+            Taxable Amount
+
+          </span>
+
+          <span className="font-bold">
+
+            ₹ {calculations.taxableAmount.toLocaleString("en-IN",{
+              minimumFractionDigits:2
+            })}
+
+          </span>
+
+        </div>
+
+      </div>
+
+      {/* RIGHT */}
+
+<div className="p-6 border rounded-2xl bg-slate-50">
+
+  {invoice.taxType === "INTRA" ? (
+    <>
+      <div className="flex justify-between mb-4">
+        <span>CGST ({invoice.cgstRate}%)</span>
+
+        <span>
+          ₹ {calculations.cgst.toFixed(2)}
+        </span>
+      </div>
+
+      <div className="flex justify-between mb-4">
+        <span>SGST ({invoice.sgstRate}%)</span>
+
+        <span>
+          ₹ {calculations.sgst.toFixed(2)}
+        </span>
+      </div>
+    </>
+  ) : (
+    <div className="flex justify-between mb-4">
+      <span>IGST ({invoice.igstRate}%)</span>
+
+      <span>
+        ₹ {calculations.igst.toFixed(2)}
+      </span>
+    </div>
+  )}
+
+  <div className="flex justify-between mb-4">
+    <span>Total GST</span>
+
+    <span className="font-semibold text-indigo-700">
+      ₹ {calculations.totalTax.toFixed(2)}
+    </span>
+  </div>
+
+  <div className="flex justify-between mb-4">
+    <span>Round Off</span>
+
+    <span>
+      ₹ {calculations.roundOff.toFixed(2)}
+    </span>
+  </div>
+
+  <div className="pt-5 mt-5 border-t">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm text-slate-500">
+          Grand Total
+        </p>
+
+        <h1 className="text-4xl font-extrabold text-indigo-700">
+          ₹ {calculations.payable.toLocaleString("en-IN", {
+            minimumFractionDigits: 2,
+          })}
+        </h1>
+      </div>
+
+      <div className="px-6 py-4 text-center rounded-2xl bg-emerald-100">
+        <p className="text-xs font-semibold text-emerald-700">
+          STATUS
+        </p>
+
+        <h2 className="mt-1 text-lg font-bold text-emerald-800">
+          Pending
+        </h2>
       </div>
     </div>
   </div>
-);  };
+
+</div>
+
+    </div>
+
+  </div>
+
+</div>
+{/* ================= NOTES & TERMS ================= */}
+
+<div className="grid gap-8 mb-10 lg:grid-cols-2">
+
+  {/* Notes */}
+
+  <div className="p-6 bg-white border shadow-sm rounded-3xl">
+
+    <h2 className="mb-4 text-xl font-bold text-slate-800">
+      Notes
+    </h2>
+
+    <textarea
+      rows={6}
+      value={invoice.notes}
+      onChange={(e) =>
+        setInvoice({
+          ...invoice,
+          notes: e.target.value,
+        })
+      }
+      placeholder="Additional notes for customer..."
+      className="w-full p-4 border resize-none rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+    />
+
+  </div>
+
+  {/* Terms */}
+
+  <div className="p-6 bg-white border shadow-sm rounded-3xl">
+
+    <h2 className="mb-4 text-xl font-bold text-slate-800">
+      Terms & Conditions
+    </h2>
+
+    <textarea
+      rows={6}
+      value={invoice.termsAndConditions}
+      onChange={(e) =>
+        setInvoice({
+          ...invoice,
+          termsAndConditions: e.target.value,
+        })
+      }
+      placeholder="Enter invoice terms..."
+      className="w-full p-4 border resize-none rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+    />
+
+  </div>
+
+</div>
+
+{/* ================= CREATE BUTTON ================= */}
+
+<div className="p-8 bg-white border shadow-sm rounded-3xl">
+
+  <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
+
+    <div>
+
+      <h2 className="text-2xl font-bold text-slate-800">
+        Ready to Generate Invoice?
+      </h2>
+
+      <p className="mt-2 text-slate-500">
+        Verify the information before creating the invoice.
+      </p>
+
+    </div>
+
+   <button
+  type="button"
+  onClick={() => {
+    console.log("BUTTON CLICKED");
+    handleSubmit();
+  }}
+>
+  Create Invoice
+</button>
+  </div>
+
+</div>
+
+{/* Footer */}
+
+<div className="mt-10 text-sm text-center text-slate-400">
+
+  ReadyTech ERP • Finance Module • GST Invoice System
+
+</div>
+
+</div>
+</div>
+</div>
+);
+}

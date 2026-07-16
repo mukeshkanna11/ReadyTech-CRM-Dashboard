@@ -112,7 +112,12 @@ export const createInvoice = async (req, res) => {
       contactPerson: billingDetails.contactPerson || client.contactPerson,
       email: billingDetails.email || client.email,
       phone: billingDetails.phone || client.phone,
-      addressLine1: billingDetails.addressLine1 || client.billingAddress?.addressLine1,
+      addressLine1:
+ billingDetails.addressLine1 ||
+ client.billingAddress?.addressLine1 ||
+ client.billingAddress?.address ||
+ client.billingAddress?.street ||
+ "",
       addressLine2: billingDetails.addressLine2 || client.billingAddress?.addressLine2,
       city: billingDetails.city || client.billingAddress?.city,
       state: billingDetails.state || client.billingAddress?.state,
@@ -136,11 +141,29 @@ export const createInvoice = async (req, res) => {
     };
 
     // ---- Mandatory validation ----
-    const errors = validateInvoicePayload({ company, billing, items, paymentMode });
-    if (errors.length) {
-      return res.status(400).json({ message: errors[0], errors });
-    }
+    const errors = validateInvoicePayload({
+  company,
+  billing,
+  items,
+  paymentMode
+});
 
+
+if (errors.length) {
+
+  console.log(
+    "INVOICE VALIDATION FAILED",
+    errors
+  );
+
+
+  return res.status(400).json({
+    success:false,
+    message: errors.join(", "),
+    errors
+  });
+
+}
     // ---- GST type: state-driven (intra vs inter), payload can override ----
     const sameState =
       company.state && billing.state && norm(company.state) === norm(billing.state);

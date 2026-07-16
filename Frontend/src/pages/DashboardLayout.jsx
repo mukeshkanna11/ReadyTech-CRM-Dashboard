@@ -293,7 +293,7 @@ function Topbar({ onMenu }) {
         </button>
 
         <div className="hidden leading-tight md:block">
-          <p className="text-sm font-semibold text-slate-800">ReadyTechS CRM + ERP</p>
+          <p className="text-sm font-semibold text-slate-800">ReadyTech CRM + ERP</p>
           <p className="text-xs text-slate-500">Business Intelligence Platform</p>
         </div>
 
