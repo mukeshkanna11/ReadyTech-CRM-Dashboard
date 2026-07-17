@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import API from "../services/api";
 import toast from "react-hot-toast";
-
+import { useNavigate } from "react-router-dom";
 export default function CreateInvoice() {
   const today = new Date().toISOString().split("T")[0];
 
   const [loading, setLoading] = useState(false);
   const [clients, setClients] = useState([]);
-
+const navigate = useNavigate();
   /* ==================================================
       INITIAL INVOICE
   =================================================== */
@@ -72,6 +72,8 @@ export default function CreateInvoice() {
   const [invoice, setInvoice] =
     useState(createInvoiceState());
 
+
+    
   /* ==================================================
       LOAD CLIENTS
   =================================================== */
@@ -470,14 +472,63 @@ const handleSubmit = async () => {
     // ================= ADDRESS =================
 
 
-    const billing =
-      client.billingAddress || {};
+    const billing = {
+  addressLine1:
+    client.billingAddress?.addressLine1 ||
+    client.billingAddress?.address ||
+    client.address ||
+    "",
+
+  addressLine2:
+    client.billingAddress?.addressLine2 ||
+    "",
+
+  city:
+    client.billingAddress?.city ||
+    "",
+
+  state:
+    client.billingAddress?.state ||
+    "",
+
+  pincode:
+    client.billingAddress?.pincode ||
+    "",
+
+  country:
+    client.billingAddress?.country ||
+    "India"
+};
 
 
 
-    const shipping =
-      client.shippingAddress || {};
+   const shipping = {
+  addressLine1:
+    client.shippingAddress?.addressLine1 ||
+    client.shippingAddress?.address ||
+    client.shippingAddress?.street ||
+    "",
 
+  addressLine2:
+    client.shippingAddress?.addressLine2 ||
+    "",
+
+  city:
+    client.shippingAddress?.city ||
+    "",
+
+  state:
+    client.shippingAddress?.state ||
+    "",
+
+  pincode:
+    client.shippingAddress?.pincode ||
+    "",
+
+  country:
+    client.shippingAddress?.country ||
+    "India"
+};
 
 
     console.log(
@@ -850,10 +901,7 @@ const handleSubmit = async () => {
 
 
 
-    setInvoice(
-      getInitialInvoice()
-    );
-
+    setInvoice(createInvoiceState());
 
 
   }
@@ -2025,15 +2073,42 @@ const handleSubmit = async () => {
 
     </div>
 
-   <button
+   <div className="flex items-center gap-3 mt-6">
+  <button
   type="button"
-  onClick={() => {
-    console.log("BUTTON CLICKED");
-    handleSubmit();
-  }}
+  onClick={() => navigate("/invoices")}
+  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-medium shadow-sm hover:bg-slate-50 hover:border-slate-400 hover:shadow transition-all duration-200"
 >
-  Create Invoice
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className="w-5 h-5"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    strokeWidth={2}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M15.75 19.5L8.25 12l7.5-7.5"
+    />
+  </svg>
+
+  Back to Invoices
 </button>
+
+  <button
+    type="button"
+    onClick={() => {
+      console.log("BUTTON CLICKED");
+      handleSubmit();
+    }}
+    disabled={loading}
+    className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg shadow hover:bg-blue-700 transition duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
+  >
+    {loading ? "Creating..." : "Create Invoice"}
+  </button>
+</div>
   </div>
 
 </div>
