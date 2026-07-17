@@ -2465,12 +2465,6 @@ answer={faq.answer}
 </div>
 
 
-
-
-
-
-
-
 {/* Support Banner */}
 
 <div className="flex flex-col items-center justify-between gap-5 p-8 mt-16 md:flex-row rounded-3xl bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600">
