@@ -1171,6 +1171,21 @@ className="p-2 text-red-600 transition rounded-xl bg-red-50 hover:bg-red-100"
                 onChange={(e)=>setForm({...form,phone:e.target.value})}
                 className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
               />
+              <input
+  type="text"
+  placeholder="Billing Address"
+  value={form.billingAddress?.addressLine1 || ""}
+  onChange={(e) =>
+    setForm({
+      ...form,
+      billingAddress: {
+        ...form.billingAddress,
+        addressLine1: e.target.value,
+      },
+    })
+  }
+  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+/>
 
             </div>
 
