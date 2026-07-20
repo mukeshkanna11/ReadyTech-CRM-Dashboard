@@ -44,7 +44,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import InventoryAIAssistant from "../components/InventoryAIAssistant";
+// import InventoryAIAssistant from "../components/InventoryAIAssistant";
 
 /* ==================================================== */
 const API_BASE = "https://readytech-crm-dashboard.onrender.com/api";
@@ -412,13 +412,13 @@ export default function DashboardPage() {
                   {syncedAt ? syncedAt.toLocaleString() : "—"}
                 </p>
               </div>
-              <button
+              {/* <button
                 onClick={() => setAiOpen(true)}
                 disabled={inventory.length === 0}
                 className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold transition rounded-2xl bg-white text-slate-900 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Bot size={16} /> AI Insights
-              </button>
+              </button> */}
             </div>
           </div>
 

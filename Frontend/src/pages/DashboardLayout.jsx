@@ -87,7 +87,7 @@ const ERP_LINKS = [
 
 /* AI tools reuse existing routes where the feature lives; those without a page are marked "Soon" */
 const AI_LINKS = [
-  { to: "/dashboard", icon: Bot, label: "AI Assistant" },
+  // { to: "/dashboard", icon: Bot, label: "AI Assistant" },
   { to: "/leads", icon: LineChart, label: "AI Lead Analysis" },
   { to: "/clients", icon: Sparkles, label: "AI Client Insights" },
   { to: "/ai/content-generator", icon: PenTool, label: "AI Content Generator" },
