@@ -333,6 +333,11 @@ const [form, setForm] = useState(emptyForm);
   }
 };
 
+
+useEffect(() => {
+  fetchClients();
+}, []);
+
   /* ================= Create / Update Client ================= */
   const saveClient = async (e) => {
   e.preventDefault();
