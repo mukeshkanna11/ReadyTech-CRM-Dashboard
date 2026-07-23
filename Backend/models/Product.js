@@ -50,6 +50,12 @@ const productSchema = new mongoose.Schema(
     type: Number,
     default: 0,
   },
+  
+  status: {
+  type: String,
+  enum: ["Active", "Inactive"],
+  default: "Active",
+},
 
   unit: {
     type: String,

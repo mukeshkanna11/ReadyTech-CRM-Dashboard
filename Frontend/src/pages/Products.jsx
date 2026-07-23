@@ -32,7 +32,7 @@ export default function Products() {
     category: "",
     price: "",
     tax: "",
-    stock: "",
+    stockQuantity: "",
     status: "Active",
     description: "",
   };
@@ -831,19 +831,17 @@ export default function Products() {
             </td>
 
             {/* Stock */}
-            <td className="px-6 py-4 text-center">
-
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  p.stock <= 5
-                    ? "bg-red-100 text-red-700"
-                    : "bg-emerald-100 text-emerald-700"
-                }`}
-              >
-                {p.stock} Units
-              </span>
-
-            </td>
+<td className="px-6 py-4 text-center">
+  <span
+    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+      p.stockQuantity <= 5
+        ? "bg-red-100 text-red-700"
+        : "bg-emerald-100 text-emerald-700"
+    }`}
+  >
+    {p.stockQuantity} Units
+  </span>
+</td>
 
             {/* Status */}
             <td className="px-6 py-4 text-center">
@@ -1056,16 +1054,16 @@ export default function Products() {
               </label>
 
               <input
-                type="number"
-                value={form.stock}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    stock: e.target.value,
-                  })
-                }
-                className="w-full px-4 py-3 text-sm border outline-none rounded-xl border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
-              />
+  type="number"
+  value={form.stockQuantity}
+  onChange={(e) =>
+    setForm({
+      ...form,
+      stockQuantity: e.target.value,
+    })
+  }
+  className="w-full px-4 py-3 text-sm border outline-none rounded-xl border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+/>
             </div>
 
           </div>

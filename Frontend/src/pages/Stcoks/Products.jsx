@@ -26,15 +26,15 @@ export default function Products() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const emptyForm = {
-    name: "",
-    sku: "",
-    category: "",
-    price: "",
-    tax: "",
-    stock: "",
-    status: "Active",
-    description: "",
-  };
+  name: "",
+  sku: "",
+  category: "",
+  price: "",
+  tax: "",
+  stockQuantity: "",
+  status: "Active",
+  description: "",
+};
 
   const [form, setForm] = useState(emptyForm);
   const fetchedOnce = useRef(false);
@@ -546,44 +546,35 @@ export default function Products() {
             </td>
 
             {/* Stock */}
+<td className="px-6 py-5">
+  <div>
+    <div className="flex justify-between mb-2 text-xs">
+      <span className="font-semibold">
+        {p.stockQuantity}
+      </span>
 
-            <td className="px-6 py-5">
+      <span className="text-slate-500">
+        Qty
+      </span>
+    </div>
 
-              <div>
-
-                <div className="flex justify-between mb-2 text-xs">
-
-                  <span className="font-semibold">
-                    {p.stock}
-                  </span>
-
-                  <span className="text-slate-500">
-                    Qty
-                  </span>
-
-                </div>
-
-                <div className="h-2 overflow-hidden rounded-full bg-slate-200">
-
-                  <div
-                    className={`h-full rounded-full ${
-                      p.stock <= 5
-                        ? "bg-red-500"
-                        : "bg-emerald-500"
-                    }`}
-                    style={{
-                      width: `${Math.min(
-                        (p.stock / 100) * 100,
-                        100
-                      )}%`,
-                    }}
-                  />
-
-                </div>
-
-              </div>
-
-            </td>
+    <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+      <div
+        className={`h-full rounded-full ${
+          p.stockQuantity <= 5
+            ? "bg-red-500"
+            : "bg-emerald-500"
+        }`}
+        style={{
+          width: `${Math.min(
+            p.stockQuantity,
+            100
+          )}%`,
+        }}
+      />
+    </div>
+  </div>
+</td>
 
             {/* Status */}
 
@@ -771,14 +762,17 @@ export default function Products() {
               </label>
 
               <input
-                type="number"
-                value={form.stock}
-                onChange={(e) =>
-                  setForm({ ...form, stock: e.target.value })
-                }
-                placeholder="0"
-                className="w-full px-4 py-3 transition border rounded-xl border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-100"
-              />
+  type="number"
+  value={form.stockQuantity}
+  onChange={(e) =>
+    setForm({
+      ...form,
+      stockQuantity: Number(e.target.value),
+    })
+  }
+  placeholder="0"
+  className="w-full px-4 py-3 transition border rounded-xl border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-100"
+/>
             </div>
 
           </div>
