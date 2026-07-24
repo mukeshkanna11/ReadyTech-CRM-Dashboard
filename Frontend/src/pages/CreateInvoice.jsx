@@ -19,6 +19,8 @@ const navigate = useNavigate();
 
     orderNumber: "",
 
+    orderDate: today,
+    
     purchaseDate: today,
 
     issueDate: today,
@@ -563,7 +565,8 @@ const handleSubmit = async () => {
       orderNumber:
         invoice.orderNumber || "",
 
-
+orderDate:
+  invoice.orderDate || new Date(),
 
       purchaseDate:
         invoice.purchaseDate || new Date(),
@@ -778,173 +781,122 @@ const handleSubmit = async () => {
 
       },
 
+            taxType: invoice.taxType,
 
+      cgstRate: Number(invoice.cgstRate || 9),
 
+      sgstRate: Number(invoice.sgstRate || 9),
 
+      igstRate: Number(invoice.igstRate || 18),
 
-      items:
+      subscriptionStart:
+        invoice.invoiceType === "Subscription"
+          ? invoice.subscriptionStart || null
+          : null,
 
-      invoice.items.map(
-        (item)=>{
+      subscriptionEnd:
+        invoice.invoiceType === "Subscription"
+          ? invoice.subscriptionEnd || null
+          : null,
 
+      items: invoice.items.map((item) => ({
+        description: item.description,
 
-          const qty =
-            Number(item.quantity || 1);
+        hsnCode: item.hsnCode || "",
 
+        sacCode: item.sacCode || "",
 
-          const price =
-            Number(item.unitPrice || 0);
+        planType: item.planType || "One-Time",
 
+        users: Number(item.users || 1),
 
-          const taxable =
-            qty * price;
+        quantity: Number(item.quantity || 1),
 
+        unitPrice: Number(item.unitPrice || 0),
 
-          const tax =
-            Number(item.taxPercent || 18);
+        taxPercent: Number(item.taxPercent || 18),
 
+        discountType:
+          item.discountType || "Flat",
 
-
-          return {
-
-
-            description:
-              item.description,
-
-
-            hsnCode:
-              item.hsnCode,
-
-
-            sacCode:
-              item.sacCode || "",
-
-
-            planType:
-              item.planType || "One-Time",
-
-
-            users:
-              Number(item.users || 1),
-
-
-            quantity:
-              qty,
-
-
-            unitPrice:
-              price,
-
-
-            taxableAmount:
-              taxable,
-
-
-            taxPercent:
-              tax,
-
-
-            taxAmount:
-              taxable * tax / 100,
-
-
-            total:
-              taxable +
-              (taxable * tax / 100)
-
-          };
-
-
-        }
-
-      )
-
-
-
+        discountValue:
+          Number(item.discountValue || 0),
+      }))
     };
+  
 
 
 
+console.log(
+  "STEP 8 : FINAL PAYLOAD",
+  payload
+);
 
+console.log(
+  "STEP 9 : API CALL START"
+);
 
-    console.log(
-      "STEP 8 : FINAL PAYLOAD",
-      payload
-    );
+const response = await API.post(
+  "/invoices",
+  payload
+);
 
+const createdInvoice = response.data.data;
 
+console.log(
+  "STEP 10 : SUCCESS",
+  createdInvoice
+);
 
-    console.log(
-      "STEP 9 : API CALL START"
-    );
+console.log("Subtotal :", createdInvoice.subtotal);
+console.log("Taxable :", createdInvoice.taxableAmount);
+console.log("Discount :", createdInvoice.discountAmount);
+console.log("CGST :", createdInvoice.cgstAmount);
+console.log("SGST :", createdInvoice.sgstAmount);
+console.log("IGST :", createdInvoice.igstAmount);
+console.log("Total GST :", createdInvoice.totalTax);
+console.log("Round Off :", createdInvoice.roundOff);
+console.log("Grand Total :", createdInvoice.grandTotal);
+console.log("Balance Due :", createdInvoice.balanceDue);
 
+toast.success(
+  "Invoice Created Successfully"
+);
 
+// Optional:
+// navigate(`/invoices/${createdInvoice._id}`);
 
-    const response =
-      await API.post(
-        "/invoices",
-        payload
-      );
+// Reset Form
+setInvoice(createInvoiceState());
 
+} catch (error) {
 
+  console.error(
+    "========== ERROR ==========",
+    error
+  );
 
-    console.log(
-      "STEP 10 : SUCCESS",
-      response.data
-    );
+  console.log(
+    "SERVER ERROR",
+    error.response?.data
+  );
 
+  toast.error(
+    error.response?.data?.message ||
+    "Invoice Creation Failed"
+  );
 
+} finally {
 
-    toast.success(
-      "Invoice Created Successfully"
-    );
+  console.log(
+    "FINALLY EXECUTED"
+  );
 
-
-
-    setInvoice(createInvoiceState());
-
-
-  }
-
-  catch(error){
-
-
-    console.error(
-      "========== ERROR ==========",
-      error
-    );
-
-
-    console.log(
-      "SERVER ERROR",
-      error.response?.data
-    );
-
-
-    toast.error(
-      error.response?.data?.message ||
-      "Invoice Creation Failed"
-    );
-
-
-  }
-
-
-  finally{
-
-
-    console.log(
-      "FINALLY EXECUTED"
-    );
-
-
-    setLoading(false);
-
-
-  }
-
-
+  setLoading(false);
+}
 };
+
+
 
     return (
       <div className="min-h-screen p-6 bg-slate-100">
@@ -1170,6 +1122,28 @@ const handleSubmit = async () => {
             />
 
           </div>
+
+{/* Order Date */}
+
+<div>
+
+  <label className="block mb-2 text-sm font-semibold">
+    Order Date
+  </label>
+
+  <input
+    type="date"
+    value={invoice.orderDate}
+    onChange={(e) =>
+      setInvoice({
+        ...invoice,
+        orderDate: e.target.value,
+      })
+    }
+    className="w-full px-4 py-3 border rounded-2xl"
+  />
+
+</div>
 
           {/* Issue Date */}
 
