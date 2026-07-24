@@ -1290,13 +1290,13 @@ setInvoice(createInvoiceState());
             Unit Price
           </th>
 
-          <th className="px-4 py-4 text-center">
+          {/* <th className="px-4 py-4 text-center">
             GST %
-          </th>
+          </th> */}
 
-          <th className="px-4 py-4 text-right">
+          {/* <th className="px-4 py-4 text-right">
             Tax
-          </th>
+          </th> */}
 
           <th className="px-4 py-4 text-right">
             Total
@@ -1472,7 +1472,7 @@ setInvoice(createInvoiceState());
 
               {/* GST */}
 
-              <td className="p-3 text-center">
+              {/* <td className="p-3 text-center">
 
                 <input
                   type="number"
@@ -1488,18 +1488,18 @@ setInvoice(createInvoiceState());
                   className="w-20 px-3 py-2 text-center border rounded-xl"
                 />
 
-              </td>
+              </td> */}
 
               {/* Tax */}
 
-              <td className="p-3 font-medium text-right text-slate-700">
+              {/* <td className="p-3 font-medium text-right text-slate-700">
 
                 ₹{" "}
                 {tax.toLocaleString("en-IN", {
                   minimumFractionDigits: 2,
                 })}
 
-              </td>
+              </td> */}
 
               {/* Total */}
 
