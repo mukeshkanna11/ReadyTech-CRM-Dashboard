@@ -120,11 +120,14 @@ export default function Products() {
   /* ================= INSIGHTS ================= */
   const totalProducts = products.length;
   const activeProducts = products.filter((p) => p.status === "Active").length;
-  const lowStock = products.filter((p) => p.stock <= 5);
-  const inventoryValue = products.reduce(
-    (sum, p) => sum + p.price * p.stock,
-    0
-  );
+  const lowStock = products.filter(
+  (p) => Number(p.stockQuantity) <= 5
+);
+
+const inventoryValue = products.reduce(
+  (sum, p) => sum + Number(p.price) * Number(p.stockQuantity),
+  0
+);
 
   
   const categorySummary = useMemo(() => {
@@ -850,7 +853,7 @@ export default function Products() {
                 className={`rounded-full px-3 py-1 text-xs font-semibold ${
                   p.status === "Active"
                     ? "bg-emerald-100 text-emerald-700"
-                    : "bg-slate-200 text-slate-600"
+                    : "bg-red-200 text-red-600"
                 }`}
               >
                 {p.status}

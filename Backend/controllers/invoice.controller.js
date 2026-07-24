@@ -170,58 +170,123 @@ if (errors.length) {
     const taxType = taxTypeIn || (sameState ? "INTRA" : "INTER");
     const effGstRate = taxType === "INTRA" ? Number(cgstRate) + Number(sgstRate) : Number(igstRate);
 
-    // ---- Line items ----
-    let subtotal = 0;
-    const processedItems = items.map((item) => {
-      const quantity = Number(item.quantity || 1);
-      const unitPrice = Number(item.unitPrice || item.rate || 0);
-      const base = round2(quantity * unitPrice);
-      const rate = Number(item.taxPercent ?? effGstRate);
-      const taxAmount = round2((base * rate) / 100);
-      subtotal += base;
-      return {
-        product: item.product || null,
-        description: item.description || "",
-        hsnCode: item.hsnCode || "",
-        sacCode: item.sacCode || "",
-        planType: item.planType || "One-Time",
-        users: Number(item.users || 1),
-        quantity,
-        unitPrice,
-        taxableAmount: base,
-        taxPercent: rate,
-        taxAmount,
-        total: round2(base + taxAmount),
-      };
-    });
-    subtotal = round2(subtotal);
+   // ---- Line items ----
+let subtotal = 0;
+let totalTax = 0;
 
-    // ---- Discount → taxable value ----
-    const discountAmount =
-      discountType === "Percentage"
-        ? round2((subtotal * Number(discountValue || 0)) / 100)
-        : round2(Number(discountValue || 0));
-    const safeDiscount = Math.min(discountAmount, subtotal);
-    const taxableAmount = round2(subtotal - safeDiscount);
+const processedItems = items.map((item) => {
+  const quantity = Number(item.quantity || 1);
+  const unitPrice = Number(item.unitPrice || item.rate || 0);
 
-    // ---- GST split ----
-    let cgstAmount = 0, sgstAmount = 0, igstAmount = 0;
-    let cgstP = 0, sgstP = 0, igstP = 0;
-    if (taxType === "INTRA") {
-      cgstP = Number(cgstRate);
-      sgstP = Number(sgstRate);
-      cgstAmount = round2((taxableAmount * cgstP) / 100);
-      sgstAmount = round2((taxableAmount * sgstP) / 100);
-    } else {
-      igstP = Number(igstRate);
-      igstAmount = round2((taxableAmount * igstP) / 100);
-    }
-    const totalTax = round2(cgstAmount + sgstAmount + igstAmount);
+  // Line Amount
+  const lineAmount = round2(quantity * unitPrice);
 
-    // ---- Round off + grand total ----
-    const preRound = taxableAmount + totalTax;
-    const grandTotal = Math.round(preRound);
-    const roundOff = round2(grandTotal - preRound);
+  // Item Discount
+  const itemDiscountType = item.discountType || "Flat";
+  const itemDiscountValue = Number(item.discountValue || 0);
+
+  let itemDiscount =
+    itemDiscountType === "Percentage"
+      ? round2((lineAmount * itemDiscountValue) / 100)
+      : round2(itemDiscountValue);
+
+  itemDiscount = Math.min(itemDiscount, lineAmount);
+
+  // Taxable Amount
+  const taxableAmount = round2(lineAmount - itemDiscount);
+
+  // GST %
+  const taxPercent = Number(item.taxPercent ?? effGstRate);
+
+  // GST Amount
+  const taxAmount = round2((taxableAmount * taxPercent) / 100);
+
+  // Line Total
+  const total = round2(taxableAmount + taxAmount);
+
+  subtotal += lineAmount;
+  totalTax += taxAmount;
+
+  return {
+    product: item.product || null,
+    description: item.description || "",
+    hsnCode: item.hsnCode || "",
+    sacCode: item.sacCode || "",
+    planType: item.planType || "One-Time",
+    users: Number(item.users || 1),
+
+    quantity,
+    unitPrice,
+
+    lineAmount,
+
+    discountType: itemDiscountType,
+    discountValue: itemDiscountValue,
+    discountAmount: itemDiscount,
+
+    taxableAmount,
+
+    taxPercent,
+    taxAmount,
+
+    total,
+  };
+});
+
+subtotal = round2(subtotal);
+totalTax = round2(totalTax);
+
+// ----------------------------
+// Invoice Discount
+// ----------------------------
+let invoiceDiscount =
+  discountType === "Percentage"
+    ? round2((subtotal * Number(discountValue || 0)) / 100)
+    : round2(Number(discountValue || 0));
+
+invoiceDiscount = Math.min(invoiceDiscount, subtotal);
+
+// ----------------------------
+// Final Taxable Amount
+// ----------------------------
+const taxableAmount = round2(subtotal - invoiceDiscount);
+
+// ----------------------------
+// GST Split
+// ----------------------------
+let cgstAmount = 0;
+let sgstAmount = 0;
+let igstAmount = 0;
+
+let cgstP = 0;
+let sgstP = 0;
+let igstP = 0;
+
+if (taxType === "INTRA") {
+  cgstP = Number(cgstRate);
+  sgstP = Number(sgstRate);
+
+  cgstAmount = round2((taxableAmount * cgstP) / 100);
+  sgstAmount = round2((taxableAmount * sgstP) / 100);
+
+  totalTax = round2(cgstAmount + sgstAmount);
+} else {
+  igstP = Number(igstRate);
+
+  igstAmount = round2((taxableAmount * igstP) / 100);
+
+  totalTax = round2(igstAmount);
+}
+
+
+// ----------------------------
+// Grand Total
+// ----------------------------
+const preRound = round2(taxableAmount + totalTax);
+
+const grandTotal = Math.round(preRound);
+
+const roundOff = round2(grandTotal - preRound);
 
     const invoiceNumber = await generateInvoiceNumber();
 
@@ -243,29 +308,47 @@ if (errors.length) {
       items: processedItems,
       currency,
       subtotal,
-      taxableAmount,
-      discountType,
-      discountValue: Number(discountValue || 0),
-      discountAmount: safeDiscount,
-      taxType,
-      cgstPercent: cgstP,
-      cgstAmount,
-      sgstPercent: sgstP,
-      sgstAmount,
-      igstPercent: igstP,
-      igstAmount,
-      totalTax,
-      roundOff,
-      grandTotal,
-      amountPaid: 0,
-      balanceDue: grandTotal,
-      status: "Draft",
-      paymentStatus: "Pending",
-      paymentMode,
-      notes,
-      termsAndConditions,
-      createdBy: req.user?.id,
-      statusHistory: [{ status: "Draft", changedBy: req.user?.id, at: new Date() }],
+taxableAmount,
+
+discountType,
+discountValue: Number(discountValue || 0),
+
+discountAmount: invoiceDiscount,
+invoiceDiscountAmount: invoiceDiscount,
+discountBeforeTax: true,
+taxType,
+
+cgstPercent: cgstP,
+cgstAmount,
+
+sgstPercent: sgstP,
+sgstAmount,
+
+igstPercent: igstP,
+igstAmount,
+
+totalTax,
+
+roundOff,
+
+grandTotal,
+
+amountPaid: 0,
+balanceDue: round2(grandTotal),
+
+status: "Draft",
+paymentStatus: "Pending",
+paymentMode,
+notes,
+termsAndConditions,
+createdBy: req.user?.id,
+statusHistory: [
+  {
+    status: "Draft",
+    changedBy: req.user?.id,
+    at: new Date(),
+  },
+],
     });
 
     res.status(201).json({ success: true, data: invoice });

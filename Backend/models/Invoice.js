@@ -50,6 +50,27 @@ const itemSchema = new mongoose.Schema(
       min: 0,
     },
 
+    lineAmount: {
+  type: Number,
+  default: 0,
+},
+
+discountType: {
+  type: String,
+  enum: ["Flat", "Percentage"],
+  default: "Flat",
+},
+
+discountValue: {
+  type: Number,
+  default: 0,
+},
+
+discountAmount: {
+  type: Number,
+  default: 0,
+},
+
     taxableAmount: {
       type: Number,
       default: 0,
@@ -221,24 +242,34 @@ const invoiceSchema = new mongoose.Schema(
       default: 0,
     },
 
-    // =========================
-    // DISCOUNT
-    // =========================
-    discountType: {
-      type: String,
-      enum: ["Flat", "Percentage"],
-      default: "Flat",
-    },
+   // =========================
+// DISCOUNT
+// =========================
+discountType: {
+  type: String,
+  enum: ["Flat", "Percentage"],
+  default: "Flat",
+},
 
-    discountValue: {
-      type: Number,
-      default: 0,
-    },
+discountValue: {
+  type: Number,
+  default: 0,
+},
 
-    discountAmount: {
-      type: Number,
-      default: 0,
-    },
+discountAmount: {
+  type: Number,
+  default: 0,
+},
+
+invoiceDiscountAmount: {
+  type: Number,
+  default: 0,
+},
+
+discountBeforeTax: {
+  type: Boolean,
+  default: true,
+},
 
     // =========================
     // GST TYPE (INTRA = CGST+SGST, INTER = IGST)

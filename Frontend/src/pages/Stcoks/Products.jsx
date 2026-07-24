@@ -119,11 +119,14 @@ export default function Products() {
   /* ================= INSIGHTS ================= */
   const totalProducts = products.length;
   const activeProducts = products.filter((p) => p.status === "Active").length;
-  const lowStock = products.filter((p) => p.stock <= 5);
-  const inventoryValue = products.reduce(
-    (sum, p) => sum + p.price * p.stock,
-    0
-  );
+  const lowStock = products.filter(
+  (p) => Number(p.stockQuantity) <= 5
+);
+
+const inventoryValue = products.reduce(
+  (sum, p) => sum + Number(p.price) * Number(p.stockQuantity),
+  0
+);
 
   const categorySummary = useMemo(() => {
     const map = {};
