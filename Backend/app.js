@@ -50,7 +50,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:8081",      // Expo Web
   "http://127.0.0.1:8081",   
-  "http://192.168.0.112:8081",   // Optional
+  "http://192.168.0.101:8081",  // Optional
   "https://readytechcrm.netlify.app",
   "https://readytech-crm-site.netlify.app",
 ];
