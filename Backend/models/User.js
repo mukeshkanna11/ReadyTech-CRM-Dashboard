@@ -28,12 +28,14 @@ const userSchema = new mongoose.Schema(
 /* =========================================================
    HASH PASSWORD BEFORE SAVE
 ========================================================= */
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("passwordHash")) return next();
+// NOTE: Mongoose 9 does not pass `next` to async middleware — it awaits the
+// returned promise instead. Taking a `next` param here made every save() throw
+// "next is not a function", which surfaced as a 500 on user creation.
+userSchema.pre("save", async function () {
+  if (!this.isModified("passwordHash")) return;
 
   const salt = await bcrypt.genSalt(10);
   this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
-  next();
 });
 
 /* =========================================================
