@@ -8,47 +8,84 @@ import User from "./models/User.js";
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
+  console.log("=================================");
   console.log("🚀 Starting ReadyTech CRM...");
+  console.log("=================================");
 
-  // Fail loudly and specifically when the platform never injected the vars.
+  /* ===============================
+     Validate Environment Variables
+  =============================== */
   if (!process.env.MONGO_URI) {
-    console.error(
-      "❌ FATAL: MONGO_URI is undefined. .env is gitignored and never deployed, " +
-        "so this must come from the Hostinger environment variables."
-    );
+    console.error("❌ FATAL: MONGO_URI is missing.");
+    process.exit(1);
+  }
+
+  if (!process.env.JWT_SECRET) {
+    console.error("❌ FATAL: JWT_SECRET is missing.");
     process.exit(1);
   }
 
   try {
+    /* ===============================
+       Connect MongoDB
+    =============================== */
     await connectDB();
     console.log("✅ MongoDB Connected");
+
+    /* ===============================
+       Create Super Admin
+    =============================== */
+    try {
+      await User.createAdminIfNotExists();
+      console.log("✅ Super Admin Verified");
+    } catch (err) {
+      console.error("⚠️ Super Admin creation failed.");
+      console.error(err);
+      console.log("⚠️ Continuing without stopping server...");
+    }
+
+    /* ===============================
+       Start Express Server
+    =============================== */
+    const server = app.listen(PORT, "0.0.0.0", () => {
+      console.log("=================================");
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
+      console.log("=================================");
+    });
+
+    /* ===============================
+       Graceful Shutdown
+    =============================== */
+    process.on("SIGINT", () => {
+      console.log("🛑 Server stopped.");
+      server.close(() => process.exit(0));
+    });
+
+    process.on("SIGTERM", () => {
+      console.log("🛑 Server stopped.");
+      server.close(() => process.exit(0));
+    });
+
   } catch (err) {
-    console.error("❌ FATAL: MongoDB connection failed.");
+    console.error("❌ SERVER STARTUP FAILED");
     console.error(err);
     process.exit(1);
   }
-
-  // Seeding must never stop the API from listening — a failure here previously
-  // exited the process, which is what a platform reports as HTTP 503.
-  try {
-    await User.createAdminIfNotExists();
-    console.log("✅ Super Admin Verified");
-  } catch (err) {
-    console.error("⚠️  Super admin seeding failed (continuing to listen):");
-    console.error(err);
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-  });
 }
 
 startServer();
 
+/* ===============================
+   Global Error Handlers
+=============================== */
+
 process.on("unhandledRejection", (err) => {
+  console.error("🔥 Unhandled Rejection:");
   console.error(err);
 });
 
 process.on("uncaughtException", (err) => {
+  console.error("🔥 Uncaught Exception:");
   console.error(err);
 });
