@@ -75,6 +75,122 @@ const navigate = useNavigate();
     useState(createInvoiceState());
 
 
+  /* ==================================================
+      CLIENT MODE + EDITABLE BILLING SNAPSHOT
+      "existing" links a Client; "walkin" is typed by hand and
+      creates no Client record.
+  =================================================== */
+
+  const emptyAddress = () => ({
+    addressLine1: "",
+    addressLine2: "",
+    city: "",
+    state: "",
+    pincode: "",
+    country: "India",
+  });
+
+  const emptyBuyer = () => ({
+    companyName: "",
+    contactPerson: "",
+    gstNumber: "",
+    panNumber: "",
+    email: "",
+    phone: "",
+    billingAddress: emptyAddress(),
+    shippingAddress: emptyAddress(),
+  });
+
+  const [clientMode, setClientMode] = useState("existing");
+  const [buyer, setBuyer] = useState(emptyBuyer());
+  const [clientSearch, setClientSearch] = useState("");
+
+  const setBuyerField = (key, value) =>
+    setBuyer((prev) => ({ ...prev, [key]: value }));
+
+  const setAddressField = (which, key, value) =>
+    setBuyer((prev) => ({
+      ...prev,
+      [which]: { ...prev[which], [key]: value },
+    }));
+
+  const copyBillingToShipping = () =>
+    setBuyer((prev) => ({
+      ...prev,
+      shippingAddress: { ...prev.billingAddress },
+    }));
+
+  /** Switching mode clears the buyer data so nothing leaks between modes. */
+  const changeClientMode = (mode) => {
+    if (mode === clientMode) return;
+    setClientMode(mode);
+    setBuyer(emptyBuyer());
+    setClientSearch("");
+    setInvoice((prev) => ({ ...prev, customer: "" }));
+  };
+
+  /** Client-side search over the loaded clients for the dropdown. */
+  const filteredClients = useMemo(() => {
+    const q = clientSearch.trim().toLowerCase();
+
+    if (!q) return clients;
+
+    return clients.filter((c) =>
+      `${c.companyName || ""} ${c.contactPerson || ""} ${c.email || ""} ${
+        c.phone || ""
+      } ${c.gstNumber || ""}`
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [clients, clientSearch]);
+
+  /** Task 4: auto-fill every billing field, all still editable afterwards. */
+  const handleClientSelect = (id) => {
+    setInvoice((prev) => ({ ...prev, customer: id }));
+
+    const client = clients.find(
+      (c) => String(c._id) === String(id)
+    );
+
+    if (!client) {
+      setBuyer(emptyBuyer());
+      return;
+    }
+
+    const b = client.billingAddress || {};
+    const s = client.shippingAddress || {};
+
+    const billingAddress = {
+      addressLine1:
+        b.addressLine1 || b.address || b.street || client.address || "",
+      addressLine2: b.addressLine2 || "",
+      city: b.city || "",
+      state: b.state || "",
+      pincode: b.pincode || "",
+      country: b.country || "India",
+    };
+
+    setBuyer({
+      companyName: client.companyName || "",
+      contactPerson: client.contactPerson || "",
+      gstNumber: client.gstNumber || "",
+      panNumber: client.panNumber || "",
+      email: client.email || "",
+      phone: client.phone || "",
+      billingAddress,
+      shippingAddress: {
+        addressLine1:
+          s.addressLine1 || s.address || s.street || billingAddress.addressLine1,
+        addressLine2: s.addressLine2 || "",
+        city: s.city || billingAddress.city,
+        state: s.state || billingAddress.state,
+        pincode: s.pincode || billingAddress.pincode,
+        country: s.country || "India",
+      },
+    });
+  };
+
+
     
   /* ==================================================
       LOAD CLIENTS
@@ -342,10 +458,24 @@ const handleSubmit = async () => {
 
 
 
-    if (!client) {
+    if (clientMode === "existing" && !client) {
 
       toast.error(
         "Please select customer"
+      );
+
+      return;
+
+    }
+
+
+    if (
+      clientMode === "walkin" &&
+      !buyer.companyName.trim()
+    ) {
+
+      toast.error(
+        "Please enter the customer / company name"
       );
 
       return;
@@ -476,29 +606,29 @@ const handleSubmit = async () => {
 
     const billing = {
   addressLine1:
-    client.billingAddress?.addressLine1 ||
-    client.billingAddress?.address ||
-    client.address ||
+    client?.billingAddress?.addressLine1 ||
+    client?.billingAddress?.address ||
+    client?.address ||
     "",
 
   addressLine2:
-    client.billingAddress?.addressLine2 ||
+    client?.billingAddress?.addressLine2 ||
     "",
 
   city:
-    client.billingAddress?.city ||
+    client?.billingAddress?.city ||
     "",
 
   state:
-    client.billingAddress?.state ||
+    client?.billingAddress?.state ||
     "",
 
   pincode:
-    client.billingAddress?.pincode ||
+    client?.billingAddress?.pincode ||
     "",
 
   country:
-    client.billingAddress?.country ||
+    client?.billingAddress?.country ||
     "India"
 };
 
@@ -506,29 +636,29 @@ const handleSubmit = async () => {
 
    const shipping = {
   addressLine1:
-    client.shippingAddress?.addressLine1 ||
-    client.shippingAddress?.address ||
-    client.shippingAddress?.street ||
+    client?.shippingAddress?.addressLine1 ||
+    client?.shippingAddress?.address ||
+    client?.shippingAddress?.street ||
     "",
 
   addressLine2:
-    client.shippingAddress?.addressLine2 ||
+    client?.shippingAddress?.addressLine2 ||
     "",
 
   city:
-    client.shippingAddress?.city ||
+    client?.shippingAddress?.city ||
     "",
 
   state:
-    client.shippingAddress?.state ||
+    client?.shippingAddress?.state ||
     "",
 
   pincode:
-    client.shippingAddress?.pincode ||
+    client?.shippingAddress?.pincode ||
     "",
 
   country:
-    client.shippingAddress?.country ||
+    client?.shippingAddress?.country ||
     "India"
 };
 
@@ -553,7 +683,7 @@ const handleSubmit = async () => {
 
 
       customer:
-        client._id,
+        client?._id || "",
 
 
 
@@ -667,65 +797,57 @@ orderDate:
 
 
 
+     // Buyer snapshot comes from the editable Billing Details form, not the
+     // client record, so post-autofill edits are what actually get saved.
      billingDetails: {
 
   companyName:
-    client.companyName || "",
+    buyer.companyName || "",
 
 
   contactPerson:
-    client.contactPerson || "",
+    buyer.contactPerson || "",
 
 
   email:
-    client.email || "",
+    buyer.email || "",
 
 
   phone:
-    client.phone || "",
+    buyer.phone || "",
 
 
   addressLine1:
-    billing.addressLine1 ||
-    billing.address ||
-    billing.street ||
-    billing.location ||
-    "",
+    buyer.billingAddress.addressLine1 || "",
 
 
   addressLine2:
-    billing.addressLine2 ||
-    "",
+    buyer.billingAddress.addressLine2 || "",
 
 
   city:
-    billing.city ||
-    billing.town ||
-    "",
+    buyer.billingAddress.city || "",
 
 
   state:
-    billing.state ||
-    "",
+    buyer.billingAddress.state || "",
 
 
   pincode:
-    billing.pincode ||
-    billing.zipCode ||
-    "",
+    buyer.billingAddress.pincode || "",
 
 
   country:
-    billing.country ||
+    buyer.billingAddress.country ||
     "India",
 
 
   gstNumber:
-    client.gstNumber || "",
+    buyer.gstNumber || "",
 
 
   panNumber:
-    client.panNumber || ""
+    buyer.panNumber || ""
 
 },
 
@@ -736,47 +858,56 @@ orderDate:
 
 
         companyName:
-          client.companyName || "",
+          buyer.companyName || "",
 
 
         contactPerson:
-          client.contactPerson || "",
+          buyer.contactPerson || "",
 
 
         phone:
-          client.phone || "",
+          buyer.phone || "",
 
 
 
         addressLine1:
-          shipping.addressLine1 ||
-          billing.addressLine1 ||
+          buyer.shippingAddress.addressLine1 ||
+          buyer.billingAddress.addressLine1 ||
+          "",
+
+
+
+        addressLine2:
+          buyer.shippingAddress.addressLine2 ||
+          buyer.billingAddress.addressLine2 ||
           "",
 
 
 
         city:
-          shipping.city ||
-          billing.city ||
+          buyer.shippingAddress.city ||
+          buyer.billingAddress.city ||
           "",
 
 
 
         state:
-          shipping.state ||
-          billing.state ||
+          buyer.shippingAddress.state ||
+          buyer.billingAddress.state ||
           "",
 
 
 
         pincode:
-          shipping.pincode ||
-          billing.pincode ||
+          buyer.shippingAddress.pincode ||
+          buyer.billingAddress.pincode ||
           "",
 
 
 
         country:
+          buyer.shippingAddress.country ||
+          buyer.billingAddress.country ||
           "India"
 
       },
@@ -1030,34 +1161,83 @@ setInvoice(createInvoiceState());
 
             <label className="block mb-2 text-sm font-semibold">
 
-              Customer
+              Billing To
 
             </label>
 
-            <select
-              value={invoice.customer}
-              onChange={(e) =>
-                setInvoice({
-                  ...invoice,
-                  customer: e.target.value,
-                })
-              }
-              className="w-full px-4 py-3 border rounded-2xl"
-            >
-              <option value="">
-                Select Customer
-              </option>
+            {/* Mode toggle: existing client vs. walk-in */}
+            <div className="flex p-1 mb-3 rounded-2xl bg-slate-100">
 
-              {clients.map((client) => (
-                <option
-                  key={client._id}
-                  value={client._id}
+              {[
+                { id: "existing", label: "Existing Client" },
+                { id: "walkin", label: "New / Walk-in" },
+              ].map((mode) => (
+
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => changeClientMode(mode.id)}
+                  className={`flex-1 rounded-xl px-3 py-2 text-sm font-medium transition ${
+                    clientMode === mode.id
+                      ? "bg-white text-indigo-600 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
                 >
-                  {client.companyName}
-                </option>
+                  {mode.label}
+                </button>
+
               ))}
 
-            </select>
+            </div>
+
+            {clientMode === "existing" ? (
+
+              <>
+                {/* Searchable client dropdown */}
+                <input
+                  type="text"
+                  placeholder="Search by company, email, phone or GST…"
+                  value={clientSearch}
+                  onChange={(e) => setClientSearch(e.target.value)}
+                  className="w-full px-4 py-2 mb-2 text-sm border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <select
+                  value={invoice.customer}
+                  onChange={(e) => handleClientSelect(e.target.value)}
+                  className="w-full px-4 py-3 border rounded-2xl"
+                >
+                  <option value="">
+                    Select Customer
+                  </option>
+
+                  {filteredClients.map((client) => (
+                    <option
+                      key={client._id}
+                      value={client._id}
+                    >
+                      {client.companyName}
+                      {client.gstNumber ? ` · ${client.gstNumber}` : ""}
+                    </option>
+                  ))}
+
+                </select>
+
+                {clientSearch && filteredClients.length === 0 && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    No clients match “{clientSearch}”.
+                  </p>
+                )}
+              </>
+
+            ) : (
+
+              <p className="px-4 py-3 text-xs leading-5 border border-amber-200 rounded-2xl bg-amber-50 text-amber-800">
+                Walk-in details are saved on this invoice only — no client
+                record is created.
+              </p>
+
+            )}
 
           </div>
 
@@ -1228,6 +1408,297 @@ setInvoice(createInvoiceState());
         </div>
 
       </div>
+
+      {/* ================= BILLING DETAILS ================= */}
+
+      <div className="mb-8 overflow-hidden bg-white border shadow-sm rounded-3xl border-slate-200">
+
+        <div className="flex items-center justify-between p-6 border-b bg-slate-50">
+
+          <div>
+
+            <h3 className="text-lg font-bold text-slate-900">
+              Billing Details
+            </h3>
+
+            <p className="mt-1 text-sm text-slate-500">
+              {clientMode === "existing"
+                ? "Auto-filled from the selected client — edit freely before saving."
+                : "Enter the walk-in customer's billing details."}
+            </p>
+
+          </div>
+
+        </div>
+
+        <div className="p-6 space-y-6">
+
+          {/* Identity */}
+          <div className="grid gap-4 md:grid-cols-3">
+
+            <div>
+              <label className="block mb-2 text-sm font-semibold">
+                Company Name
+              </label>
+              <input
+                type="text"
+                placeholder="Acme Pvt Ltd"
+                value={buyer.companyName}
+                onChange={(e) => setBuyerField("companyName", e.target.value)}
+                className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 text-sm font-semibold">
+                Contact Person
+              </label>
+              <input
+                type="text"
+                placeholder="Full name"
+                value={buyer.contactPerson}
+                onChange={(e) => setBuyerField("contactPerson", e.target.value)}
+                className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 text-sm font-semibold">
+                GST Number
+              </label>
+              <input
+                type="text"
+                maxLength={15}
+                placeholder="29ABCDE1234F1Z5"
+                value={buyer.gstNumber}
+                onChange={(e) =>
+                  setBuyerField("gstNumber", e.target.value.toUpperCase())
+                }
+                className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 text-sm font-semibold">
+                Email
+              </label>
+              <input
+                type="email"
+                placeholder="name@company.com"
+                value={buyer.email}
+                onChange={(e) => setBuyerField("email", e.target.value)}
+                className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 text-sm font-semibold">
+                Phone
+              </label>
+              <input
+                type="text"
+                placeholder="+91…"
+                value={buyer.phone}
+                onChange={(e) => setBuyerField("phone", e.target.value)}
+                className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 text-sm font-semibold">
+                PAN Number
+              </label>
+              <input
+                type="text"
+                maxLength={10}
+                placeholder="ABCDE1234F"
+                value={buyer.panNumber}
+                onChange={(e) =>
+                  setBuyerField("panNumber", e.target.value.toUpperCase())
+                }
+                className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+          </div>
+
+          {/* Addresses */}
+          <div className="grid gap-6 pt-6 border-t md:grid-cols-2">
+
+            {/* Billing Address */}
+            <div>
+
+              <h4 className="mb-4 text-sm font-semibold tracking-wide uppercase text-slate-500">
+                Billing Address
+              </h4>
+
+              <div className="space-y-4">
+
+                <input
+                  type="text"
+                  placeholder="Address Line 1"
+                  value={buyer.billingAddress.addressLine1}
+                  onChange={(e) =>
+                    setAddressField("billingAddress", "addressLine1", e.target.value)
+                  }
+                  className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <input
+                  type="text"
+                  placeholder="Address Line 2"
+                  value={buyer.billingAddress.addressLine2}
+                  onChange={(e) =>
+                    setAddressField("billingAddress", "addressLine2", e.target.value)
+                  }
+                  className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+
+                  <input
+                    type="text"
+                    placeholder="City"
+                    value={buyer.billingAddress.city}
+                    onChange={(e) =>
+                      setAddressField("billingAddress", "city", e.target.value)
+                    }
+                    className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                  />
+
+                  <input
+                    type="text"
+                    placeholder="State"
+                    value={buyer.billingAddress.state}
+                    onChange={(e) =>
+                      setAddressField("billingAddress", "state", e.target.value)
+                    }
+                    className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                  />
+
+                  <input
+                    type="text"
+                    maxLength={6}
+                    placeholder="Pincode"
+                    value={buyer.billingAddress.pincode}
+                    onChange={(e) =>
+                      setAddressField("billingAddress", "pincode", e.target.value)
+                    }
+                    className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                  />
+
+                  <input
+                    type="text"
+                    placeholder="Country"
+                    value={buyer.billingAddress.country}
+                    onChange={(e) =>
+                      setAddressField("billingAddress", "country", e.target.value)
+                    }
+                    className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                  />
+
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* Shipping Address */}
+            <div>
+
+              <div className="flex items-center justify-between mb-4">
+
+                <h4 className="text-sm font-semibold tracking-wide uppercase text-slate-500">
+                  Shipping Address
+                </h4>
+
+                <button
+                  type="button"
+                  onClick={copyBillingToShipping}
+                  className="px-3 py-1.5 text-xs font-medium text-indigo-600 transition rounded-lg bg-indigo-50 hover:bg-indigo-100"
+                >
+                  Same as billing
+                </button>
+
+              </div>
+
+              <div className="space-y-4">
+
+                <input
+                  type="text"
+                  placeholder="Address Line 1"
+                  value={buyer.shippingAddress.addressLine1}
+                  onChange={(e) =>
+                    setAddressField("shippingAddress", "addressLine1", e.target.value)
+                  }
+                  className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <input
+                  type="text"
+                  placeholder="Address Line 2"
+                  value={buyer.shippingAddress.addressLine2}
+                  onChange={(e) =>
+                    setAddressField("shippingAddress", "addressLine2", e.target.value)
+                  }
+                  className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+
+                  <input
+                    type="text"
+                    placeholder="City"
+                    value={buyer.shippingAddress.city}
+                    onChange={(e) =>
+                      setAddressField("shippingAddress", "city", e.target.value)
+                    }
+                    className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                  />
+
+                  <input
+                    type="text"
+                    placeholder="State"
+                    value={buyer.shippingAddress.state}
+                    onChange={(e) =>
+                      setAddressField("shippingAddress", "state", e.target.value)
+                    }
+                    className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                  />
+
+                  <input
+                    type="text"
+                    maxLength={6}
+                    placeholder="Pincode"
+                    value={buyer.shippingAddress.pincode}
+                    onChange={(e) =>
+                      setAddressField("shippingAddress", "pincode", e.target.value)
+                    }
+                    className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                  />
+
+                  <input
+                    type="text"
+                    placeholder="Country"
+                    value={buyer.shippingAddress.country}
+                    onChange={(e) =>
+                      setAddressField("shippingAddress", "country", e.target.value)
+                    }
+                    className="w-full px-4 py-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500"
+                  />
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
       {/* ================= SALES LINE ITEMS ================= */}
 
 <div className="mb-8 overflow-hidden bg-white border shadow-sm rounded-3xl border-slate-200">

@@ -312,6 +312,26 @@ export default function Clients() {
 };
 const [form, setForm] = useState(emptyForm);
 
+/* ================= ADDRESS HELPERS ================= */
+const setBillingField = (key, value) =>
+  setForm((prev) => ({
+    ...prev,
+    billingAddress: { ...prev.billingAddress, [key]: value },
+  }));
+
+const setShippingField = (key, value) =>
+  setForm((prev) => ({
+    ...prev,
+    shippingAddress: { ...prev.shippingAddress, [key]: value },
+  }));
+
+/** Copies billing → shipping for the common "same address" case. */
+const copyBillingToShipping = () =>
+  setForm((prev) => ({
+    ...prev,
+    shippingAddress: { ...prev.billingAddress },
+  }));
+
  const fetchClients = async () => {
   try {
     setLoading(true);
@@ -1176,21 +1196,177 @@ className="p-2 text-red-600 transition rounded-xl bg-red-50 hover:bg-red-100"
                 onChange={(e)=>setForm({...form,phone:e.target.value})}
                 className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
               />
+
               <input
-  type="text"
-  placeholder="Billing Address"
-  value={form.billingAddress?.addressLine1 || ""}
-  onChange={(e) =>
-    setForm({
-      ...form,
-      billingAddress: {
-        ...form.billingAddress,
-        addressLine1: e.target.value,
-      },
-    })
-  }
-  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
-/>
+                placeholder="Website"
+                value={form.website}
+                onChange={(e)=>setForm({...form,website:e.target.value})}
+                className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+              />
+
+            </div>
+
+          </div>
+
+
+          {/* Tax Information */}
+          <div>
+
+            <h3 className="mb-4 text-sm font-semibold tracking-wide uppercase text-slate-500">
+              Tax Information
+            </h3>
+
+            <div className="grid grid-cols-2 gap-4">
+
+              <input
+                placeholder="GST Number"
+                value={form.gstNumber}
+                maxLength={15}
+                onChange={(e)=>setForm({...form,gstNumber:e.target.value.toUpperCase()})}
+                className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+              />
+
+              <input
+                placeholder="PAN Number"
+                value={form.panNumber}
+                maxLength={10}
+                onChange={(e)=>setForm({...form,panNumber:e.target.value.toUpperCase()})}
+                className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+              />
+
+            </div>
+
+          </div>
+
+
+          {/* Billing Address */}
+          <div>
+
+            <h3 className="mb-4 text-sm font-semibold tracking-wide uppercase text-slate-500">
+              Billing Address
+            </h3>
+
+            <div className="space-y-4">
+
+              <input
+                placeholder="Address Line 1"
+                value={form.billingAddress?.addressLine1 || ""}
+                onChange={(e)=>setBillingField("addressLine1", e.target.value)}
+                className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+              />
+
+              <input
+                placeholder="Address Line 2"
+                value={form.billingAddress?.addressLine2 || ""}
+                onChange={(e)=>setBillingField("addressLine2", e.target.value)}
+                className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+
+                <input
+                  placeholder="City"
+                  value={form.billingAddress?.city || ""}
+                  onChange={(e)=>setBillingField("city", e.target.value)}
+                  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <input
+                  placeholder="State"
+                  value={form.billingAddress?.state || ""}
+                  onChange={(e)=>setBillingField("state", e.target.value)}
+                  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <input
+                  placeholder="Pincode"
+                  maxLength={6}
+                  value={form.billingAddress?.pincode || ""}
+                  onChange={(e)=>setBillingField("pincode", e.target.value)}
+                  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <input
+                  placeholder="Country"
+                  value={form.billingAddress?.country || ""}
+                  onChange={(e)=>setBillingField("country", e.target.value)}
+                  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+          {/* Shipping Address */}
+          <div>
+
+            <div className="flex items-center justify-between mb-4">
+
+              <h3 className="text-sm font-semibold tracking-wide uppercase text-slate-500">
+                Shipping Address
+              </h3>
+
+              <button
+                type="button"
+                onClick={copyBillingToShipping}
+                className="px-3 py-1.5 text-xs font-medium text-indigo-600 transition rounded-lg bg-indigo-50 hover:bg-indigo-100"
+              >
+                Same as billing
+              </button>
+
+            </div>
+
+            <div className="space-y-4">
+
+              <input
+                placeholder="Address Line 1"
+                value={form.shippingAddress?.addressLine1 || ""}
+                onChange={(e)=>setShippingField("addressLine1", e.target.value)}
+                className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+              />
+
+              <input
+                placeholder="Address Line 2"
+                value={form.shippingAddress?.addressLine2 || ""}
+                onChange={(e)=>setShippingField("addressLine2", e.target.value)}
+                className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+
+                <input
+                  placeholder="City"
+                  value={form.shippingAddress?.city || ""}
+                  onChange={(e)=>setShippingField("city", e.target.value)}
+                  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <input
+                  placeholder="State"
+                  value={form.shippingAddress?.state || ""}
+                  onChange={(e)=>setShippingField("state", e.target.value)}
+                  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <input
+                  placeholder="Pincode"
+                  maxLength={6}
+                  value={form.shippingAddress?.pincode || ""}
+                  onChange={(e)=>setShippingField("pincode", e.target.value)}
+                  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <input
+                  placeholder="Country"
+                  value={form.shippingAddress?.country || ""}
+                  onChange={(e)=>setShippingField("country", e.target.value)}
+                  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+
+              </div>
 
             </div>
 
