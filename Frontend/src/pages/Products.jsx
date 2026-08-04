@@ -18,7 +18,13 @@ import {
   ArrowRight,
   Boxes,
   TrendingUp,
+  Printer,
 } from "lucide-react";
+import ProductBarcodeImage from "../components/ProductBarcode";
+import {
+  getProductBarcode,
+  printProductBarcode,
+} from "../utils/productBarcode";
 
 export default function Products() {
   const [products, setProducts] = useState([]);
@@ -39,6 +45,7 @@ export default function Products() {
 
   const [form, setForm] = useState(emptyForm);
   const fetchedOnce = useRef(false);
+  const barcodeRef = useRef(null);
 
   /* ================= FETCH ================= */
   const fetchProducts = async () => {
@@ -82,6 +89,10 @@ export default function Products() {
         stock: Number(form.stock) || 0,
         tax: Number(form.tax) || 0,
       };
+
+      // SKU & Barcode are system generated and read-only in the UI
+      delete payload.sku;
+      delete payload.barcode;
 
       form._id
         ? await API.put(`/products/${form._id}`, payload)
@@ -725,6 +736,10 @@ const inventoryValue = products.reduce(
           </th>
 
           <th className="px-6 py-4 text-left">
+            Barcode
+          </th>
+
+          <th className="px-6 py-4 text-left">
             Category
           </th>
 
@@ -755,7 +770,7 @@ const inventoryValue = products.reduce(
           <tr>
 
             <td
-              colSpan={7}
+              colSpan={8}
               className="py-16 text-center"
             >
 
@@ -815,6 +830,11 @@ const inventoryValue = products.reduce(
             {/* SKU */}
             <td className="px-6 py-4 font-medium text-slate-600">
               {p.sku || "—"}
+            </td>
+
+            {/* Barcode */}
+            <td className="px-6 py-4 font-mono text-xs tracking-wider text-slate-600">
+              {getProductBarcode(p) || "—"}
             </td>
 
             {/* Category */}
@@ -970,15 +990,10 @@ const inventoryValue = products.reduce(
               </label>
 
               <input
-                value={form.sku}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    sku: e.target.value,
-                  })
-                }
-                className="w-full px-4 py-3 text-sm border outline-none rounded-xl border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
-                placeholder="RTS-10001"
+                readOnly
+                value={form.sku || ""}
+                className="w-full px-4 py-3 text-sm border outline-none cursor-not-allowed rounded-xl border-slate-300 bg-slate-50 text-slate-600"
+                placeholder="Auto generated"
               />
             </div>
 
@@ -1021,6 +1036,65 @@ const inventoryValue = products.reduce(
             </div>
 
           </div>
+
+        </div>
+
+        {/* Barcode */}
+        <div>
+
+          <h3 className="mb-4 text-lg font-semibold text-slate-800">
+            Product Barcode
+          </h3>
+
+          {getProductBarcode(form) ? (
+
+            <div className="flex flex-col gap-5 p-5 border rounded-2xl border-slate-200 bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
+
+              <div className="flex flex-col items-center gap-2">
+
+                <div
+                  ref={barcodeRef}
+                  className="p-3 bg-white border rounded-xl border-slate-200"
+                >
+                  <ProductBarcodeImage value={form.barcode} />
+                </div>
+
+                <p className="font-mono text-sm font-semibold tracking-widest text-slate-700">
+                  {getProductBarcode(form)}
+                </p>
+
+              </div>
+
+              <div className="space-y-3">
+
+                <p className="max-w-xs text-xs text-slate-500">
+                  System generated barcode. Read-only and shared across
+                  Inventory, Sales, Purchase, Warehouse and Billing.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    printProductBarcode(form, barcodeRef.current)
+                  }
+                  className="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium transition-all bg-white border shadow-sm rounded-xl border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <Printer size={16} />
+                  Print Barcode
+                </button>
+
+              </div>
+
+            </div>
+
+          ) : (
+
+            <div className="p-5 text-sm border border-dashed rounded-2xl border-slate-300 bg-slate-50 text-slate-500">
+              A unique barcode is generated automatically once the product is
+              created.
+            </div>
+
+          )}
 
         </div>
 

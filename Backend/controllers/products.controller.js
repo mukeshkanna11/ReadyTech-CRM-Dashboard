@@ -1,10 +1,33 @@
 // controllers/products.controller.js
 import Product from "../models/Product.js";
 
+
+const generateBarcode = () => {
+  return (
+    "RTS" +
+    Date.now().toString().slice(-8) +
+    Math.floor(Math.random() * 1000)
+      .toString()
+      .padStart(3, "0")
+  );
+};
+
+
 /* ================= CREATE PRODUCT ================= */
 export const createProduct = async (req, res) => {
   try {
-    const product = await Product.create(req.body);
+    let barcode = generateBarcode();
+
+    // Ensure barcode is unique
+    while (await Product.findOne({ barcode })) {
+      barcode = generateBarcode();
+    }
+
+    const product = await Product.create({
+      ...req.body,
+      barcode,
+    });
+
     res.status(201).json({
       success: true,
       message: "Product created",
@@ -59,28 +82,64 @@ export const getProductById = async (req, res) => {
   }
 };
 
-/* ================= UPDATE PRODUCT ================= */
-export const updateProduct = async (req, res) => {
+export const getProductByBarcode = async (req, res) => {
   try {
-    const product = await Product.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
+    const product = await Product.findOne({
+      barcode: req.params.barcode,
     });
+
     if (!product) {
       return res.status(404).json({
         success: false,
         message: "Product not found",
       });
     }
+
+    res.json({
+      success: true,
+      data: product,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch product",
+    });
+  }
+};
+
+/* ================= UPDATE PRODUCT ================= */
+export const updateProduct = async (req, res) => {
+  try {
+    delete req.body.barcode;
+    delete req.body.sku;
+
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
     res.json({
       success: true,
       message: "Product updated",
       data: product,
     });
   } catch (error) {
-    console.error("Update product error:", error);
     res.status(500).json({
       success: false,
-      message: error.message || "Failed to update product",
+      message: error.message,
     });
   }
 };

@@ -3,8 +3,9 @@ import {
   createProduct,
   getProducts,
   getProductById,
+  getProductByBarcode,
   updateProduct,
-  deleteProduct
+  deleteProduct,
 } from "../controllers/products.controller.js";
 
 import auth from "../middlewares/auth.js";
@@ -18,5 +19,6 @@ router.get("/", auth, role("admin"), getProducts);
 router.get("/:id", auth, role("admin"), getProductById);
 router.put("/:id", auth, role("admin"), updateProduct);
 router.delete("/:id", auth, role("admin"), deleteProduct);
+router.get("/barcode/:barcode", getProductByBarcode);
 
 export default router;

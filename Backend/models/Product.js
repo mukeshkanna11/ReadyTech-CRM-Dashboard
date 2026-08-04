@@ -46,6 +46,22 @@ const productSchema = new mongoose.Schema(
     },
   },
 
+barcode: {
+  type: String,
+  unique: true,
+  required: true,
+  trim: true,
+  default: function () {
+    return (
+      "RTS" +
+      Date.now().toString().slice(-8) +
+      Math.floor(Math.random() * 100)
+        .toString()
+        .padStart(2, "0")
+    );
+  },
+},
+
   costPrice: {
     type: Number,
     default: 0,
