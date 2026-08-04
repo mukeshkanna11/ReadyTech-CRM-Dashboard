@@ -125,7 +125,21 @@ app.use("/api/invoices", invoiceRoutes);
 app.use("/api/user", auth, userRoutes);
 app.use("/api/ai", auth, aiRoutes);
 
-
+app.get("/api", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "ReadyTech CRM API is running",
+    version: "1.0.0",
+    endpoints: {
+      health: "/api/health",
+      auth: "/api/auth",
+      products: "/api/products",
+      clients: "/api/clients",
+      leads: "/api/leads",
+      invoices: "/api/invoices",
+    },
+  });
+});
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
