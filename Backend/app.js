@@ -125,6 +125,14 @@ app.use("/api/invoices", invoiceRoutes);
 app.use("/api/user", auth, userRoutes);
 app.use("/api/ai", auth, aiRoutes);
 
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "ReadyTech CRM API is running",
+    health: "/api/health",
+  });
+});
 /* ======================================================
    HEALTH CHECK
 ====================================================== */
