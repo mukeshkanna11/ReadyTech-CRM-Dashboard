@@ -24,6 +24,7 @@ import employeeDashboardRoutes from "./routes/employee.dashboard.routes.js";
 import clientDashboardRoutes from "./routes/client.dashboard.routes.js";
 import invoiceRoutes from "./routes/invoice.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
+import chatRoutes from "./routes/chat.routes.js";
 
 /* ===================== Middlewares ===================== */
 import auth from "./middlewares/auth.js";
@@ -120,6 +121,7 @@ app.use("/api/leads", auth, leadsRoutes);
 app.use("/api/opportunities", auth, opportunityRoutes);
 app.use("/api/activities", auth, activityRoutes);
 app.use("/api/invoices", invoiceRoutes);
+app.use("/api/chat", chatRoutes);
 
 // User profile
 app.use("/api/user", auth, userRoutes);

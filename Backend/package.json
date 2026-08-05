@@ -14,7 +14,8 @@
     "mongoose": "^9.0.1",
     "morgan": "^1.10.1",
     "pdfkit": "^0.19.1",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "resend": "^6.18.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
