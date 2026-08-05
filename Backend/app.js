@@ -53,7 +53,7 @@ const allowedOrigins = [
   "http://192.168.0.101:8081",  // Optional
   "https://readytechcrm.netlify.app",
   "https://readytech-crm-site.netlify.app",
-  "https://steelblue-mongoose-246196.hostingersite.com",
+  "https://mediumseagreen-beaver-230923.hostingersite.com",
   // Honour the deployed CLIENT_URL instead of relying on this list alone.
   ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL.replace(/\/+$/, "")] : []),
 ];
