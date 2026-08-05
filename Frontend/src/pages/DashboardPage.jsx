@@ -47,7 +47,7 @@ import {
 // import InventoryAIAssistant from "../components/InventoryAIAssistant";
 
 /* ==================================================== */
-const API_BASE = "https://readytech-crm-dashboard.onrender.com/api";
+const API_BASE = "https://mediumseagreen-beaver-230923.hostingersite.com/api";
 
 const LEAD_STATUSES = ["New", "Contacted", "Qualified", "Closed"];
 const STATUS_COLORS = { New: "#3b82f6", Contacted: "#f59e0b", Qualified: "#22c55e", Closed: "#64748b" };
@@ -171,7 +171,7 @@ export default function DashboardPage() {
     return (
       <div className="grid min-h-screen p-6 bg-gradient-to-b from-slate-100 via-slate-50 to-slate-100 place-items-center">
         <div className="w-full max-w-md p-8 text-center bg-white border shadow-xl rounded-3xl border-slate-200">
-          <div className="grid mx-auto mb-4 rounded-2xl h-14 w-14 place-items-center bg-red-50 text-red-500">
+          <div className="grid mx-auto mb-4 text-red-500 rounded-2xl h-14 w-14 place-items-center bg-red-50">
             <AlertTriangle size={26} />
           </div>
           <h3 className="text-lg font-bold text-slate-900">Unable to load dashboard</h3>
@@ -415,7 +415,7 @@ export default function DashboardPage() {
               {/* <button
                 onClick={() => setAiOpen(true)}
                 disabled={inventory.length === 0}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold transition rounded-2xl bg-white text-slate-900 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold transition bg-white rounded-2xl text-slate-900 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Bot size={16} /> AI Insights
               </button> */}
@@ -598,7 +598,7 @@ export default function DashboardPage() {
             <ul className="space-y-3">
               {topProducts.map((p, i) => (
                 <li key={p.name} className="flex items-center gap-3">
-                  <span className="grid text-xs font-bold rounded-lg h-7 w-7 shrink-0 bg-indigo-50 text-indigo-600 place-items-center">
+                  <span className="grid text-xs font-bold text-indigo-600 rounded-lg h-7 w-7 shrink-0 bg-indigo-50 place-items-center">
                     {i + 1}
                   </span>
                   <div className="flex-1 min-w-0">
@@ -798,7 +798,7 @@ function Empty({ icon: Icon, title, subtitle, tone = "slate" }) {
         <Icon size={24} />
       </div>
       <h4 className="text-sm font-semibold text-slate-700">{title}</h4>
-      {subtitle && <p className="mt-1 text-xs text-slate-400 max-w-xs">{subtitle}</p>}
+      {subtitle && <p className="max-w-xs mt-1 text-xs text-slate-400">{subtitle}</p>}
     </div>
   );
 }
