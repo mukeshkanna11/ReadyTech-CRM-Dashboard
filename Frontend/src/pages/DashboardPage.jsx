@@ -47,7 +47,7 @@ import {
 // import InventoryAIAssistant from "../components/InventoryAIAssistant";
 
 /* ==================================================== */
-const API_BASE = "https://mediumseagreen-beaver-230923.hostingersite.com/api";
+const API_BASE = "https://readytechsolutions.in/api";
 
 const LEAD_STATUSES = ["New", "Contacted", "Qualified", "Closed"];
 const STATUS_COLORS = { New: "#3b82f6", Contacted: "#f59e0b", Qualified: "#22c55e", Closed: "#64748b" };
