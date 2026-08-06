@@ -54,7 +54,9 @@ const allowedOrigins = [
   "http://192.168.0.101:8081",  // Optional
   "https://readytechcrm.netlify.app",
   "https://readytech-crm-site.netlify.app",
-  "https://crmreadytechsolutions.in/",
+  // No trailing slash — the browser Origin header never has one.
+  "https://crmreadytechsolutions.in",
+  "https://www.crmreadytechsolutions.in",
   // Honour the deployed CLIENT_URL instead of relying on this list alone.
   ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL.replace(/\/+$/, "")] : []),
 ];
