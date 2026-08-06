@@ -11,6 +11,159 @@ import {
   deleteChat,
 } from "../services/chat.service.js";
 
+import {
+  handleUserMessage,
+  getConversation,
+  listConversations,
+  clearConversation,
+  getOrCreateConversation,
+  FAQS,
+} from "../services/chatAi.service.js";
+
+/* =========================================================
+   Shared shape for the widget so the frontend has one contract.
+========================================================= */
+const toWidgetPayload = (conversation) => ({
+  sessionId: conversation.sessionId,
+  intent: conversation.intent,
+  priority: conversation.priority,
+  leadQualified: conversation.leadQualified,
+  leadScore: conversation.leadScore,
+  summary: conversation.summary,
+  status: conversation.status,
+  messages: (conversation.messages || []).map((m) => ({
+    id: String(m._id),
+    role: m.role,
+    text: m.text,
+    source: m.source,
+    createdAt: m.createdAt,
+  })),
+});
+
+/* =========================================================
+   POST /api/chat/conversations/message
+   Send a customer message and get the assistant reply.
+========================================================= */
+export const sendChatMessageController = async (req, res) => {
+  try {
+    const { sessionId, message, visitor } = req.body;
+
+    const result = await handleUserMessage({ sessionId, message, visitor });
+
+    return res.status(200).json({
+      success: true,
+      reply: result.reply,
+      source: result.source,
+      aiUsed: result.aiUsed,
+      degraded: Boolean(result.degraded),
+      data: toWidgetPayload(result.conversation),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to process message.",
+    });
+  }
+};
+
+/* =========================================================
+   POST /api/chat/conversations/start
+   Open (or resume) a session — used when the widget mounts.
+========================================================= */
+export const startChatConversationController = async (req, res) => {
+  try {
+    const { sessionId, visitor } = req.body;
+
+    const conversation = await getOrCreateConversation(sessionId, visitor);
+
+    return res.status(200).json({
+      success: true,
+      suggestedQuestions: [
+        "Book a product demo",
+        "What does the CRM include?",
+        "How does GST invoicing work?",
+        "I need help logging in",
+      ],
+      data: toWidgetPayload(conversation),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to start conversation.",
+    });
+  }
+};
+
+/* =========================================================
+   GET /api/chat/conversations/session/:sessionId
+   Message history for one session.
+========================================================= */
+export const getChatConversationController = async (req, res) => {
+  try {
+    const conversation = await getConversation(req.params.sessionId);
+
+    return res.status(200).json({
+      success: true,
+      data: toWidgetPayload(conversation),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load conversation.",
+    });
+  }
+};
+
+/* =========================================================
+   DELETE /api/chat/conversations/session/:sessionId
+   Clear conversation (widget "Clear conversation" action).
+========================================================= */
+export const clearChatConversationController = async (req, res) => {
+  try {
+    const conversation = await clearConversation(req.params.sessionId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Conversation cleared.",
+      data: toWidgetPayload(conversation),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to clear conversation.",
+    });
+  }
+};
+
+/* =========================================================
+   GET /api/chat/conversations
+   CRM list view (no transcripts, paginated).
+========================================================= */
+export const listChatConversationsController = async (req, res) => {
+  try {
+    const result = await listConversations(req.query);
+
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to list conversations.",
+    });
+  }
+};
+
+/* =========================================================
+   GET /api/chat/faqs
+   The rule-based answers, so the UI can show them as suggestions.
+========================================================= */
+export const listChatFaqsController = async (_req, res) => {
+  return res.status(200).json({
+    success: true,
+    count: FAQS.length,
+    data: FAQS.map(({ id, answer, intent }) => ({ id, answer, intent })),
+  });
+};
+
 /* =========================================================
    POST /api/chat
    Create Chat Enquiry

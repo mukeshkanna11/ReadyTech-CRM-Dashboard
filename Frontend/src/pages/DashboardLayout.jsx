@@ -33,6 +33,7 @@ import {
   ArrowLeftRight,
 } from "lucide-react";
 import { Cloud } from "lucide-react";
+import ChatSupportWidget from "../components/ChatSupportWidget";
 
 /* =========================================================
    DASHBOARD LAYOUT
@@ -402,14 +403,9 @@ function DropdownItem({ icon: Icon, label, onClick, danger }) {
 
 /* =========================================================
    AI ASSISTANT
+   The floating brain launcher now opens the Chat Support widget
+   (it was previously a button with no handler).
 ========================================================= */
 function AIAssistant() {
-  return (
-    <button
-      title="AI Assistant"
-      className="fixed z-40 flex items-center justify-center text-white bg-indigo-600 rounded-full shadow-xl bottom-6 right-6 w-14 h-14 hover:scale-105"
-    >
-      <Brain />
-    </button>
-  );
+  return <ChatSupportWidget />;
 }

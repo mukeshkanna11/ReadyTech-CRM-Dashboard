@@ -11,6 +11,12 @@ import {
   addAdminNoteController,
   markAsReadController,
   deleteChatController,
+  sendChatMessageController,
+  startChatConversationController,
+  getChatConversationController,
+  clearChatConversationController,
+  listChatConversationsController,
+  listChatFaqsController,
 } from "../controllers/chat.controller.js";
 
 // import {
@@ -48,6 +54,38 @@ router.get(
   // isAdmin,
   getChatsController
 );
+
+
+/* =========================================================
+   AI Chat Support (conversations)
+
+   MUST be declared before "/:id" — Express matches in order, so
+   "/conversations" and "/faqs" would otherwise be captured as an :id.
+========================================================= */
+
+// Open or resume a widget session
+router.post("/conversations/start", startChatConversationController);
+
+// Send a customer message, get the assistant reply
+router.post("/conversations/message", sendChatMessageController);
+
+// Message history for a session
+router.get(
+  "/conversations/session/:sessionId",
+  getChatConversationController
+);
+
+// Clear conversation
+router.delete(
+  "/conversations/session/:sessionId",
+  clearChatConversationController
+);
+
+// CRM list view
+router.get("/conversations", listChatConversationsController);
+
+// Rule-based FAQ list
+router.get("/faqs", listChatFaqsController);
 
 
 // Get Single Chat

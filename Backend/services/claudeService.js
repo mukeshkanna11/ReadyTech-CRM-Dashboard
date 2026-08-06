@@ -61,6 +61,57 @@ export const askClaude = async (prompt, options = {}) => {
 };
 
 /* =========================================================
+   LOW-LEVEL: single-shot call with a guaranteed JSON shape
+
+   Uses structured outputs (output_config.format) so the reply is always
+   schema-valid and needs no defensive regex parsing. Supported on Haiku 4.5,
+   Sonnet 5, Opus 4.8 and Opus 5.
+
+   Returns { data, usage, model } where `data` is the parsed object.
+========================================================= */
+export const askClaudeStructured = async (prompt, schema, options = {}) => {
+  const {
+    model = DEFAULT_MODEL,
+    maxTokens = 600,
+    system,
+  } = options;
+
+  if (!prompt || !prompt.trim()) {
+    const err = new Error("Prompt is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const anthropic = getClient();
+
+  const response = await anthropic.messages.create({
+    model,
+    max_tokens: maxTokens,
+    ...(system ? { system } : {}),
+    output_config: { format: { type: "json_schema", schema } },
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const text = response.content?.[0]?.text?.trim() || "";
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    const err = new Error("Claude returned unparseable JSON");
+    err.statusCode = 502;
+    throw err;
+  }
+
+  return {
+    data,
+    usage: response.usage || {},
+    model: response.model || model,
+    stopReason: response.stop_reason,
+  };
+};
+
+/* =========================================================
    LEAD CONTEXT SERIALIZER
    Keeps prompts consistent & noise-free across all features.
 ========================================================= */
