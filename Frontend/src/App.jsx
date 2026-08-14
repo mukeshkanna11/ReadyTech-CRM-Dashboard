@@ -17,6 +17,25 @@ const Leads = lazy(() => import("./pages/Leads"));
 const Users = lazy(() => import("./pages/Users"));
 const AuditLogs = lazy(() => import("./pages/AuditLogs"));
 
+/* ================== AUTOMATION ================== */
+
+const Automations = lazy(
+  () => import("./pages/Automation/Automations")
+);
+
+const AutomationBuilder = lazy(
+  () => import("./pages/Automation/AutomationBuilder")
+);
+
+const AutomationDetails = lazy(
+  () => import("./pages/Automation/AutomationDetails")
+);
+
+const AutomationTemplates = lazy(
+  () => import("./pages/Automation/AutomationTemplates")
+);
+
+
 /* AI Tools */
 const AIContentGenerator = lazy(() => import("./pages/AIContentGenerator"));
 const AISEOTool = lazy(() => import("./pages/AISEOTool"));
@@ -97,6 +116,16 @@ export default function App() {
             <Route path="ai/customer-communication" element={<AICustomerCommunication />} />
             <Route path="ai/sales-recommendations" element={<AISalesRecommendations />} />
 
+{/* ======================================================
+              AUTOMATION MODULE
+====================================================== */}
+
+<Route path="automations">
+
+  
+
+
+
             {/* ======================================================
                           BILLING MODULE
             ====================================================== */}
@@ -106,6 +135,38 @@ export default function App() {
               <Route path="analytics" element={<InvoiceAnalytics />} />
               <Route path=":id" element={<ViewInvoice />} />
             </Route>
+
+{/* /automations */}
+  <Route
+    index
+    element={<Automations />}
+  />
+
+  {/* /automations/create */}
+  <Route
+    path="create"
+    element={<AutomationBuilder />}
+  />
+
+  {/* /automations/templates */}
+  <Route
+    path="templates"
+    element={<AutomationTemplates />}
+  />
+
+  {/* /automations/:id */}
+  <Route
+    path=":id"
+    element={<AutomationDetails />}
+  />
+
+  {/* /automations/:id/edit */}
+  <Route
+    path=":id/edit"
+    element={<AutomationBuilder />}
+  />
+
+</Route>
 
             {/* ======================================================
                           SALESFORCE MODULE

@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { Cloud } from "lucide-react";
 import ChatSupportWidget from "../components/ChatSupportWidget";
-
+import { Zap } from "lucide-react";
 /* =========================================================
    DASHBOARD LAYOUT
 ========================================================= */
@@ -70,6 +70,11 @@ const CRM_LINKS = [
   { to: "/clients", icon: UserCheck, label: "Clients" },
   { to: "/products", icon: Package, label: "CRM Products" },
   { to: "/leads", icon: BarChart3, label: "Leads" },
+  {
+  to: "/automations",
+  icon: Zap,
+  label: "Automations",
+},
   { to: "/salesforce", icon: Cloud, label: "Salesforce" },
   { to: "/invoices", icon: Receipt, label: "Invoices" },
   { to: "/auditlogs", icon: Shield, label: "Audit Logs" },

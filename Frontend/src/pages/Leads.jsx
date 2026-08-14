@@ -209,6 +209,7 @@ export default function Leads() {
   const [page, setPage] =
     useState(1);
 
+
   /* =========================================================
      FETCH LEADS
   ========================================================= */
@@ -2320,7 +2321,7 @@ const convertLead = async (lead) => {
   <div className="items-center hidden gap-3 sm:flex">
 
     <div
-      className="flex items-center justify-center border border-indigo-100  w-9 h-9 bg-indigo-50 rounded-xl"
+      className="flex items-center justify-center border border-indigo-100 w-9 h-9 bg-indigo-50 rounded-xl"
     >
       <span className="text-sm">✨</span>
     </div>
@@ -2847,6 +2848,73 @@ const convertLead = async (lead) => {
   );
 }
 
+function Drawer({
+  open,
+  title,
+  subtitle,
+  icon: Icon,
+  onClose,
+  children,
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-sm">
+      
+      {/* Overlay */}
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute inset-0 cursor-default"
+        aria-label="Close drawer"
+      />
+
+      {/* Drawer */}
+      <div className="relative z-10 flex flex-col w-full h-full bg-white shadow-2xl sm:max-w-2xl">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between flex-shrink-0 px-6 py-5 border-b border-slate-200">
+          
+          <div className="flex items-center gap-3">
+            
+            <div className="flex items-center justify-center w-10 h-10 text-indigo-600 bg-indigo-50 rounded-xl">
+              {Icon && <Icon size={20} />}
+            </div>
+
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                {title}
+              </h2>
+
+              {subtitle && (
+                <p className="mt-0.5 text-sm text-slate-500">
+                  {subtitle}
+                </p>
+              )}
+            </div>
+
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid w-10 h-10 transition rounded-xl place-items-center text-slate-500 hover:bg-slate-100"
+          >
+            <X size={20} />
+          </button>
+
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-h-0">
+          {children}
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 /* =========================================================
    HERO STAT
 ========================================================= */
@@ -2971,166 +3039,7 @@ function IconButton({
   );
 }
 
-/* =========================================================
-   DRAWER
-========================================================= */
 
-{activeLead && (
-  <div className="flex flex-col h-full">
-
-    {/* SCROLLABLE PROFILE CONTENT */}
-    <div className="flex-1 min-h-0 overflow-y-auto">
-      
-      {/* PROFILE HERO */}
-      ...
-
-      {/* QUICK STATS */}
-      ...
-
-      {/* CONTACT */}
-      ...
-
-      {/* SALES */}
-      ...
-
-      {/* CONVERSION */}
-      ...
-
-      {/* RECORD */}
-      ...
-
-      {/* NOTES */}
-      ...
-
-    </div>
-
-    {/* FIXED PROFILE FOOTER */}
-    <div className="z-10 flex-shrink-0 p-4 bg-white border-t shadow-[0_-4px_15px_rgba(15,23,42,0.06)] sm:p-5">
-      
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-
-        {/* EDIT */}
-        <button
-          type="button"
-          onClick={() => {
-            setForm({
-              ...EMPTY_FORM,
-              ...activeLead,
-              value: activeLead.value ?? "",
-            });
-
-            setProfileOpen(false);
-            setDrawerOpen(true);
-          }}
-          className="
-            flex items-center justify-center
-            h-11 gap-2 px-4
-            text-sm font-semibold
-            text-slate-700
-            bg-white
-            border border-slate-200
-            rounded-xl
-            transition-all duration-200
-            hover:bg-slate-50
-            hover:border-slate-300
-            hover:shadow-sm
-            active:scale-[0.98]
-          "
-        >
-          <Pencil size={16} />
-          <span>Edit</span>
-        </button>
-
-        {/* CALL */}
-        <button
-          type="button"
-          onClick={() =>
-            activeLead.phone &&
-            (window.location.href = `tel:${activeLead.phone}`)
-          }
-          disabled={!activeLead.phone}
-          className="flex items-center justify-center gap-2 px-4 text-sm font-semibold transition-all duration-200 bg-white border h-11 text-slate-700 border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Phone size={16} />
-          <span>Call</span>
-        </button>
-
-        {/* EMAIL */}
-        <button
-          type="button"
-          onClick={() =>
-            activeLead.email &&
-            (window.location.href = `mailto:${activeLead.email}`)
-          }
-          disabled={!activeLead.email}
-          className="flex items-center justify-center gap-2 px-4 text-sm font-semibold transition-all duration-200 bg-white border h-11 text-slate-700 border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Mail size={16} />
-          <span>Email</span>
-        </button>
-
-        {/* CONVERT */}
-        {!activeLead.isConverted ? (
-          <button
-            type="button"
-            onClick={() => convertLead(activeLead)}
-            className="
-              flex items-center justify-center
-              h-11 gap-2 px-4
-              text-sm font-semibold
-              text-white
-              rounded-xl
-              bg-gradient-to-r from-emerald-500 to-green-600
-              shadow-sm
-              transition-all duration-200
-              hover:from-emerald-600
-              hover:to-green-700
-              hover:shadow-md
-              active:scale-[0.98]
-            "
-          >
-            <Target size={16} />
-            <span>Convert</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            disabled
-            className="flex items-center justify-center gap-2 px-4 text-sm font-semibold border cursor-not-allowed h-11 text-emerald-700 rounded-xl bg-emerald-50 border-emerald-100"
-          >
-            <CheckCircle size={16} />
-            <span>Converted</span>
-          </button>
-        )}
-
-        {/* AI */}
-        <button
-          type="button"
-          onClick={() => setAiLead(activeLead)}
-          className="
-            flex items-center justify-center
-            h-11 gap-2 px-4
-            text-sm font-semibold
-            text-white
-            rounded-xl
-            bg-gradient-to-r from-indigo-600 to-violet-600
-            shadow-md
-            transition-all duration-200
-            hover:from-indigo-700
-            hover:to-violet-700
-            hover:shadow-lg
-            active:scale-[0.98]
-          "
-        >
-          <Bot size={16} />
-          <span>Ask AI</span>
-        </button>
-
-      </div>
-    </div>
-
-  </div>
-)}
 
 /* =========================================================
    FORM SECTION
