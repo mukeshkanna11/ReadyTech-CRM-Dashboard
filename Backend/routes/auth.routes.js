@@ -1,6 +1,6 @@
-// routes/auth.routes.js
 import express from "express";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 
 const router = express.Router();
@@ -8,7 +8,7 @@ const router = express.Router();
 const SUPER_ADMIN_EMAIL = "siva@readytechsolutions.in";
 
 /* =========================================================
-   TOKEN GENERATOR
+   TOKEN
 ========================================================= */
 const generateToken = (user) => {
   if (!process.env.JWT_SECRET) {
@@ -16,14 +16,20 @@ const generateToken = (user) => {
   }
 
   return jwt.sign(
-    { id: user._id, role: user.role },
+    {
+      id: user._id,
+      role: user.role,
+    },
     process.env.JWT_SECRET,
-    { expiresIn: "7d" }
+    {
+      expiresIn: "7d",
+    }
   );
 };
 
 /* =========================================================
    ADMIN LOGIN
+   POST /api/auth/login
 ========================================================= */
 router.post("/login", async (req, res) => {
   try {
@@ -45,7 +51,9 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email: normalizedEmail });
+    const user = await User.findOne({
+      email: normalizedEmail,
+    });
 
     if (!user || user.role !== "admin") {
       return res.status(401).json({
@@ -71,9 +79,9 @@ router.post("/login", async (req, res) => {
       token,
       user,
     });
-
   } catch (error) {
-    console.error("🔥 ADMIN LOGIN ERROR:", error);
+    console.error("ADMIN LOGIN ERROR:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error",
@@ -83,6 +91,7 @@ router.post("/login", async (req, res) => {
 
 /* =========================================================
    USER LOGIN
+   POST /api/auth/user-login
 ========================================================= */
 router.post("/user-login", async (req, res) => {
   try {
@@ -97,7 +106,9 @@ router.post("/user-login", async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    const user = await User.findOne({ email: normalizedEmail });
+    const user = await User.findOne({
+      email: normalizedEmail,
+    });
 
     if (!user) {
       return res.status(401).json({
@@ -129,10 +140,10 @@ router.post("/user-login", async (req, res) => {
       });
     }
 
-    const token = generateToken(user);
-
     user.lastLogin = new Date();
     await user.save();
+
+    const token = generateToken(user);
 
     return res.status(200).json({
       success: true,
@@ -140,9 +151,9 @@ router.post("/user-login", async (req, res) => {
       token,
       user,
     });
-
   } catch (error) {
-    console.error("🔥 USER LOGIN ERROR:", error);
+    console.error("USER LOGIN ERROR:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error",
@@ -151,54 +162,147 @@ router.post("/user-login", async (req, res) => {
 });
 
 /* =========================================================
-   REGISTER USER
+   REGISTER
+   POST /api/auth/register
 ========================================================= */
 router.post("/register", async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const {
+      name,
+      email,
+      password,
+      role,
+      department,
+      designation,
+      company,
+      employeeId,
+      joiningDate,
+      isActive,
+    } = req.body;
 
-    if (!name || !email || !password || !role) {
+    /* ---------------- VALIDATION ---------------- */
+
+    if (!name?.trim()) {
       return res.status(400).json({
         success: false,
-        message: "All fields are required",
+        message: "Name is required",
       });
     }
+
+    if (!email?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    if (!password?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Password is required",
+      });
+    }
+
+    if (!role) {
+      return res.status(400).json({
+        success: false,
+        message: "Role is required",
+      });
+    }
+
+    if (!department) {
+      return res.status(400).json({
+        success: false,
+        message: "Department is required",
+      });
+    }
+
+    if (!designation) {
+      return res.status(400).json({
+        success: false,
+        message: "Designation is required",
+      });
+    }
+
+    /* ---------------- EMAIL ---------------- */
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
 
     if (existingUser) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
-        message: "Email already registered",
+        message: "User already exists",
       });
     }
 
+    /* ---------------- CREATE USER ---------------- */
+
     const user = new User({
-      name,
+      name: name.trim(),
       email: normalizedEmail,
-      passwordHash: password, // will auto-hash
+      passwordHash: password.trim(),
+
       role,
-      isActive: true,
+
+      department: department.trim(),
+      designation: designation.trim(),
+
+      company: company?.trim() || null,
+      employeeId: employeeId?.trim() || null,
+      joiningDate: joiningDate || null,
+
+      isActive: isActive ?? true,
     });
 
     await user.save();
 
+    /* ---------------- RESPONSE ---------------- */
+
     const token = generateToken(user);
+
+    const userResponse = user.toObject();
+
+    delete userResponse.passwordHash;
 
     return res.status(201).json({
       success: true,
       message: "User registered successfully",
       token,
-      user,
+      user: {
+        ...userResponse,
+        id: user._id,
+      },
     });
-
   } catch (error) {
-    console.error("🔥 REGISTER ERROR:", error);
+    console.error("REGISTER ERROR:", error);
+
+    /* Mongoose validation error */
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map(
+        (err) => err.message
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: messages.join(", "),
+      });
+    }
+
+    /* Duplicate email */
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Email already exists",
+      });
+    }
+
     return res.status(500).json({
       success: false,
-      message: "Server error",
+      message: error.message || "Server error",
     });
   }
 });

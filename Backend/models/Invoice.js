@@ -120,10 +120,25 @@ const invoiceSchema = new mongoose.Schema(
       default: "Subscription",
     },
 
+    // Optional: set only when an existing Client is selected.
+    // Manual / walk-in customers carry `customerDetails` instead.
     customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Client",
-      required: true,
+      default: null,
+    },
+
+    // =========================
+    // MANUAL CUSTOMER (no Client record)
+    // =========================
+    customerDetails: {
+      name: { type: String, trim: true, default: "" },
+      company: { type: String, trim: true, default: "" },
+      gstin: { type: String, trim: true, uppercase: true, default: "" },
+      email: { type: String, trim: true, lowercase: true, default: "" },
+      phone: { type: String, trim: true, default: "" },
+      billingAddress: { type: String, trim: true, default: "" },
+      shippingAddress: { type: String, trim: true, default: "" },
     },
 
     // =========================

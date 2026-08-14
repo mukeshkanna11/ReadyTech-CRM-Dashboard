@@ -38,11 +38,10 @@ const validateInvoicePayload = ({ company, billing, items, paymentMode }) => {
   if (!company.address) errors.push("Company address is required");
   if (!company.email && !company.phone) errors.push("Company contact (email or phone) is required");
 
-  // Customer
+  // Customer — a name (or company) is the only hard requirement, so a
+  // walk-in customer can be billed with just a name. Email / phone / address
+  // are still captured when supplied but no longer block invoice creation.
   if (!billing.contactPerson && !billing.companyName) errors.push("Customer name is required");
-  if (!billing.email) errors.push("Customer email is required");
-  if (!billing.phone) errors.push("Customer phone is required");
-  if (!billing.addressLine1) errors.push("Customer billing address is required");
 
   // Items
   if (!Array.isArray(items) || items.length === 0) {
@@ -96,35 +95,61 @@ export const createInvoice = async (req, res) => {
       currency = "INR",
     } = req.body;
 
-    if (!customer) return res.status(400).json({ message: "Customer is required" });
     if (!dueDate) return res.status(400).json({ message: "Due date is required" });
 
-    // Load client for the customer snapshot
-    const client = await Client.findById(customer);
-    if (!client) return res.status(400).json({ message: "Invalid customer" });
+    // ---- Customer: existing Client OR manual details ----
+    // An empty string from a form must become null, not a failed ObjectId cast.
+    const customerId =
+      customer && String(customer).trim() ? String(customer).trim() : null;
+
+    const manual = req.body.customerDetails || {};
+    const manualName = (manual.name || manual.company || "").trim();
+
+    if (!customerId && !manualName) {
+      return res.status(400).json({
+        message: "Select a client or enter the customer name",
+      });
+    }
+
+    // Load client only when one was selected.
+    let client = null;
+    if (customerId) {
+      client = await Client.findById(customerId);
+      if (!client) return res.status(400).json({ message: "Invalid customer" });
+    }
 
     // ---- Seller (company) snapshot ----
     const company = { ...DEFAULT_COMPANY, ...companyDetails };
 
     // ---- Customer (billing) snapshot: payload overrides client record ----
+    // Precedence: explicit payload -> selected Client -> manual customerDetails.
+    // `client` is null for manual customers, so every access is optional.
     const billing = {
-      companyName: billingDetails.companyName || client.companyName,
-      contactPerson: billingDetails.contactPerson || client.contactPerson,
-      email: billingDetails.email || client.email,
-      phone: billingDetails.phone || client.phone,
+      companyName:
+        billingDetails.companyName ||
+        client?.companyName ||
+        manual.company ||
+        manual.name ||
+        "",
+      contactPerson:
+        billingDetails.contactPerson || client?.contactPerson || manual.name || "",
+      email: billingDetails.email || client?.email || manual.email || "",
+      phone: billingDetails.phone || client?.phone || manual.phone || "",
       addressLine1:
- billingDetails.addressLine1 ||
- client.billingAddress?.addressLine1 ||
- client.billingAddress?.address ||
- client.billingAddress?.street ||
- "",
-      addressLine2: billingDetails.addressLine2 || client.billingAddress?.addressLine2,
-      city: billingDetails.city || client.billingAddress?.city,
-      state: billingDetails.state || client.billingAddress?.state,
-      pincode: billingDetails.pincode || client.billingAddress?.pincode,
-      country: billingDetails.country || client.billingAddress?.country || "India",
-      gstNumber: billingDetails.gstNumber || client.gstNumber,
-      panNumber: billingDetails.panNumber || client.panNumber,
+        billingDetails.addressLine1 ||
+        client?.billingAddress?.addressLine1 ||
+        client?.billingAddress?.address ||
+        client?.billingAddress?.street ||
+        manual.billingAddress ||
+        "",
+      addressLine2: billingDetails.addressLine2 || client?.billingAddress?.addressLine2 || "",
+      city: billingDetails.city || client?.billingAddress?.city || "",
+      state: billingDetails.state || client?.billingAddress?.state || "",
+      pincode: billingDetails.pincode || client?.billingAddress?.pincode || "",
+      country: billingDetails.country || client?.billingAddress?.country || "India",
+      gstNumber:
+        billingDetails.gstNumber || client?.gstNumber || manual.gstin || "",
+      panNumber: billingDetails.panNumber || client?.panNumber || "",
     };
 
     // ---- Shipping snapshot (falls back to billing) ----
@@ -132,12 +157,16 @@ export const createInvoice = async (req, res) => {
       companyName: shippingDetails.companyName || billing.companyName,
       contactPerson: shippingDetails.contactPerson || billing.contactPerson,
       phone: shippingDetails.phone || billing.phone,
-      addressLine1: shippingDetails.addressLine1 || client.shippingAddress?.addressLine1 || billing.addressLine1,
-      addressLine2: shippingDetails.addressLine2 || client.shippingAddress?.addressLine2 || billing.addressLine2,
-      city: shippingDetails.city || client.shippingAddress?.city || billing.city,
-      state: shippingDetails.state || client.shippingAddress?.state || billing.state,
-      pincode: shippingDetails.pincode || client.shippingAddress?.pincode || billing.pincode,
-      country: shippingDetails.country || client.shippingAddress?.country || billing.country,
+      addressLine1:
+        shippingDetails.addressLine1 ||
+        client?.shippingAddress?.addressLine1 ||
+        manual.shippingAddress ||
+        billing.addressLine1,
+      addressLine2: shippingDetails.addressLine2 || client?.shippingAddress?.addressLine2 || billing.addressLine2,
+      city: shippingDetails.city || client?.shippingAddress?.city || billing.city,
+      state: shippingDetails.state || client?.shippingAddress?.state || billing.state,
+      pincode: shippingDetails.pincode || client?.shippingAddress?.pincode || billing.pincode,
+      country: shippingDetails.country || client?.shippingAddress?.country || billing.country,
     };
 
     // ---- Mandatory validation ----
@@ -292,7 +321,19 @@ const roundOff = round2(grandTotal - preRound);
 
     const invoice = await Invoice.create({
       invoiceNumber,
-      customer,
+      customer: customerId,
+
+      // Manual customer snapshot (empty strings when a Client was selected).
+      customerDetails: {
+        name: manual.name || "",
+        company: manual.company || "",
+        gstin: manual.gstin || "",
+        email: manual.email || "",
+        phone: manual.phone || "",
+        billingAddress: manual.billingAddress || "",
+        shippingAddress: manual.shippingAddress || "",
+      },
+
       invoiceType,
       orderNumber,
       companyDetails: company,

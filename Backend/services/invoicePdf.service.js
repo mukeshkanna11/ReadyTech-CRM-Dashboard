@@ -263,7 +263,7 @@ export async function buildInvoicePdf(invoice = {}, res) {
   partyHeader("SHIP TO", shipX);
   const partyTop = y + 22;
 
-  const renderParty = (p, x, fallbackName) => {
+  const renderParty = (p, x, fallbackName, gstinFallback = "") => {
     let ty = partyTop;
     const line = (txt, bold = false, size = 9, color = C.text) => {
       if (!txt) return;
@@ -276,7 +276,10 @@ export async function buildInvoicePdf(invoice = {}, res) {
     if (a) line(a, false, 8.5, C.slate);
     const cs = joinAddress([p.city, p.state, p.pincode, p.country]);
     if (cs) line(cs, false, 8.5, C.slate);
-    if (safe(p.gstNumber)) line(`GSTIN: ${safe(p.gstNumber)}`, false, 8, C.gray);
+    // GSTIN: snapshot first, then the fallback supplied by the caller.
+    // Only the BILL TO party gets a fallback — SHIP TO has no GSTIN.
+    const gstin = safe(p.gstNumber) || safe(gstinFallback);
+    if (gstin) line(`GSTIN: ${gstin}`, false, 8, C.gray);
     if (safe(p.panNumber)) line(`PAN: ${safe(p.panNumber)}`, false, 8, C.gray);
     if (safe(p.email)) line(`Email: ${safe(p.email)}`, false, 8, C.gray);
     if (safe(p.phone)) line(`Phone: ${safe(p.phone)}`, false, 8, C.gray);
@@ -284,7 +287,9 @@ export async function buildInvoicePdf(invoice = {}, res) {
   };
 
   const fallbackName = safe(customer.companyName) || safe(customer.contactPerson) || "-";
-  const endBill = renderParty(billing, billX, fallbackName);
+  // Existing client -> client GSTIN; manual customer -> customerDetails.gstin.
+  const buyerGstin = safe(customer.gstNumber) || safe(inv.customerDetails?.gstin);
+  const endBill = renderParty(billing, billX, fallbackName, buyerGstin);
   const endShip = renderParty(shipping, shipX, fallbackName);
   y = Math.max(endBill, endShip) + 6;
 

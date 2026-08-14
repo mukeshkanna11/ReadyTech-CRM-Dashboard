@@ -25,6 +25,114 @@ import {
 
 import { motion, AnimatePresence } from "framer-motion";
 
+/* =========================================================
+   ENUMS — must stay in sync with Backend/models/User.js
+========================================================= */
+const DEPARTMENTS = [
+  "Software Development",
+  "UI/UX Design",
+  "Digital Marketing",
+  "Sales & Business Development",
+  "BPO & Customer Support",
+  "Human Resources",
+  "Finance & Accounting",
+  "Administration",
+  "Quality Assurance",
+  "Data & Analytics",
+  "Project Management",
+  "Operations",
+  "Other",
+];
+
+/**
+ * Grouped by department so the dropdown can be filtered to the selected one.
+ * Every value below exists in the backend `designation` enum.
+ */
+const DESIGNATIONS_BY_DEPARTMENT = {
+  "Software Development": [
+    "Software Developer",
+    "Full Stack Developer",
+    "MERN Stack Developer",
+    "Frontend Developer",
+    "Backend Developer",
+    "React Developer",
+    "Node.js Developer",
+    "Mobile App Developer",
+    "Software Engineer",
+    "Technical Lead",
+    "Tech Lead",
+  ],
+  "UI/UX Design": [
+    "UI/UX Designer",
+    "UI Designer",
+    "UX Designer",
+    "Product Designer",
+    "Graphic Designer",
+  ],
+  "Digital Marketing": [
+    "Digital Marketing Executive",
+    "Digital Marketing Manager",
+    "SEO Executive",
+    "SEO Specialist",
+    "SEM Executive",
+    "Social Media Executive",
+    "Social Media Manager",
+    "Content Marketing Executive",
+    "Content Writer",
+    "Marketing Executive",
+  ],
+  "Sales & Business Development": [
+    "Sales Executive",
+    "Sales Manager",
+    "Business Development Executive",
+    "Business Development Manager",
+    "Relationship Manager",
+    "Account Manager",
+  ],
+  "BPO & Customer Support": [
+    "BPO Executive",
+    "BPO Team Leader",
+    "Customer Support Executive",
+    "Customer Support Manager",
+    "Telecaller",
+    "Process Associate",
+  ],
+  "Human Resources": [
+    "HR Executive",
+    "HR Manager",
+    "Recruiter",
+    "Talent Acquisition Executive",
+  ],
+  "Finance & Accounting": ["Accountant", "Finance Executive", "Finance Manager"],
+  "Quality Assurance": ["QA Tester", "QA Engineer", "QA Lead"],
+  "Project Management": [
+    "Project Manager",
+    "Project Coordinator",
+    "Scrum Master",
+    "Team Lead",
+  ],
+  "Data & Analytics": ["Data Analyst", "Data Entry Operator"],
+  Administration: ["Office Administrator", "Admin Executive"],
+  Operations: ["Operations Executive", "Operations Manager"],
+  Other: [],
+};
+
+/** Always selectable regardless of department. */
+const COMMON_DESIGNATIONS = [
+  "Intern",
+  "Trainee",
+  "Manager",
+  "Senior Manager",
+  "General Manager",
+  "Director",
+  "Other",
+];
+
+const designationsFor = (department) => [
+  ...(DESIGNATIONS_BY_DEPARTMENT[department] || []),
+  ...COMMON_DESIGNATIONS,
+];
+
 export default function Users() {
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
@@ -34,29 +142,81 @@ export default function Users() {
   const [editingId, setEditingId] = useState(null);
 
   const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    role: "employee",
-    status: "Active",
-    department: "",
-    phone: "",
-  });
+  name: "",
+  email: "",
+  password: "",
+  role: "client",
+  department: "",
+  designation: "",
+  company: "",
+  employeeId: "",
+  joiningDate: "",
+  status: "Active",
+});
 
   /* ================= FETCH USERS ================= */
-  const fetchUsers = async () => {
-    try {
-      const res = await API.get("/admin/users");
-      setUsers(res.data || []);
-    } catch (err) {
-      console.error("FETCH USERS ERROR:", err);
-      toast.error("Failed to fetch users");
-    }
-  };
+const fetchUsers = async () => {
+  try {
+    console.log("FETCH USERS START");
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
+    const res = await API.get("/admin/users");
+
+    console.log(
+      "FETCH USERS RESPONSE:",
+      res.data
+    );
+
+    let userList = [];
+
+    if (Array.isArray(res.data)) {
+      userList = res.data;
+    } else if (Array.isArray(res.data?.users)) {
+      userList = res.data.users;
+    } else if (Array.isArray(res.data?.data)) {
+      userList = res.data.data;
+    } else if (
+      Array.isArray(res.data?.data?.users)
+    ) {
+      userList = res.data.data.users;
+    }
+
+    console.log(
+      "FRESH USERS FROM DATABASE:",
+      userList
+    );
+
+    console.table(
+      userList.map((u) => ({
+        id: u._id || u.id,
+        name: u.name,
+        department: u.department,
+        designation: u.designation,
+        company: u.company,
+      }))
+    );
+
+    setUsers(userList);
+
+    return userList;
+
+  } catch (err) {
+    console.error(
+      "FETCH USERS ERROR:",
+      err.response?.data || err
+    );
+
+    toast.error(
+      err.response?.data?.message ||
+      "Failed to fetch users"
+    );
+
+    return [];
+  }
+};
+
+useEffect(() => {
+  fetchUsers();
+}, []);
 
   /* ================= METRICS ================= */
   const metrics = useMemo(() => {
@@ -78,62 +238,207 @@ export default function Users() {
       role: "employee",
       status: "Active",
       department: "",
-      phone: "",
+      designation: "",
+      company: "",
+      employeeId: "",
+      joiningDate: "",
     });
     setDrawer(true);
   };
 
-  const openEdit = (u) => {
-    setEditingId(u._id);
-    setForm({
-      name: u.name || "",
-      email: u.email || "",
-      password: "",
-      role: u.role || "employee",
-      status: u.isActive ? "Active" : "Inactive",
-      department: u.department || "",
-      phone: u.phone || "",
-    });
-    setDrawer(true);
-  };
+const openEdit = (u) => {
+  setEditingId(u._id || u.id);
 
-  const saveUser = async (e) => {
-    e.preventDefault();
+  setForm({
+    name: u.name || "",
+    email: u.email || "",
+    password: "",
+    role: u.role || "employee",
+    status: u.isActive === false ? "Inactive" : "Active",
 
-    try {
-      if (!editingId && !form.password) {
-        toast.error("Password is required");
-        return;
+    department: u.department || "",
+    designation: u.designation || "",
+    company: u.company || "",
+    employeeId: u.employeeId || "",
+
+    joiningDate: u.joiningDate
+      ? new Date(u.joiningDate).toISOString().split("T")[0]
+      : "",
+
+  });
+
+  setDrawer(true);
+};
+
+const saveUser = async (e) => {
+  e.preventDefault();
+
+  try {
+    // ================= VALIDATION =================
+
+    if (!form.name.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+
+    if (!form.email.trim()) {
+      toast.error("Email is required");
+      return;
+    }
+
+    if (!editingId && !form.password.trim()) {
+      toast.error("Password is required");
+      return;
+    }
+
+    if (!form.department) {
+      toast.error("Department is required");
+      return;
+    }
+
+    if (!form.designation) {
+      toast.error("Designation is required");
+      return;
+    }
+
+    // ================= PAYLOAD =================
+
+    const payload = {
+      name: form.name.trim(),
+      email: form.email.trim().toLowerCase(),
+      role: form.role,
+
+      department: form.department.trim(),
+      designation: form.designation.trim(),
+
+      company: form.company.trim() || null,
+      employeeId: form.employeeId.trim() || null,
+
+      joiningDate: form.joiningDate || null,
+
+      isActive: form.status === "Active",
+    };
+
+    // Password only when entered
+    if (form.password.trim()) {
+      payload.password = form.password.trim();
+    }
+
+    console.log("=================================");
+    console.log(
+      editingId
+        ? "UPDATING USER"
+        : "CREATING USER"
+    );
+    console.log("ID:", editingId);
+    console.log("PAYLOAD:", payload);
+    console.log("=================================");
+
+    // =========================================================
+    // UPDATE USER
+    // =========================================================
+
+    if (editingId) {
+      const id = String(editingId);
+
+      const res = await API.put(
+        `/admin/users/${id}`,
+        payload
+      );
+
+      console.log("UPDATE RESPONSE:", res.data);
+
+      if (!res.data?.success) {
+        throw new Error(
+          res.data?.message || "User update failed"
+        );
       }
 
-      const payload = {
-        name: form.name,
-        email: form.email,
-        role: form.role,
-        status: form.status,
-        department: form.department,
-        phone: form.phone,
+      console.log(
+        "UPDATED USER FROM BACKEND:",
+        res.data.user
+      );
+
+      // =======================================================
+      // IMPORTANT
+      // GET FRESH DATA FROM DATABASE
+      // =======================================================
+
+      await fetchUsers();
+
+      toast.success("User updated successfully");
+    }
+
+    // =========================================================
+    // CREATE USER
+    // =========================================================
+
+    else {
+      const createPayload = {
+        ...payload,
+        password: form.password.trim(),
       };
 
-      if (form.password) {
-        payload.password = form.password;
+      console.log(
+        "CREATE PAYLOAD:",
+        createPayload
+      );
+
+      const res = await API.post(
+        "/admin/users",
+        createPayload
+      );
+
+      console.log(
+        "CREATE RESPONSE:",
+        res.data
+      );
+
+      if (!res.data?.success) {
+        throw new Error(
+          res.data?.message || "User creation failed"
+        );
       }
 
-      if (editingId) {
-        await API.put(`/admin/users/${editingId}`, payload);
-        toast.success("User updated");
-      } else {
-        await API.post("/admin/users", payload);
-        toast.success("User created");
-      }
+      // Fresh DB data
+      await fetchUsers();
 
-      setDrawer(false);
-      fetchUsers();
-    } catch (err) {
-      console.error("SAVE ERROR:", err.response?.data);
-      toast.error(err.response?.data?.message || "Save failed");
+      toast.success("User created successfully");
     }
-  };
+
+    // =========================================================
+    // RESET
+    // =========================================================
+
+    setDrawer(false);
+    setEditingId(null);
+
+    setForm({
+      name: "",
+      email: "",
+      password: "",
+      role: "employee",
+      department: "",
+      designation: "",
+      company: "",
+      employeeId: "",
+      joiningDate: "",
+      status: "Active",
+    });
+
+  } catch (err) {
+    console.error(
+      "SAVE USER ERROR:",
+      err.response?.data || err
+    );
+
+    toast.error(
+      err.response?.data?.message ||
+      err.message ||
+      "Failed to save user"
+    );
+  }
+};
 
   const removeUser = async (id) => {
     if (!window.confirm("Remove this user?")) return;
@@ -146,23 +451,44 @@ export default function Users() {
     }
   };
 
+console.table(
+  users.map((u) => ({
+    id: u._id || u.id,
+    name: u.name,
+    department: u.department,
+    designation: u.designation,
+    company: u.company,
+  }))
+);
+  
   /* ================= FILTER ================= */
-  const filtered = users.filter((u) => {
-    const textMatch = [u.name, u.email, u.role]
-      .join(" ")
-      .toLowerCase()
-      .includes(search.toLowerCase());
+ const filtered = users.filter((u) => {
+  const textMatch = [
+    u.name,
+    u.email,
+    u.role,
+    u.department,
+    u.designation,
+    u.company,
+    u.employeeId,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .includes(search.toLowerCase());
 
-    const roleMatch =
-      roleFilter === "All" ||
-      String(u.role).toLowerCase() === roleFilter.toLowerCase();
+  const roleMatch =
+    roleFilter === "All" ||
+    String(u.role || "").toLowerCase() ===
+      roleFilter.toLowerCase();
 
-    const statusMatch =
-      statusFilter === "All" ||
-      (u.isActive ? "Active" : "Inactive") === statusFilter;
+  const statusMatch =
+    statusFilter === "All" ||
+    (u.isActive ? "Active" : "Inactive") ===
+      statusFilter;
 
-    return textMatch && roleMatch && statusMatch;
-  });
+  return textMatch && roleMatch && statusMatch;
+});
 
   const formatDate = (date) => {
     if (!date) return "—";
@@ -361,21 +687,35 @@ export default function Users() {
 
 </div>
 
-      {/* TABLE */}
+      {/* ================= TABLE ================= */}
 <div className="overflow-hidden bg-white border shadow-xl rounded-3xl border-slate-200">
 
   <div className="overflow-x-auto">
+
     <table className="w-full text-sm">
 
-      {/* HEADER */}
+      {/* ================= TABLE HEADER ================= */}
       <thead className="border-b bg-slate-50 border-slate-200">
         <tr>
+
           <th className="p-5 font-semibold text-left text-slate-600">
             User
           </th>
 
           <th className="p-5 font-semibold text-center text-slate-600">
             Role
+          </th>
+
+          <th className="p-5 font-semibold text-left text-slate-600">
+            Department
+          </th>
+
+          <th className="p-5 font-semibold text-left text-slate-600">
+            Designation
+          </th>
+
+          <th className="p-5 font-semibold text-left text-slate-600">
+            Company
           </th>
 
           <th className="p-5 font-semibold text-center text-slate-600">
@@ -389,153 +729,265 @@ export default function Users() {
           <th className="p-5 font-semibold text-center text-slate-600">
             Actions
           </th>
+
         </tr>
       </thead>
 
 
-      {/* BODY */}
+      {/* ================= TABLE BODY ================= */}
       <tbody>
 
-        {filtered.map((u) => (
+        {filtered.length > 0 ? (
 
-          <tr
-            key={u._id}
-            className="transition-all duration-200 border-b group hover:bg-indigo-50/40 border-slate-100"
-          >
+          filtered.map((u) => {
 
-            {/* USER */}
-            <td className="p-5">
+            const userId = u._id || u.id;
 
-              <div className="flex items-center gap-4">
+            const isActive = u.isActive !== false;
 
-                {/* Avatar */}
-                <div className="flex items-center justify-center font-bold text-indigo-600 bg-indigo-100 w-11 h-11 rounded-2xl">
-                  {u.name?.charAt(0).toUpperCase()}
+            const role = String(
+              u.role || "employee"
+            ).toLowerCase();
+
+            return (
+
+              <tr
+                key={userId}
+                className="transition-all duration-200 border-b group hover:bg-indigo-50/40 border-slate-100"
+              >
+
+                {/* ================= USER ================= */}
+                <td className="p-5">
+
+                  <div className="flex items-center gap-4">
+
+                    {/* Avatar */}
+                    <div
+                      className="flex items-center justify-center font-bold text-indigo-600 bg-indigo-100 w-11 h-11 rounded-2xl shrink-0"
+                    >
+                      {u.name
+                        ?.charAt(0)
+                        ?.toUpperCase() || "U"}
+                    </div>
+
+
+                    {/* Name + Email */}
+                    <div className="min-w-0">
+
+                      <p className="font-semibold truncate text-slate-800">
+                        {u.name || "Unnamed User"}
+                      </p>
+
+                      <p className="text-xs truncate text-slate-500">
+                        {u.email || "No email"}
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                </td>
+
+
+                {/* ================= ROLE ================= */}
+                <td className="p-5 text-center">
+
+                  <span
+                    className={`
+                      inline-flex
+                      px-3 py-1.5
+                      text-xs
+                      font-semibold
+                      rounded-full
+                      capitalize
+
+                      ${
+                        role === "admin"
+                          ? "bg-purple-100 text-purple-700"
+                          : role === "manager"
+                          ? "bg-blue-100 text-blue-700"
+                          : role === "client"
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-slate-100 text-slate-700"
+                      }
+                    `}
+                  >
+                    {role}
+                  </span>
+
+                </td>
+
+
+                {/* ================= DEPARTMENT ================= */}
+                <td className="p-5 text-sm text-slate-700">
+
+                  {u.department ? (
+                    u.department
+                  ) : (
+                    <span className="text-slate-400">
+                      —
+                    </span>
+                  )}
+
+                </td>
+
+
+                {/* ================= DESIGNATION ================= */}
+                <td className="p-5 text-sm text-slate-700">
+
+                  {u.designation ? (
+                    u.designation
+                  ) : (
+                    <span className="text-slate-400">
+                      —
+                    </span>
+                  )}
+
+                </td>
+
+
+                {/* ================= COMPANY ================= */}
+                <td className="p-5 text-sm text-slate-700">
+
+                  {u.company ? (
+                    u.company
+                  ) : (
+                    <span className="text-slate-400">
+                      —
+                    </span>
+                  )}
+
+                </td>
+
+
+                {/* ================= STATUS ================= */}
+                <td className="p-5 text-center">
+
+                  <span
+                    className={`
+                      inline-flex
+                      items-center
+                      gap-2
+                      px-3 py-1.5
+                      text-xs
+                      font-semibold
+                      rounded-full
+
+                      ${
+                        isActive
+                          ? "bg-green-100 text-green-700"
+                          : "bg-red-100 text-red-700"
+                      }
+                    `}
+                  >
+
+                    {/* Status Dot */}
+                    <span
+                      className={`
+                        w-2 h-2
+                        rounded-full
+
+                        ${
+                          isActive
+                            ? "bg-green-500"
+                            : "bg-red-500"
+                        }
+                      `}
+                    />
+
+                    {isActive
+                      ? "Active"
+                      : "Inactive"}
+
+                  </span>
+
+                </td>
+
+
+                {/* ================= CREATED DATE ================= */}
+                <td className="p-5 text-xs text-center text-slate-500">
+
+                  {formatDate(u.createdAt)}
+
+                </td>
+
+
+                {/* ================= ACTIONS ================= */}
+                <td className="p-5">
+
+                  <div className="flex justify-center gap-2">
+
+                    {/* EDIT */}
+                    <button
+                      type="button"
+                      onClick={() => openEdit(u)}
+                      title="Edit User"
+                      className="p-2 text-blue-600 transition-all rounded-xl bg-blue-50 hover:bg-blue-100 hover:scale-105"
+                    >
+                      <Edit size={16} />
+                    </button>
+
+
+                    {/* DELETE */}
+                    <button
+                      type="button"
+                      onClick={() => removeUser(userId)}
+                      title="Delete User"
+                      className="p-2 text-red-600 transition-all rounded-xl bg-red-50 hover:bg-red-100 hover:scale-105"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+
+                  </div>
+
+                </td>
+
+              </tr>
+
+            );
+
+          })
+
+        ) : (
+
+          /* ================= EMPTY STATE ================= */
+          <tr>
+
+            <td
+              colSpan="8"
+              className="p-12 text-center"
+            >
+
+              <div className="flex flex-col items-center justify-center">
+
+                <div
+                  className="flex items-center justify-center w-16 h-16 mb-4 rounded-2xl bg-slate-100 text-slate-400"
+                >
+                  <UsersIcon size={28} />
                 </div>
 
+                <p className="text-sm font-semibold text-slate-700">
+                  No users found
+                </p>
 
-                <div>
-                  <p className="font-semibold text-slate-800">
-                    {u.name}
-                  </p>
-
-                  <p className="text-xs text-slate-500">
-                    {u.email}
-                  </p>
-                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  {search
+                    ? `No users match "${search}"`
+                    : "No users are available"}
+                </p>
 
               </div>
 
             </td>
-
-
-
-            {/* ROLE */}
-            <td className="p-5 text-center">
-
-              <span
-                className={`
-                  px-3 py-1.5
-                  text-xs
-                  font-semibold
-                  rounded-full
-
-                  ${
-                    u.role === "admin"
-                      ? "bg-purple-100 text-purple-700"
-                      : u.role === "manager"
-                      ? "bg-blue-100 text-blue-700"
-                      : "bg-slate-100 text-slate-700"
-                  }
-                `}
-              >
-                {u.role}
-              </span>
-
-            </td>
-
-
-
-            {/* STATUS */}
-            <td className="p-5 text-center">
-
-              <span
-                className={`
-                  inline-flex
-                  items-center
-                  gap-2
-                  px-3 py-1.5
-                  text-xs
-                  font-semibold
-                  rounded-full
-
-                  ${
-                    u.isActive
-                      ? "bg-green-100 text-green-700"
-                      : "bg-red-100 text-red-700"
-                  }
-                `}
-              >
-
-                <span
-                  className={`
-                    w-2 h-2 rounded-full
-
-                    ${
-                      u.isActive
-                        ? "bg-green-500"
-                        : "bg-red-500"
-                    }
-                  `}
-                />
-
-                {u.isActive ? "Active" : "Inactive"}
-
-              </span>
-
-            </td>
-
-
-
-            {/* DATE */}
-            <td className="p-5 text-xs text-center text-slate-500">
-              {formatDate(u.createdAt)}
-            </td>
-
-
-
-            {/* ACTIONS */}
-            <td className="p-5">
-
-              <div className="flex justify-center gap-2">
-
-                <button
-                  onClick={() => openEdit(u)}
-                  className="p-2 text-blue-600 transition rounded-xl bg-blue-50 hover:bg-blue-100"
-                >
-                  <Edit size={16}/>
-                </button>
-
-
-                <button
-                  onClick={() => removeUser(u._id)}
-                  className="p-2 text-red-600 transition rounded-xl bg-red-50 hover:bg-red-100"
-                >
-                  <Trash2 size={16}/>
-                </button>
-
-              </div>
-
-            </td>
-
 
           </tr>
 
-        ))}
+        )}
 
       </tbody>
 
     </table>
+
   </div>
 
 </div>
@@ -651,6 +1103,113 @@ export default function Users() {
             />
 
           </div>
+
+
+
+
+          {/* EMPLOYMENT DETAILS */}
+<div className="p-4 border rounded-2xl bg-slate-50">
+
+  <p className="mb-3 text-sm font-semibold text-slate-700">
+    Employment Details
+  </p>
+
+  {/* Department */}
+  <select
+    required
+    value={form.department}
+    onChange={(e) => {
+      const department = e.target.value;
+
+      setForm((prev) => ({
+        ...prev,
+        department,
+        designation: "",
+      }));
+    }}
+    className="w-full p-3 mb-3 text-sm bg-white border outline-none rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10"
+  >
+    <option value="">Select Department</option>
+
+    {DEPARTMENTS.map((department) => (
+      <option key={department} value={department}>
+        {department}
+      </option>
+    ))}
+  </select>
+
+  {/* Designation */}
+  <select
+    required
+    value={form.designation}
+    disabled={!form.department}
+    onChange={(e) => {
+      setForm((prev) => ({
+        ...prev,
+        designation: e.target.value,
+      }));
+    }}
+    className="w-full p-3 mb-3 text-sm bg-white border outline-none rounded-xl disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10"
+  >
+    <option value="">
+      {form.department
+        ? "Select Designation"
+        : "Select a department first"}
+    </option>
+
+    {designationsFor(form.department).map((designation) => (
+      <option key={designation} value={designation}>
+        {designation}
+      </option>
+    ))}
+  </select>
+
+  {/* Company */}
+  <input
+    type="text"
+    placeholder="Company"
+    value={form.company}
+    onChange={(e) =>
+      setForm((prev) => ({
+        ...prev,
+        company: e.target.value,
+      }))
+    }
+    className="w-full p-3 mb-3 text-sm bg-white border outline-none rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10"
+  />
+
+  {/* Employee ID + Joining Date */}
+  <div className="grid grid-cols-2 gap-3">
+
+    <input
+      type="text"
+      placeholder="Employee ID"
+      value={form.employeeId}
+      onChange={(e) =>
+        setForm((prev) => ({
+          ...prev,
+          employeeId: e.target.value,
+        }))
+      }
+      className="w-full p-3 text-sm bg-white border outline-none rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10"
+    />
+
+    <input
+      type="date"
+      title="Joining Date"
+      value={form.joiningDate}
+      onChange={(e) =>
+        setForm((prev) => ({
+          ...prev,
+          joiningDate: e.target.value,
+        }))
+      }
+      className="w-full p-3 text-sm bg-white border outline-none rounded-xl text-slate-600 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10"
+    />
+
+  </div>
+
+</div>
 
 
 
