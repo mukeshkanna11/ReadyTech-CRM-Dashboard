@@ -4,28 +4,64 @@ const { Schema } = mongoose;
 
 const LeadSchema = new Schema(
   {
+    // =========================
+    // PERSONAL INFORMATION
+    // =========================
     name: {
       type: String,
       required: true,
       trim: true,
     },
 
+    designation: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
     email: {
       type: String,
       trim: true,
       lowercase: true,
+      default: "",
     },
 
     phone: {
       type: String,
       trim: true,
+      default: "",
     },
 
+    // =========================
+    // COMPANY INFORMATION
+    // =========================
     company: {
       type: String,
       trim: true,
+      default: "",
     },
 
+    industry: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    website: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    companySize: {
+      type: String,
+      enum: ["", "1-10", "11-50", "51-200", "201-500", "500+"],
+      default: "",
+    },
+
+    // =========================
+    // LEAD SOURCE
+    // =========================
     source: {
       type: String,
       enum: [
@@ -39,17 +75,27 @@ const LeadSchema = new Schema(
         "WhatsApp",
         "Phone Call",
         "Walk-In",
+        "Social Media",
+        "Email",
+        "Cold Call",
+        "Event",
         "Other",
       ],
       default: "Website",
     },
 
+    // =========================
+    // OWNER
+    // =========================
     owner: {
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
 
+    // =========================
+    // LEAD STATUS
+    // =========================
     status: {
       type: String,
       enum: [
@@ -60,22 +106,56 @@ const LeadSchema = new Schema(
         "Negotiation",
         "Won",
         "Lost",
+        "Closed",
       ],
       default: "New",
     },
 
+    // =========================
+    // PRIORITY
+    // =========================
     priority: {
       type: String,
       enum: ["Low", "Medium", "High"],
       default: "Medium",
     },
 
+    // =========================
+    // ASSIGNMENT
+    // =========================
+    assignedTo: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    // =========================
+    // SALES INFORMATION
+    // =========================
     value: {
       type: Number,
       default: 0,
       min: 0,
     },
 
+    // Frontend currently uses expectedValue
+    expectedValue: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // =========================
+    // FOLLOW-UP
+    // =========================
+    followUpDate: {
+      type: Date,
+      default: null,
+    },
+
+    // =========================
+    // DEPARTMENT
+    // =========================
     department: {
       type: String,
       enum: [
@@ -89,13 +169,18 @@ const LeadSchema = new Schema(
       default: "Sales",
     },
 
+    // =========================
+    // NOTES
+    // =========================
     notes: {
       type: String,
       default: "",
       trim: true,
     },
 
-    // Enterprise CRM Fields
+    // =========================
+    // LEAD CONVERSION
+    // =========================
     isConverted: {
       type: Boolean,
       default: false,
