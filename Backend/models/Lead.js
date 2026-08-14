@@ -55,7 +55,29 @@ const LeadSchema = new Schema(
 
     companySize: {
       type: String,
-      enum: ["", "1-10", "11-50", "51-200", "201-500", "500+"],
+      enum: [
+        "",
+        "1-10",
+        "11-50",
+        "51-200",
+        "201-500",
+        "500+",
+      ],
+      default: "",
+    },
+
+    // =========================
+    // ENQUIRY INFORMATION
+    // =========================
+    requirement: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    message: {
+      type: String,
+      trim: true,
       default: "",
     },
 
@@ -116,7 +138,11 @@ const LeadSchema = new Schema(
     // =========================
     priority: {
       type: String,
-      enum: ["Low", "Medium", "High"],
+      enum: [
+        "Low",
+        "Medium",
+        "High",
+      ],
       default: "Medium",
     },
 
@@ -138,7 +164,6 @@ const LeadSchema = new Schema(
       min: 0,
     },
 
-    // Frontend currently uses expectedValue
     expectedValue: {
       type: Number,
       default: 0,

@@ -1,7 +1,10 @@
 import Lead from "../models/Lead.js";
 import AuditLog from "../models/AuditLog.js";
 import Opportunity from "../models/Opportunity.js";
-
+import {
+  sendLeadNotification,
+  sendLeadAutoReply,
+} from "../services/email.service.js";
 /* =========================================================
    CREATE LEAD
 ========================================================= */
@@ -74,6 +77,185 @@ export const createLead = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to create lead",
+    });
+  }
+};
+
+/* =========================================================
+   CREATE PUBLIC LEAD
+   Website / Chat / Enquiry Form
+========================================================= */
+export const createPublicLead = async (req, res) => {
+  try {
+    const {
+      name,
+      email,
+      phone,
+      company,
+      requirement,
+      message,
+    } = req.body;
+
+    /* =====================================================
+       VALIDATION
+    ===================================================== */
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Name is required",
+      });
+    }
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    /* =====================================================
+       FIND DEFAULT OWNER
+    ===================================================== */
+
+    // Temporary approach:
+    // Replace this with your User model / company admin logic.
+
+    const defaultOwner = await User.findOne({
+      role: "admin",
+      isActive: true,
+    }).select("_id");
+
+    if (!defaultOwner) {
+      return res.status(500).json({
+        success: false,
+        message: "No active lead owner found",
+      });
+    }
+
+    /* =====================================================
+       CREATE LEAD
+    ===================================================== */
+
+    const lead = new Lead({
+      name: name.trim(),
+
+      email: email.trim().toLowerCase(),
+
+      phone: phone?.trim() || "",
+
+      company: company?.trim() || "",
+
+      source: "Website",
+
+      status: "New",
+
+      priority: "Medium",
+
+      value: 0,
+
+      department: "Sales",
+
+      notes: message?.trim() || "",
+
+      requirement: requirement?.trim() || "",
+
+      message: message?.trim() || "",
+
+      owner: defaultOwner._id,
+
+      isConverted: false,
+
+      convertedAt: null,
+
+      convertedOpportunity: null,
+    });
+
+    await lead.save();
+
+    /* =====================================================
+       AUDIT LOG
+    ===================================================== */
+
+    await AuditLog.create({
+      userId: defaultOwner._id,
+
+      action: "create_public_lead",
+
+      target: lead._id,
+
+      newValue: lead,
+    });
+
+    /* =====================================================
+       POPULATE
+    ===================================================== */
+
+    const populatedLead = await Lead.findById(
+      lead._id
+    ).populate(
+      "owner",
+      "name email"
+    );
+
+    /* =====================================================
+       COMPANY EMAIL
+    ===================================================== */
+
+    try {
+      await sendLeadNotification(populatedLead);
+
+      console.log(
+        `✅ Public lead notification sent: ${lead._id}`
+      );
+    } catch (emailError) {
+      console.error(
+        "⚠️ Public lead notification failed:",
+        emailError.message
+      );
+    }
+
+    /* =====================================================
+       CUSTOMER AUTO REPLY
+    ===================================================== */
+
+    try {
+      await sendLeadAutoReply(populatedLead);
+
+      console.log(
+        `✅ Public lead auto reply sent: ${email}`
+      );
+    } catch (emailError) {
+      console.error(
+        "⚠️ Public lead auto reply failed:",
+        emailError.message
+      );
+    }
+
+    /* =====================================================
+       RESPONSE
+    ===================================================== */
+
+    return res.status(201).json({
+      success: true,
+
+      message:
+        "Thank you! Your enquiry has been submitted successfully.",
+
+      lead: populatedLead,
+    });
+
+  } catch (error) {
+    console.error(
+      "CREATE PUBLIC LEAD ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message ||
+        "Failed to submit enquiry",
     });
   }
 };

@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 const chatSchema = new mongoose.Schema(
   {
     /* =========================================================
-       Visitor Information
+       VISITOR INFORMATION
     ========================================================= */
 
     name: {
@@ -39,24 +39,26 @@ const chatSchema = new mongoose.Schema(
     },
 
     /* =========================================================
-       Enquiry Details
+       ENQUIRY DETAILS
+
+       IMPORTANT:
+       category is intentionally NOT an enum.
+
+       Customer can enter:
+       - CRM Software
+       - ERP Software
+       - AI Automation
+       - Custom CRM
+       - Website Redesign
+       - Payment Integration
+       - Any other requirement
     ========================================================= */
 
     category: {
       type: String,
-      enum: [
-        "CRM Demo",
-        "ERP Demo",
-        "Pricing",
-        "Sales",
-        "Support",
-        "Custom Development",
-        "Website Development",
-        "Mobile App Development",
-        "Digital Marketing",
-        "General Enquiry",
-      ],
+      trim: true,
       default: "General Enquiry",
+      maxlength: 150,
       index: true,
     },
 
@@ -75,23 +77,18 @@ const chatSchema = new mongoose.Schema(
     },
 
     /* =========================================================
-       Source
+       SOURCE
     ========================================================= */
 
     source: {
       type: String,
-      enum: [
-        "Website",
-        "Landing Page",
-        "CRM",
-        "ERP",
-        "Mobile App",
-      ],
+      trim: true,
       default: "Website",
+      maxlength: 100,
     },
 
     /* =========================================================
-       CRM Workflow
+       CRM WORKFLOW
     ========================================================= */
 
     status: {
@@ -111,12 +108,17 @@ const chatSchema = new mongoose.Schema(
 
     priority: {
       type: String,
-      enum: ["Low", "Medium", "High", "Urgent"],
+      enum: [
+        "Low",
+        "Medium",
+        "High",
+        "Urgent",
+      ],
       default: "Medium",
     },
 
     /* =========================================================
-       CRM Relations
+       CRM RELATIONS
     ========================================================= */
 
     lead: {
@@ -132,7 +134,7 @@ const chatSchema = new mongoose.Schema(
     },
 
     /* =========================================================
-       Admin Notes
+       ADMIN NOTES
     ========================================================= */
 
     notes: [
@@ -141,10 +143,12 @@ const chatSchema = new mongoose.Schema(
           type: String,
           trim: true,
         },
+
         addedBy: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "User",
         },
+
         createdAt: {
           type: Date,
           default: Date.now,
@@ -153,7 +157,7 @@ const chatSchema = new mongoose.Schema(
     ],
 
     /* =========================================================
-       Flags
+       FLAGS
     ========================================================= */
 
     isRead: {
@@ -173,12 +177,27 @@ const chatSchema = new mongoose.Schema(
 );
 
 /* =========================================================
-   Indexes
+   INDEXES
 ========================================================= */
 
-chatSchema.index({ email: 1 });
-chatSchema.index({ status: 1 });
-chatSchema.index({ category: 1 });
-chatSchema.index({ createdAt: -1 });
+chatSchema.index({
+  email: 1,
+});
+
+chatSchema.index({
+  status: 1,
+});
+
+chatSchema.index({
+  category: 1,
+});
+
+chatSchema.index({
+  createdAt: -1,
+});
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 export default mongoose.model("Chat", chatSchema);
