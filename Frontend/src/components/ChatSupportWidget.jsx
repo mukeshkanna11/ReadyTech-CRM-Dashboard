@@ -1,394 +1,711 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useRef, useState } from "react";
 import {
   Brain,
   X,
   Send,
-  Trash2,
+  CheckCircle2,
   AlertTriangle,
-  RefreshCw,
-  Sparkles,
 } from "lucide-react";
 
-import {
-  startConversation,
-  sendMessage,
-  clearConversation,
-} from "../services/chatSupport";
+import { submitEnquiry } from "../services/chatSupport";
+
+/* ======================================================
+   DEFAULT FORM
+====================================================== */
+
+const INITIAL_FORM = {
+  name: "",
+  email: "",
+  phone: "",
+  company: "",
+  category: "",
+  message: "",
+};
+
+/* ======================================================
+   CATEGORY OPTIONS
+====================================================== */
+
+const CATEGORIES = [
+  "CRM Demo",
+  "ERP Demo",
+  "CRM & ERP",
+  "Pricing Enquiry",
+  "Technical Support",
+  "General Enquiry",
+];
+
+/* ======================================================
+   SUBJECT MAPPING
+====================================================== */
+
+const getSubject = (category) => {
+  switch (category) {
+    case "CRM Demo":
+      return "CRM Demo Request";
+
+    case "ERP Demo":
+      return "ERP Demo Request";
+
+    case "CRM & ERP":
+      return "CRM & ERP Enquiry";
+
+    case "Pricing Enquiry":
+      return "Pricing Enquiry";
+
+    case "Technical Support":
+      return "Technical Support Request";
+
+    default:
+      return "General Enquiry";
+  }
+};
+
+/* ======================================================
+   EMAIL VALIDATION
+====================================================== */
+
+const isValidEmail = (email) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
 
 /* ======================================================
    CHAT SUPPORT WIDGET
-   Floating brain launcher + AI assistant panel.
 ====================================================== */
-
-const DEFAULT_SUGGESTIONS = [
-  "Book a product demo",
-  "What does the CRM include?",
-  "How does GST invoicing work?",
-  "I need help logging in",
-];
-
-const formatTime = (value) => {
-  if (!value) return "";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime())
-    ? ""
-    : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-};
 
 export default function ChatSupportWidget() {
   const [open, setOpen] = useState(false);
 
-  const [messages, setMessages] = useState([]);
-  const [suggestions, setSuggestions] = useState(DEFAULT_SUGGESTIONS);
+  const [form, setForm] = useState(INITIAL_FORM);
 
-  const [input, setInput] = useState("");
-  const [booting, setBooting] = useState(false);
   const [sending, setSending] = useState(false);
+
+  const [success, setSuccess] = useState("");
+
   const [error, setError] = useState("");
-  const [degraded, setDegraded] = useState(false);
 
-  const scrollRef = useRef(null);
   const inputRef = useRef(null);
-  const startedRef = useRef(false);
 
-  /* ================= AUTO SCROLL ================= */
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, sending]);
+  /* ======================================================
+     HANDLE INPUT
+  ====================================================== */
 
-  /* ================= LOAD ON FIRST OPEN ================= */
-  const boot = useCallback(async () => {
-    setBooting(true);
-    setError("");
+  const handleChange = (e) => {
+    const { name, value } = e.target;
 
-    try {
-      const res = await startConversation();
-      setMessages(res?.data?.messages || []);
-      if (Array.isArray(res?.suggestedQuestions) && res.suggestedQuestions.length) {
-        setSuggestions(res.suggestedQuestions);
-      }
-    } catch {
-      setError("Couldn't connect to support. Please try again.");
-    } finally {
-      setBooting(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (open && !startedRef.current) {
-      startedRef.current = true;
-      boot();
-    }
-    if (open) {
-      // Let the panel paint before focusing so mobile keyboards behave.
-      const t = setTimeout(() => inputRef.current?.focus(), 120);
-      return () => clearTimeout(t);
-    }
-  }, [open, boot]);
-
-  /* ================= CLOSE ON ESCAPE ================= */
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  /* ================= SEND ================= */
-  const submit = async (raw) => {
-    const text = (raw ?? input).trim();
-    if (!text || sending) return;
-
-    setInput("");
-    setError("");
-    setDegraded(false);
-
-    // Optimistic user bubble — replaced by the server copy on success.
-    const optimisticId = `local-${Date.now()}`;
-    setMessages((prev) => [
+    setForm((prev) => ({
       ...prev,
-      {
-        id: optimisticId,
-        role: "user",
-        text,
-        source: "user",
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+      [name]: value,
+    }));
 
-    setSending(true);
+    setError("");
+    setSuccess("");
+  };
+
+  /* ======================================================
+     SUBMIT ENQUIRY
+  ====================================================== */
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (sending) return;
+
+    setError("");
+    setSuccess("");
+
+    const name = form.name.trim();
+    const email = form.email.trim().toLowerCase();
+    const phone = form.phone.trim();
+    const company = form.company.trim();
+    const category = form.category.trim();
+    const message = form.message.trim();
+
+    /* ================= VALIDATION ================= */
+
+    if (!name) {
+      setError("Please enter your name.");
+      return;
+    }
+
+    if (!email) {
+      setError("Please enter your email address.");
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    if (!phone) {
+      setError("Please enter your phone number.");
+      return;
+    }
+
+    if (!company) {
+      setError("Please enter your company name.");
+      return;
+    }
+
+    if (!category) {
+      setError("Please select your requirement.");
+      return;
+    }
+
+    if (!message) {
+      setError("Please enter your message.");
+      return;
+    }
+
+    /* ==================================================
+       BACKEND PAYLOAD
+
+       Exactly matches your working Postman payload.
+    ================================================== */
+
+    const payload = {
+      name,
+      email,
+      phone,
+      company,
+      category,
+      subject: getSubject(category),
+      message,
+      source: "Website",
+      priority: "Medium",
+    };
 
     try {
-      const res = await sendMessage(text);
-      setMessages(res?.data?.messages || []);
-      setDegraded(Boolean(res?.degraded));
-    } catch (err) {
-      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
-      setInput(text); // don't lose what they typed
-      setError(
-        err?.response?.data?.message ||
-          "Message failed to send. Check your connection and try again."
+      setSending(true);
+
+      const response = await submitEnquiry(payload);
+
+      if (!response?.success) {
+        throw new Error(
+          response?.message || "Failed to submit enquiry."
+        );
+      }
+
+      /* ================================================
+         SUCCESS
+
+         Backend has already:
+         Chat ✅
+         Lead ✅
+         Email ✅
+      ================================================ */
+
+      setSuccess(
+        "Thank you! Your enquiry has been submitted successfully. Our team will contact you shortly."
       );
+
+      setForm(INITIAL_FORM);
+
+    } catch (err) {
+      console.error("❌ ENQUIRY SUBMIT ERROR:", err);
+
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Unable to submit your enquiry. Please try again.";
+
+      setError(message);
+
     } finally {
       setSending(false);
-      inputRef.current?.focus();
+
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
     }
   };
 
-  const onClear = async () => {
+  /* ======================================================
+     CLOSE
+  ====================================================== */
+
+  const handleClose = () => {
     if (sending) return;
-    try {
-      await clearConversation();
-      setMessages([]);
-      setError("");
-      setDegraded(false);
-    } catch {
-      setError("Couldn't clear the conversation.");
-    }
+
+    setOpen(false);
+    setError("");
+    setSuccess("");
   };
 
-  const onKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      submit();
-    }
-  };
+  /* ======================================================
+     FLOATING BUTTON
+  ====================================================== */
 
-  /* ================= LAUNCHER ================= */
   if (!open) {
     return (
       <button
         onClick={() => setOpen(true)}
-        title="AI Support Assistant"
-        aria-label="Open AI support assistant"
-        className="fixed z-40 flex items-center justify-center text-white transition rounded-full shadow-xl bottom-6 right-6 h-14 w-14 bg-gradient-to-br from-indigo-600 to-violet-600 hover:scale-105 active:scale-95"
+        title="Contact ReadyTech"
+        aria-label="Open contact form"
+        className="fixed z-40 flex items-center justify-center text-white transition rounded-full shadow-xl  bottom-6 right-6 h-14 w-14 bg-gradient-to-br from-indigo-600 to-violet-600 hover:scale-105 active:scale-95"
       >
         <Brain size={24} />
-        <span className="absolute w-3 h-3 border-2 border-white rounded-full bg-emerald-400 right-1 top-1" />
+
+        <span
+          className="absolute w-3 h-3 border-2 border-white rounded-full  right-1 top-1 bg-emerald-400"
+        />
       </button>
     );
   }
 
-  /* ================= PANEL ================= */
+  /* ======================================================
+     PANEL
+  ====================================================== */
+
   return (
     <>
       {/* Mobile backdrop */}
+
       <div
-        onClick={() => setOpen(false)}
-        className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm sm:hidden"
+        onClick={handleClose}
+        className="fixed inset-0 z-40  bg-slate-900/40 backdrop-blur-sm sm:hidden"
       />
 
       <div
         role="dialog"
-        aria-label="AI support assistant"
-        className="fixed z-50 flex flex-col overflow-hidden bg-white shadow-2xl
-                   inset-x-0 bottom-0 top-0 rounded-none
-                   sm:inset-auto sm:bottom-6 sm:right-6 sm:top-auto
-                   sm:h-[min(620px,calc(100vh-3rem))] sm:w-[400px] sm:rounded-3xl
-                   sm:border sm:border-slate-200"
+        aria-label="Contact ReadyTech"
+        className="
+          fixed z-50
+          flex flex-col
+          overflow-hidden
+          bg-white
+          shadow-2xl
+
+          inset-x-0
+          bottom-0
+          top-0
+          rounded-none
+
+          sm:inset-auto
+          sm:bottom-6
+          sm:right-6
+          sm:top-auto
+          sm:h-[min(680px,calc(100vh-3rem))]
+          sm:w-[420px]
+          sm:rounded-3xl
+          sm:border
+          sm:border-slate-200
+        "
       >
-        {/* ============ HEADER ============ */}
-        <div className="relative px-4 py-4 overflow-hidden text-white bg-gradient-to-br from-slate-950 via-indigo-900 to-violet-900 shrink-0">
-          <div className="absolute rounded-full -right-10 -top-10 h-28 w-28 bg-indigo-500/20 blur-2xl" />
+        {/* ==================================================
+            HEADER
+        ================================================== */}
+
+        <div
+          className="relative px-4 py-4 overflow-hidden text-white  bg-gradient-to-br from-slate-950 via-indigo-900 to-violet-900 shrink-0"
+        >
+          <div
+            className="absolute rounded-full  -right-10 -top-10 h-28 w-28 bg-indigo-500/20 blur-2xl"
+          />
 
           <div className="relative flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 border rounded-2xl shrink-0 border-white/20 bg-white/10">
+            <div
+              className="flex items-center justify-center w-10 h-10 border  shrink-0 rounded-2xl border-white/20 bg-white/10"
+            >
               <Brain size={20} />
             </div>
 
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate">
-                ReadyTech AI Assistant
+                ReadyTech Support
               </p>
+
               <p className="flex items-center gap-1.5 text-xs text-indigo-200">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                Online · replies instantly
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+
+                How can we help you?
               </p>
             </div>
 
             <button
-              onClick={onClear}
-              title="Clear conversation"
-              aria-label="Clear conversation"
-              className="flex items-center justify-center w-9 h-9 rounded-xl shrink-0 bg-white/10 hover:bg-white/20"
-            >
-              <Trash2 size={15} />
-            </button>
-
-            <button
-              onClick={() => setOpen(false)}
+              onClick={handleClose}
+              disabled={sending}
               title="Close"
-              aria-label="Close support assistant"
-              className="flex items-center justify-center w-9 h-9 rounded-xl shrink-0 bg-white/10 hover:bg-white/20"
+              aria-label="Close support form"
+              className="flex items-center justify-center  h-9 w-9 shrink-0 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-50"
             >
               <X size={16} />
             </button>
           </div>
         </div>
 
-        {/* ============ MESSAGES ============ */}
-        <div
-          ref={scrollRef}
-          className="flex-1 px-4 py-4 space-y-3 overflow-y-auto bg-slate-50"
-        >
-          {booting ? (
-            /* Skeletons mirror the real bubble layout so nothing jumps */
-            <div className="space-y-3">
-              {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className={i % 2 ? "flex justify-end" : "flex justify-start"}
-                >
-                  <div
-                    className={`h-12 animate-pulse rounded-2xl bg-slate-200 ${
-                      i % 2 ? "w-40" : "w-56"
-                    }`}
+        {/* ==================================================
+            CONTENT
+        ================================================== */}
+
+        <div className="flex-1 px-4 py-4 overflow-y-auto bg-slate-50">
+          {/* Greeting */}
+
+          <div className="flex justify-start mb-4">
+            <div
+              className="
+                max-w-[90%]
+                rounded-2xl
+                rounded-bl-md
+                border
+                border-slate-200
+                bg-white
+                px-3.5
+                py-2.5
+                shadow-sm
+              "
+            >
+              <p className="text-sm leading-relaxed text-slate-700">
+                Hi! 👋 Tell us what you need and our team will get
+                back to you shortly.
+              </p>
+            </div>
+          </div>
+
+          {/* ==================================================
+              SUCCESS MESSAGE
+          ================================================== */}
+
+          {success && (
+            <div
+              className="flex items-start gap-2 p-3 mb-4 border  rounded-2xl border-emerald-200 bg-emerald-50"
+            >
+              <CheckCircle2
+                size={18}
+                className="mt-0.5 shrink-0 text-emerald-600"
+              />
+
+              <p className="text-sm leading-relaxed text-emerald-700">
+                {success}
+              </p>
+            </div>
+          )}
+
+          {/* ==================================================
+              ERROR
+          ================================================== */}
+
+          {error && (
+            <div
+              className="flex items-start gap-2 p-3 mb-4 border  rounded-2xl border-rose-200 bg-rose-50"
+            >
+              <AlertTriangle
+                size={17}
+                className="mt-0.5 shrink-0 text-rose-600"
+              />
+
+              <p className="text-sm leading-relaxed text-rose-700">
+                {error}
+              </p>
+            </div>
+          )}
+
+          {/* ==================================================
+              FORM
+          ================================================== */}
+
+          {!success && (
+            <form
+              onSubmit={handleSubmit}
+              className="space-y-3"
+            >
+              {/* Name */}
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  Name *
+                </label>
+
+                <input
+                  ref={inputRef}
+                  type="text"
+                  name="name"
+                  value={form.name}
+                  onChange={handleChange}
+                  placeholder="Enter your name"
+                  disabled={sending}
+                  autoComplete="name"
+                  className="
+                    w-full
+                    rounded-xl
+                    border
+                    border-slate-200
+                    bg-white
+                    px-3.5
+                    py-2.5
+                    text-sm
+                    text-slate-800
+                    outline-none
+                    transition
+                    placeholder:text-slate-400
+                    focus:border-indigo-500
+                    focus:ring-4
+                    focus:ring-indigo-500/10
+                    disabled:opacity-60
+                  "
+                />
+              </div>
+
+              {/* Email */}
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  Email *
+                </label>
+
+                <input
+                  type="email"
+                  name="email"
+                  value={form.email}
+                  onChange={handleChange}
+                  placeholder="you@company.com"
+                  disabled={sending}
+                  autoComplete="email"
+                  className="
+                    w-full
+                    rounded-xl
+                    border
+                    border-slate-200
+                    bg-white
+                    px-3.5
+                    py-2.5
+                    text-sm
+                    text-slate-800
+                    outline-none
+                    transition
+                    placeholder:text-slate-400
+                    focus:border-indigo-500
+                    focus:ring-4
+                    focus:ring-indigo-500/10
+                    disabled:opacity-60
+                  "
+                />
+              </div>
+
+              {/* Phone + Company */}
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                    Phone *
+                  </label>
+
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={form.phone}
+                    onChange={handleChange}
+                    placeholder="9876543210"
+                    disabled={sending}
+                    autoComplete="tel"
+                    className="
+                      w-full
+                      rounded-xl
+                      border
+                      border-slate-200
+                      bg-white
+                      px-3.5
+                      py-2.5
+                      text-sm
+                      text-slate-800
+                      outline-none
+                      transition
+                      placeholder:text-slate-400
+                      focus:border-indigo-500
+                      focus:ring-4
+                      focus:ring-indigo-500/10
+                      disabled:opacity-60
+                    "
                   />
                 </div>
-              ))}
-            </div>
-          ) : (
-            <>
-              {/* Greeting */}
-              <div className="flex justify-start">
-                <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm">
-                  <p className="text-sm leading-relaxed text-slate-700">
-                    Hi! I'm the ReadyTech assistant. Ask me about the CRM &amp;
-                    ERP platform, pricing, a demo, or support.
-                  </p>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                    Company *
+                  </label>
+
+                  <input
+                    type="text"
+                    name="company"
+                    value={form.company}
+                    onChange={handleChange}
+                    placeholder="Company name"
+                    disabled={sending}
+                    autoComplete="organization"
+                    className="
+                      w-full
+                      rounded-xl
+                      border
+                      border-slate-200
+                      bg-white
+                      px-3.5
+                      py-2.5
+                      text-sm
+                      text-slate-800
+                      outline-none
+                      transition
+                      placeholder:text-slate-400
+                      focus:border-indigo-500
+                      focus:ring-4
+                      focus:ring-indigo-500/10
+                      disabled:opacity-60
+                    "
+                  />
                 </div>
               </div>
 
-              {messages.map((m) => {
-                const mine = m.role === "user";
-                return (
-                  <div
-                    key={m.id}
-                    className={mine ? "flex justify-end" : "flex justify-start"}
-                  >
-                    <div className="max-w-[85%]">
-                      <div
-                        className={`px-3.5 py-2.5 shadow-sm ${
-                          mine
-                            ? "rounded-2xl rounded-br-md bg-indigo-600 text-white"
-                            : "rounded-2xl rounded-bl-md border border-slate-200 bg-white text-slate-700"
-                        }`}
-                      >
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                          {m.text}
-                        </p>
-                      </div>
+              {/* Requirement */}
 
-                      <div
-                        className={`mt-1 flex items-center gap-1.5 px-1 ${
-                          mine ? "justify-end" : "justify-start"
-                        }`}
-                      >
-                        <span className="text-[10px] text-slate-400">
-                          {formatTime(m.createdAt)}
-                        </span>
-                        {m.source === "faq" && (
-                          <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-600">
-                            Instant
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  Requirement *
+                </label>
 
-              {/* Typing indicator */}
-              {sending && (
-                <div className="flex justify-start">
-                  <div className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                    <div className="flex items-center gap-1">
-                      {[0, 150, 300].map((delay) => (
-                        <span
-                          key={delay}
-                          style={{ animationDelay: `${delay}ms` }}
-                          className="w-2 h-2 rounded-full bg-slate-400 animate-bounce"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+                <select
+                  name="category"
+                  value={form.category}
+                  onChange={handleChange}
+                  disabled={sending}
+                  className="
+                    w-full
+                    rounded-xl
+                    border
+                    border-slate-200
+                    bg-white
+                    px-3.5
+                    py-2.5
+                    text-sm
+                    text-slate-800
+                    outline-none
+                    transition
+                    focus:border-indigo-500
+                    focus:ring-4
+                    focus:ring-indigo-500/10
+                    disabled:opacity-60
+                  "
+                >
+                  <option value="">
+                    Select your requirement
+                  </option>
 
-              {/* Suggested questions — only before the first exchange */}
-              {!messages.length && !sending && (
-                <div className="pt-2">
-                  <p className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    <Sparkles size={11} /> Suggested
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {suggestions.map((q) => (
-                      <button
-                        key={q}
-                        onClick={() => submit(q)}
-                        className="px-3 py-1.5 text-xs font-medium text-indigo-700 transition border border-indigo-100 rounded-full bg-indigo-50 hover:bg-indigo-100"
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
+                  {CATEGORIES.map((category) => (
+                    <option
+                      key={category}
+                      value={category}
+                    >
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Message */}
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  Message *
+                </label>
+
+                <textarea
+                  name="message"
+                  rows={4}
+                  value={form.message}
+                  onChange={handleChange}
+                  placeholder="Tell us how we can help..."
+                  disabled={sending}
+                  className="
+                    w-full
+                    resize-none
+                    rounded-xl
+                    border
+                    border-slate-200
+                    bg-white
+                    px-3.5
+                    py-2.5
+                    text-sm
+                    text-slate-800
+                    outline-none
+                    transition
+                    placeholder:text-slate-400
+                    focus:border-indigo-500
+                    focus:ring-4
+                    focus:ring-indigo-500/10
+                    disabled:opacity-60
+                  "
+                />
+              </div>
+
+              {/* Submit */}
+
+              <button
+                type="submit"
+                disabled={sending}
+                className="
+                  flex
+                  w-full
+                  items-center
+                  justify-center
+                  gap-2
+                  rounded-xl
+                  bg-indigo-600
+                  px-4
+                  py-3
+                  text-sm
+                  font-semibold
+                  text-white
+                  shadow-sm
+                  transition
+                  hover:bg-indigo-700
+                  active:scale-[0.99]
+                  disabled:cursor-not-allowed
+                  disabled:opacity-50
+                "
+              >
+                {sending ? (
+                  <>
+                    <span
+                      className="w-4 h-4 border-2 rounded-full  animate-spin border-white/30 border-t-white"
+                    />
+
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send size={16} />
+
+                    Submit Enquiry
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+
+          {/* ==================================================
+              AFTER SUCCESS
+          ================================================== */}
+
+          {success && (
+            <button
+              type="button"
+              onClick={() => {
+                setSuccess("");
+                setError("");
+              }}
+              className="w-full px-4 py-3 text-sm font-semibold text-indigo-700 transition border border-indigo-200  rounded-xl bg-indigo-50 hover:bg-indigo-100"
+            >
+              Submit Another Enquiry
+            </button>
           )}
         </div>
 
-        {/* ============ DEGRADED / ERROR ============ */}
-        {degraded && (
-          <div className="flex items-start gap-2 px-4 py-2 border-t border-amber-200 bg-amber-50 shrink-0">
-            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" />
-            <p className="text-[11px] leading-relaxed text-amber-800">
-              The AI assistant is temporarily unavailable — your message was
-              saved and the team will follow up.
-            </p>
-          </div>
-        )}
+        {/* ==================================================
+            FOOTER
+        ================================================== */}
 
-        {error && (
-          <div className="flex items-center gap-2 px-4 py-2 border-t border-rose-200 bg-rose-50 shrink-0">
-            <AlertTriangle size={13} className="shrink-0 text-rose-600" />
-            <p className="flex-1 text-[11px] text-rose-700">{error}</p>
-            <button
-              onClick={boot}
-              className="flex items-center gap-1 text-[11px] font-semibold text-rose-700 hover:underline"
-            >
-              <RefreshCw size={11} /> Retry
-            </button>
-          </div>
-        )}
-
-        {/* ============ INPUT ============ */}
-        <div className="px-3 py-3 bg-white border-t border-slate-200 shrink-0">
-          <div className="flex items-end gap-2">
-            <textarea
-              ref={inputRef}
-              rows={1}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKeyDown}
-              disabled={booting}
-              placeholder="Ask about pricing, a demo, or support…"
-              className="flex-1 max-h-28 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-60"
-            />
-
-            <button
-              onClick={() => submit()}
-              disabled={sending || booting || !input.trim()}
-              aria-label="Send message"
-              className="flex items-center justify-center w-10 h-10 text-white transition shrink-0 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Send size={16} />
-            </button>
-          </div>
-
-          <p className="mt-2 text-center text-[10px] text-slate-400">
-            AI-generated replies may be inaccurate. Press Enter to send.
+        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-2.5">
+          <p className="text-center text-[10px] text-slate-400">
+            Your enquiry will be securely sent to the ReadyTech team.
           </p>
         </div>
       </div>
