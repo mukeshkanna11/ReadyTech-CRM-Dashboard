@@ -748,7 +748,7 @@ const kpis = useMemo(() => {
 
       {/* Owner */}
       <td className="px-5 py-4">
-        {l.owner || "Admin"}
+       {l.owner?.name || "Admin"}
       </td>
 
       {/* Priority */}
