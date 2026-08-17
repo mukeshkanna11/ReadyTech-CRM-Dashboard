@@ -115,9 +115,30 @@ const LeadSchema = new Schema(
       required: true,
     },
 
+    
     // =========================
-    // LEAD STATUS
-    // =========================
+// LEAD STATUS
+// =========================
+status: {
+  type: String,
+  enum: [
+    "New",
+    "Contacted",
+    "Qualified",
+    "Proposal",
+    "Negotiation",
+    "Won",
+    "Lost",
+    "Closed",
+  ],
+  default: "New",
+},
+
+// =========================
+// STATUS HISTORY
+// =========================
+statusHistory: [
+  {
     status: {
       type: String,
       enum: [
@@ -130,8 +151,21 @@ const LeadSchema = new Schema(
         "Lost",
         "Closed",
       ],
-      default: "New",
+      required: true,
     },
+
+    changedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    changedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+],
 
     // =========================
     // PRIORITY
@@ -170,13 +204,25 @@ const LeadSchema = new Schema(
       min: 0,
     },
 
-    // =========================
-    // FOLLOW-UP
-    // =========================
-    followUpDate: {
-      type: Date,
-      default: null,
-    },
+  
+// =========================
+// FOLLOW-UP / CONTACT
+// =========================
+
+followUpDate: {
+  type: Date,
+  default: null,
+},
+
+lastContactedAt: {
+  type: Date,
+  default: null,
+},
+
+nextFollowUpAt: {
+  type: Date,
+  default: null,
+},
 
     // =========================
     // DEPARTMENT

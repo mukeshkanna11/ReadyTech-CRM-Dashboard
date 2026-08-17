@@ -22,6 +22,12 @@ const auditLogSchema = new mongoose.Schema(
         "ASSIGN",
         "APPROVE",
         "REJECT",
+
+        // Activity Actions
+        "CREATE_ACTIVITY",
+        "UPDATE_ACTIVITY",
+        "DELETE_ACTIVITY",
+        "COMPLETE_ACTIVITY",
       ],
       required: true,
     },

@@ -1,4 +1,7 @@
+import mongoose from "mongoose";
 import Lead from "../models/Lead.js";
+import Activity from "../models/Activity.js";
+import User from "../models/User.js";
 import AuditLog from "../models/AuditLog.js";
 import Opportunity from "../models/Opportunity.js";
 import {
@@ -11,17 +14,28 @@ import {
 export const createLead = async (req, res) => {
   try {
     const {
-      name,
-      email,
-      phone,
-      company,
-      source,
-      status,
-      priority,
-      value,
-      department,
-      notes,
-    } = req.body;
+  name,
+  designation,
+  email,
+  phone,
+  company,
+  industry,
+  website,
+  companySize,
+  requirement,
+  message,
+  source,
+  status,
+  priority,
+  assignedTo,
+  value,
+  expectedValue,
+  followUpDate,
+lastContactedAt,
+nextFollowUpAt,
+  department,
+  notes,
+}  = req.body;
 
     // Validation
     if (!name || !name.trim()) {
@@ -32,34 +46,77 @@ export const createLead = async (req, res) => {
     }
 
     const lead = new Lead({
-      name: name.trim(),
-      email: email?.trim() || "",
-      phone: phone?.trim() || "",
-      company: company?.trim() || "",
-      source: source || "Website",
-      status: status || "New",
-      priority: priority || "Medium",
-      value: Number(value || 0),
-      department: department || "Sales",
-      notes: notes?.trim() || "",
+  // Personal Information
+  name: name.trim(),
+  designation: designation?.trim() || "",
+  email: email?.trim().toLowerCase() || "",
+  phone: phone?.trim() || "",
 
-      // Logged-in user becomes owner
-      owner: req.user._id,
+  // Company Information
+  company: company?.trim() || "",
+  industry: industry?.trim() || "",
+  website: website?.trim() || "",
+  companySize: companySize || "",
 
-      // Conversion fields
-      isConverted: false,
-      convertedAt: null,
-      convertedOpportunity: null,
-    });
+  // Enquiry Information
+  requirement: requirement?.trim() || "",
+  message: message?.trim() || "",
 
+  // Lead Source
+  source: source || "Website",
+
+  // Lead Status
+  status: status || "New",
+
+  statusHistory: [
+  {
+    status: status || "New",
+    changedBy: req.user._id,
+    changedAt: new Date(),
+  },
+],
+  // Priority
+  priority: priority || "Medium",
+
+  // Assignment
+  assignedTo: assignedTo?.trim() || "",
+
+  // Sales Information
+  value: Number(value || 0),
+  expectedValue: Number(expectedValue || 0),
+
+  // Follow-up
+  followUpDate: followUpDate || null,
+
+  // Department
+  department: department || "Sales",
+
+  // Notes
+  notes: notes?.trim() || "",
+
+  // Owner
+  owner: req.user._id,
+
+  // Conversion
+  isConverted: false,
+  convertedAt: null,
+  convertedOpportunity: null,
+});
     await lead.save();
 
-    await AuditLog.create({
-      userId: req.user._id,
-      action: "create_lead",
-      target: lead._id,
-      newValue: lead,
-    });
+   await AuditLog.create({
+  user: req.user._id,
+  action: "CREATE",
+  entity: "Lead",
+  entityId: lead._id,
+  description: "Created a new lead",
+  target: lead.name,
+  meta: {
+    lead: lead._id,
+    source: lead.source,
+    status: lead.status,
+  },
+});
 
     const populatedLead = await Lead.findById(lead._id).populate(
       "owner",
@@ -88,13 +145,26 @@ export const createLead = async (req, res) => {
 export const createPublicLead = async (req, res) => {
   try {
     const {
-      name,
-      email,
-      phone,
-      company,
-      requirement,
-      message,
-    } = req.body;
+  name,
+  designation,
+  email,
+  phone,
+  company,
+  industry,
+  website,
+  companySize,
+  requirement,
+  message,
+  source,
+  status,
+  priority,
+  assignedTo,
+  value,
+  expectedValue,
+  followUpDate,
+  department,
+  notes,
+} = req.body;
 
     /* =====================================================
        VALIDATION
@@ -149,7 +219,17 @@ export const createPublicLead = async (req, res) => {
       source: "Website",
 
       status: "New",
+status: "New",
 
+statusHistory: [
+  {
+    status: "New",
+    changedBy: defaultOwner._id,
+    changedAt: new Date(),
+  },
+],
+
+priority: "Medium",
       priority: "Medium",
 
       value: 0,
@@ -178,15 +258,18 @@ export const createPublicLead = async (req, res) => {
     ===================================================== */
 
     await AuditLog.create({
-      userId: defaultOwner._id,
-
-      action: "create_public_lead",
-
-      target: lead._id,
-
-      newValue: lead,
-    });
-
+  user: defaultOwner._id,
+  action: "CREATE",
+  entity: "Lead",
+  entityId: lead._id,
+  description: "Created a new public lead from website",
+  target: lead.name,
+  meta: {
+    lead: lead._id,
+    source: "Website",
+    email: lead.email,
+  },
+});
     /* =====================================================
        POPULATE
     ===================================================== */
@@ -333,64 +416,114 @@ export const updateLead = async (req, res) => {
     }
 
     // Keep audit old value
-    const oldValue = existingLead.toObject();
+   const oldValue = existingLead.toObject();
 
-    /*
-      Only update allowed Lead fields.
-      This prevents accidental modification of owner/conversion
-      fields from frontend payload.
-    */
-    const allowedFields = [
-      "name",
-      "email",
-      "phone",
-      "company",
-      "source",
-      "status",
-      "priority",
-      "value",
-      "department",
-      "notes",
-    ];
+const oldStatus = existingLead.status;
 
-    allowedFields.forEach((field) => {
-      if (req.body[field] !== undefined) {
-        existingLead[field] = req.body[field];
-      }
-    });
+const allowedFields = [
+  "name",
+  "designation",
+  "email",
+  "phone",
+  "company",
+  "industry",
+  "website",
+  "companySize",
+  "requirement",
+  "message",
+  "source",
+  "status",
+  "priority",
+  "assignedTo",
+  "value",
+  "expectedValue",
+  "followUpDate",
+  "department",
+  "notes",
+];
+
+allowedFields.forEach((field) => {
+  if (req.body[field] !== undefined) {
+    existingLead[field] = req.body[field];
+  }
+});
+
+if (
+  req.body.status !== undefined &&
+  req.body.status !== oldStatus
+) {
+  existingLead.statusHistory.push({
+    status: req.body.status,
+    changedBy: req.user._id,
+    changedAt: new Date(),
+  });
+}
 
     // Normalize values
-    if (existingLead.name) {
-      existingLead.name = existingLead.name.trim();
-    }
+   if (existingLead.name) {
+  existingLead.name = existingLead.name.trim();
+}
 
-    if (existingLead.email) {
-      existingLead.email = existingLead.email.trim().toLowerCase();
-    }
+if (existingLead.designation) {
+  existingLead.designation = existingLead.designation.trim();
+}
 
-    if (existingLead.phone) {
-      existingLead.phone = existingLead.phone.trim();
-    }
+if (existingLead.email) {
+  existingLead.email = existingLead.email.trim().toLowerCase();
+}
 
-    if (existingLead.company) {
-      existingLead.company = existingLead.company.trim();
-    }
+if (existingLead.phone) {
+  existingLead.phone = existingLead.phone.trim();
+}
 
-    if (existingLead.notes) {
-      existingLead.notes = existingLead.notes.trim();
-    }
+if (existingLead.company) {
+  existingLead.company = existingLead.company.trim();
+}
 
-    existingLead.value = Number(existingLead.value || 0);
+if (existingLead.industry) {
+  existingLead.industry = existingLead.industry.trim();
+}
+
+if (existingLead.website) {
+  existingLead.website = existingLead.website.trim();
+}
+
+if (existingLead.requirement) {
+  existingLead.requirement = existingLead.requirement.trim();
+}
+
+if (existingLead.message) {
+  existingLead.message = existingLead.message.trim();
+}
+
+if (existingLead.assignedTo) {
+  existingLead.assignedTo = existingLead.assignedTo.trim();
+}
+
+if (existingLead.notes) {
+  existingLead.notes = existingLead.notes.trim();
+}
+
+existingLead.value = Number(existingLead.value || 0);
+
+existingLead.expectedValue = Number(
+  existingLead.expectedValue || 0
+);
 
     await existingLead.save();
 
     await AuditLog.create({
-      userId: req.user._id,
-      action: "update_lead",
-      target: existingLead._id,
-      oldValue,
-      newValue: existingLead,
-    });
+  user: req.user._id,
+  action: "UPDATE",
+  entity: "Lead",
+  entityId: existingLead._id,
+  description: `Updated lead ${existingLead.name}`,
+  target: existingLead.name,
+  meta: {
+    oldValue,
+    newValue: existingLead.toObject(),
+  },
+});
 
     const populatedLead = await Lead.findById(existingLead._id)
       .populate("owner", "name email")
@@ -430,12 +563,17 @@ export const deleteLead = async (req, res) => {
 
     await Lead.findByIdAndDelete(req.params.id);
 
-    await AuditLog.create({
-      userId: req.user._id,
-      action: "delete_lead",
-      target: lead._id,
-      oldValue,
-    });
+   await AuditLog.create({
+  user: req.user._id,
+  action: "DELETE",
+  entity: "Lead",
+  entityId: lead._id,
+  description: `Deleted lead ${lead.name}`,
+  target: lead.name,
+  meta: {
+    oldValue,
+  },
+});
 
     return res.status(200).json({
       success: true,
@@ -507,25 +645,48 @@ export const convertLead = async (req, res) => {
       owner: req.user._id,
     });
 
+
+    const oldValue = {
+  status: lead.status,
+  isConverted: lead.isConverted,
+  convertedAt: lead.convertedAt,
+  convertedOpportunity: lead.convertedOpportunity,
+};
+
     // Update lead conversion details
     lead.status = "Won";
-    lead.isConverted = true;
-    lead.convertedAt = new Date();
-    lead.convertedOpportunity = opportunity._id;
 
-    await lead.save();
+lead.statusHistory.push({
+  status: "Won",
+  changedBy: req.user._id,
+  changedAt: new Date(),
+});
 
-    // Audit conversion
-    await AuditLog.create({
-      userId: req.user._id,
-      action: "convert_lead",
-      target: lead._id,
-      oldValue: {
-        status: lead.status,
-        isConverted: false,
-      },
-      newValue: opportunity,
-    });
+lead.isConverted = true;
+lead.convertedAt = new Date();
+lead.convertedOpportunity = opportunity._id;
+
+await lead.save();
+
+// Audit conversion
+await AuditLog.create({
+  user: req.user._id,
+  action: "CONVERT",
+  entity: "Lead",
+  entityId: lead._id,
+  description: `Converted lead ${lead.name} into opportunity`,
+  target: lead.name,
+  meta: {
+    oldValue,
+    newValue: {
+      status: lead.status,
+      isConverted: lead.isConverted,
+      convertedAt: lead.convertedAt,
+      convertedOpportunity: opportunity._id,
+    },
+    opportunityId: opportunity._id,
+  },
+});
 
     const updatedLead = await Lead.findById(lead._id)
       .populate("owner", "name email")
@@ -543,6 +704,107 @@ export const convertLead = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to convert lead",
+    });
+  }
+};
+
+/* =========================================================
+   GET LEAD TIMELINE
+========================================================= */
+export const getLeadTimeline = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid lead ID",
+      });
+    }
+
+    const lead = await Lead.findById(id)
+      .populate(
+        "owner",
+        "name email"
+      )
+      .populate(
+        "statusHistory.changedBy",
+        "name email"
+      )
+      .populate(
+        "convertedOpportunity"
+      );
+
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found",
+      });
+    }
+
+    const activities = await Activity.find({
+      lead: id,
+    })
+      .populate(
+        "assignedTo",
+        "name email"
+      )
+      .populate(
+        "createdBy",
+        "name email"
+      )
+      .sort({
+        createdAt: -1,
+      });
+
+    return res.status(200).json({
+      success: true,
+
+      lead: {
+        _id: lead._id,
+        name: lead.name,
+        email: lead.email,
+        phone: lead.phone,
+        company: lead.company,
+        status: lead.status,
+        priority: lead.priority,
+        owner: lead.owner,
+      },
+
+      statusHistory: lead.statusHistory,
+
+      activities,
+
+      timeline: [
+        ...lead.statusHistory.map((item) => ({
+          type: "STATUS_CHANGE",
+          title: `Status changed to ${item.status}`,
+          date: item.changedAt,
+          user: item.changedBy,
+        })),
+
+        ...activities.map((activity) => ({
+          type: "ACTIVITY",
+          title: `${activity.type} activity`,
+          date: activity.createdAt,
+          activity,
+        })),
+      ].sort(
+        (a, b) =>
+          new Date(b.date) -
+          new Date(a.date)
+      ),
+    });
+  } catch (error) {
+    console.error(
+      "GET LEAD TIMELINE ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to fetch lead timeline",
     });
   }
 };
