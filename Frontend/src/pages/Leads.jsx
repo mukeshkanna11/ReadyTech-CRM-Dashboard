@@ -237,26 +237,19 @@ const fetchLeads = async () => {
 
     const res = await API.get("/leads?limit=1000");
 
+    console.log("LEADS API RESPONSE:", res.data);
+
     const data = Array.isArray(res.data)
       ? res.data
       : res.data?.data || [];
 
-    setLeads(data);
+    console.log("FIRST LEAD:", data[0]);
+    console.log("ASSIGNED TO:", data[0]?.assignedTo);
 
+    setLeads(data);
   } catch (err) {
     console.error("FETCH LEADS ERROR:", err);
-
-    setError(
-      "We couldn't load your leads. Please check your connection and try again."
-    );
-
-    toast.error(
-      err?.response?.data?.message ||
-      "Failed to load leads"
-    );
-
     setLeads([]);
-
   } finally {
     setLoading(false);
   }
@@ -1398,7 +1391,17 @@ const fetchActivities = async (leadId) => {
                   <th className="hidden px-6 py-3.5 text-xs font-semibold tracking-wider text-left uppercase sm:table-cell">
                     Source
                   </th>
+<th className="hidden px-6 py-3.5 text-xs font-semibold tracking-wider text-left uppercase lg:table-cell">
+  Assigned To
+</th>
 
+<th className="hidden px-6 py-3.5 text-xs font-semibold tracking-wider text-left uppercase xl:table-cell">
+  Follow-up
+</th>
+
+<th className="hidden px-6 py-3.5 text-xs font-semibold tracking-wider text-left uppercase xl:table-cell">
+  Expected Value
+</th>
                   <th className="hidden px-6 py-3.5 text-xs font-semibold tracking-wider text-left uppercase xl:table-cell">
                     Deal Value
                   </th>
@@ -1591,6 +1594,80 @@ const fetchActivities = async (leadId) => {
 
                         </td>
 
+                        {/* ASSIGNED TO */}
+<td className="hidden px-6 py-4 lg:table-cell">
+  <div className="flex items-center gap-2">
+
+    <div className="flex items-center justify-center w-8 h-8 text-xs font-semibold text-indigo-600 rounded-full bg-indigo-50">
+      {(lead.owner?.name || "U")
+        .charAt(0)
+        .toUpperCase()}
+    </div>
+
+    <div className="min-w-0">
+      <div className="text-xs font-semibold truncate text-slate-700">
+        {lead.owner?.name || "Unassigned"}
+      </div>
+
+      {lead.owner?.email && (
+        <div className="text-[11px] truncate text-slate-400">
+          {lead.owner.email}
+        </div>
+      )}
+    </div>
+
+  </div>
+</td>
+{/* FOLLOW-UP */}
+<td className="hidden px-6 py-4 xl:table-cell">
+
+  <div className="space-y-1.5">
+
+    {lead.followUpDate ? (
+      <div className="flex items-center gap-2 text-xs font-semibold text-violet-600">
+        <CalendarClock size={13} />
+
+        <span>
+          Follow-up:{" "}
+          {new Date(
+            lead.followUpDate
+          ).toLocaleDateString("en-IN")}
+        </span>
+      </div>
+    ) : (
+      <div className="text-xs text-slate-400">
+        No follow-up date
+      </div>
+    )}
+
+    {lead.nextFollowUpAt && (
+      <div className="text-[11px] text-slate-500">
+        Next:{" "}
+        {new Date(
+          lead.nextFollowUpAt
+        ).toLocaleString("en-IN", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })}
+      </div>
+    )}
+
+    {lead.lastContactedAt && (
+      <div className="text-[11px] text-slate-400">
+        Last contacted:{" "}
+        {new Date(
+          lead.lastContactedAt
+        ).toLocaleString("en-IN", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })}
+      </div>
+    )}
+
+  </div>
+
+</td>
+
                         {/* VALUE */}
 
                         <td className="hidden px-6 py-4 xl:table-cell">
@@ -1608,6 +1685,18 @@ const fetchActivities = async (leadId) => {
                           </span>
 
                         </td>
+
+{/* EXPECTED VALUE */}
+<td className="hidden px-6 py-4 xl:table-cell">
+
+  <span className="font-semibold text-indigo-600">
+    ₹
+    {Number(
+      lead.expectedValue || 0
+    ).toLocaleString("en-IN")}
+  </span>
+
+</td>
 
                         {/* CREATED */}
 
