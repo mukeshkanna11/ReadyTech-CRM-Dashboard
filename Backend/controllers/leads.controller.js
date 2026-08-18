@@ -405,7 +405,10 @@ export const updateLead = async (req, res) => {
   try {
     const leadId = req.params.id;
 
-    // Check existing lead
+    // =====================================================
+    // 1. FIND EXISTING LEAD
+    // =====================================================
+
     const existingLead = await Lead.findById(leadId);
 
     if (!existingLead) {
@@ -415,135 +418,230 @@ export const updateLead = async (req, res) => {
       });
     }
 
-    // Keep audit old value
-   const oldValue = existingLead.toObject();
+    // =====================================================
+    // 2. KEEP OLD VALUES FOR AUDIT
+    // =====================================================
 
-const oldStatus = existingLead.status;
+    const oldValue = existingLead.toObject();
+    const oldStatus = existingLead.status;
 
-const allowedFields = [
-  "name",
-  "designation",
-  "email",
-  "phone",
-  "company",
-  "industry",
-  "website",
-  "companySize",
-  "requirement",
-  "message",
-  "source",
-  "status",
-  "priority",
-  "assignedTo",
-  "value",
-  "expectedValue",
-  "followUpDate",
-  "department",
-  "notes",
-];
+    // =====================================================
+    // 3. ALLOWED FIELDS
+    // =====================================================
 
-allowedFields.forEach((field) => {
-  if (req.body[field] !== undefined) {
-    existingLead[field] = req.body[field];
-  }
-});
+    const allowedFields = [
+      "name",
+      "designation",
+      "email",
+      "phone",
+      "company",
+      "industry",
+      "website",
+      "companySize",
+      "requirement",
+      "message",
+      "source",
+      "status",
+      "priority",
+      "assignedTo",
+      "value",
+      "expectedValue",
+      "followUpDate",
+      "department",
+      "notes",
+    ];
 
-if (
-  req.body.status !== undefined &&
-  req.body.status !== oldStatus
-) {
-  existingLead.statusHistory.push({
-    status: req.body.status,
-    changedBy: req.user._id,
-    changedAt: new Date(),
-  });
-}
+    // =====================================================
+    // 4. UPDATE ALLOWED FIELDS
+    // =====================================================
 
-    // Normalize values
-   if (existingLead.name) {
-  existingLead.name = existingLead.name.trim();
-}
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        existingLead[field] = req.body[field];
+      }
+    });
 
-if (existingLead.designation) {
-  existingLead.designation = existingLead.designation.trim();
-}
+    // =====================================================
+    // 5. STATUS HISTORY
+    // =====================================================
 
-if (existingLead.email) {
-  existingLead.email = existingLead.email.trim().toLowerCase();
-}
+    if (
+      req.body.status !== undefined &&
+      req.body.status !== oldStatus
+    ) {
+      existingLead.statusHistory.push({
+        status: req.body.status,
+        changedBy: req.user._id,
+        changedAt: new Date(),
+      });
+    }
 
-if (existingLead.phone) {
-  existingLead.phone = existingLead.phone.trim();
-}
+    // =====================================================
+    // 6. NORMALIZE STRING FIELDS
+    // =====================================================
 
-if (existingLead.company) {
-  existingLead.company = existingLead.company.trim();
-}
+    const stringFields = [
+      "name",
+      "designation",
+      "email",
+      "phone",
+      "company",
+      "industry",
+      "website",
+      "companySize",
+      "requirement",
+      "message",
+      "source",
+      "priority",
+      "department",
+      "notes",
+    ];
 
-if (existingLead.industry) {
-  existingLead.industry = existingLead.industry.trim();
-}
+    stringFields.forEach((field) => {
+      if (
+        existingLead[field] !== undefined &&
+        existingLead[field] !== null
+      ) {
+        existingLead[field] =
+          String(existingLead[field]).trim();
+      }
+    });
 
-if (existingLead.website) {
-  existingLead.website = existingLead.website.trim();
-}
+    // =====================================================
+    // 7. NORMALIZE EMAIL
+    // =====================================================
 
-if (existingLead.requirement) {
-  existingLead.requirement = existingLead.requirement.trim();
-}
+    if (existingLead.email) {
+      existingLead.email =
+        existingLead.email.toLowerCase();
+    }
 
-if (existingLead.message) {
-  existingLead.message = existingLead.message.trim();
-}
+    // =====================================================
+    // 8. ASSIGNED USER ID
+    // assignedTo is String in schema
+    // =====================================================
 
-if (existingLead.assignedTo) {
-  existingLead.assignedTo = existingLead.assignedTo.trim();
-}
+    if (
+      existingLead.assignedTo !== undefined &&
+      existingLead.assignedTo !== null
+    ) {
+      existingLead.assignedTo =
+        String(existingLead.assignedTo).trim();
+    }
 
-if (existingLead.notes) {
-  existingLead.notes = existingLead.notes.trim();
-}
+    // =====================================================
+    // 9. NORMALIZE NUMBERS
+    // =====================================================
 
-existingLead.value = Number(existingLead.value || 0);
+    existingLead.value = Number(
+      existingLead.value || 0
+    );
 
-existingLead.expectedValue = Number(
-  existingLead.expectedValue || 0
-);
+    existingLead.expectedValue = Number(
+      existingLead.expectedValue || 0
+    );
+
+    // =====================================================
+    // 10. SAVE LEAD
+    // =====================================================
+
+    console.log(
+      "UPDATE: saving lead..."
+    );
+
+    console.log(
+      "UPDATE: assignedTo:",
+      existingLead.assignedTo
+    );
 
     await existingLead.save();
 
-    await AuditLog.create({
-  user: req.user._id,
-  action: "UPDATE",
-  entity: "Lead",
-  entityId: existingLead._id,
-  description: `Updated lead ${existingLead.name}`,
-  target: existingLead.name,
-  meta: {
-    oldValue,
-    newValue: existingLead.toObject(),
-  },
-});
+    console.log(
+      "UPDATE: lead saved:",
+      existingLead._id
+    );
 
-    const populatedLead = await Lead.findById(existingLead._id)
+    // =====================================================
+    // 11. AUDIT LOG
+    // Audit failure should NOT break lead update
+    // =====================================================
+
+    try {
+      console.log(
+        "UPDATE: creating audit log..."
+      );
+
+      await AuditLog.create({
+        user: req.user._id,
+        action: "UPDATE",
+        entity: "Lead",
+        entityId: existingLead._id,
+        description: `Updated lead ${existingLead.name}`,
+        target: existingLead.name,
+        meta: {
+          oldValue,
+          newValue: existingLead.toObject(),
+        },
+      });
+
+      console.log(
+        "UPDATE: audit log created"
+      );
+    } catch (auditError) {
+      console.error(
+        "AUDIT LOG ERROR:",
+        auditError
+      );
+    }
+
+    // =====================================================
+    // 12. FETCH UPDATED LEAD
+    // IMPORTANT:
+    // assignedTo is String, so DO NOT populate assignedTo
+    // =====================================================
+
+    console.log(
+      "UPDATE: fetching updated lead..."
+    );
+
+    const populatedLead = await Lead.findById(
+      existingLead._id
+    )
       .populate("owner", "name email")
       .populate("convertedOpportunity");
+
+    console.log(
+      "UPDATE: updated lead fetched"
+    );
+
+    // =====================================================
+    // 13. SUCCESS RESPONSE
+    // =====================================================
 
     return res.status(200).json({
       success: true,
       message: "Lead updated successfully",
       lead: populatedLead,
     });
+
   } catch (error) {
-    console.error("UPDATE LEAD ERROR:", error);
+    // =====================================================
+    // ERROR HANDLER
+    // =====================================================
+
+    console.error(
+      "UPDATE LEAD ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to update lead",
+      message:
+        error.message ||
+        "Failed to update lead",
     });
   }
 };
-
 /* =========================================================
    DELETE LEAD
 ========================================================= */

@@ -315,7 +315,7 @@ const saveLead = async (e) => {
       toast.error("Lead name is required");
       return;
     }
-
+console.log("FORM ASSIGNED TO:", form.assignedTo);
    const payload = {
   name: form.name?.trim() || "",
   designation: form.designation?.trim() || "",
@@ -343,7 +343,7 @@ const saveLead = async (e) => {
   department: form.department || "Sales",
   notes: form.notes?.trim() || "",
 };
-
+console.log("PAYLOAD ASSIGNED TO:", payload.assignedTo);
     console.log("LEAD PAYLOAD:", payload);
 
     let response;
@@ -1598,23 +1598,38 @@ const fetchActivities = async (leadId) => {
 <td className="hidden px-6 py-4 lg:table-cell">
   <div className="flex items-center gap-2">
 
-    <div className="flex items-center justify-center w-8 h-8 text-xs font-semibold text-indigo-600 rounded-full bg-indigo-50">
-      {(lead.owner?.name || "U")
-        .charAt(0)
-        .toUpperCase()}
-    </div>
+    {(() => {
+      const assignedUser = users.find(
+        (user) =>
+          String(user._id) === String(lead.assignedTo)
+      );
 
-    <div className="min-w-0">
-      <div className="text-xs font-semibold truncate text-slate-700">
-        {lead.owner?.name || "Unassigned"}
-      </div>
+      const userName =
+        assignedUser?.name || "Unassigned";
 
-      {lead.owner?.email && (
-        <div className="text-[11px] truncate text-slate-400">
-          {lead.owner.email}
-        </div>
-      )}
-    </div>
+      const userEmail =
+        assignedUser?.email || "";
+
+      return (
+        <>
+          <div className="flex items-center justify-center w-8 h-8 text-xs font-semibold text-indigo-600 rounded-full bg-indigo-50">
+            {userName.charAt(0).toUpperCase()}
+          </div>
+
+          <div className="min-w-0">
+            <div className="text-xs font-semibold truncate text-slate-700">
+              {userName}
+            </div>
+
+            {userEmail && (
+              <div className="text-[11px] truncate text-slate-400">
+                {userEmail}
+              </div>
+            )}
+          </div>
+        </>
+      );
+    })()}
 
   </div>
 </td>
@@ -2703,16 +2718,18 @@ const fetchActivities = async (leadId) => {
     </div>
 
     <select
-      value={form.assignedTo || ""}
-      onChange={(e) =>
-        setForm({
-          ...form,
-          assignedTo: e.target.value,
-        })
-      }
-      disabled={usersLoading}
-      className="w-full h-12 pr-10 text-sm font-medium bg-white border outline-none appearance-none cursor-pointer pl-14 border-slate-200 rounded-xl text-slate-800 hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
-    >
+  value={form.assignedTo || ""}
+  onChange={(e) => {
+    console.log("SELECTED USER ID:", e.target.value);
+
+    setForm({
+      ...form,
+      assignedTo: e.target.value,
+    });
+  }}
+  disabled={usersLoading}
+  className="w-full h-12 pr-10 text-sm font-medium bg-white border outline-none appearance-none cursor-pointer pl-14 border-slate-200 rounded-xl text-slate-800 hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+>
 
       <option value="">
         {usersLoading
