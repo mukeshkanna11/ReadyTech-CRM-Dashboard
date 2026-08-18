@@ -26,21 +26,18 @@ import {
   Target,
   Globe,
   Briefcase,
+  Clock3,
+  ClipboardList,
   Flag,
   IndianRupee,
   Download,
   Upload,
-} from "lucide-react";
-import {
-
+  AlertTriangle,
   BarChart3,
-
   Megaphone,
-
   Zap,
-
-
 } from "lucide-react";
+
 import LeadAIAssistant from "../components/LeadAIAssistant";
 
 const PAGE_SIZE = 8;
@@ -51,17 +48,30 @@ const PAGE_SIZE = 8;
 
 const EMPTY_FORM = {
   name: "",
+  designation: "",
   email: "",
   phone: "",
+
   company: "",
+  industry: "",
+  website: "",
+  companySize: "",
+
+  requirement: "",
+  message: "",
 
   status: "New",
-
   source: "Website",
-
   priority: "Medium",
 
+  assignedTo: "",
+
   value: "",
+  expectedValue: "",
+
+  followUpDate: "",
+  lastContactedAt: "",
+  nextFollowUpAt: "",
 
   department: "Sales",
 
@@ -209,147 +219,206 @@ export default function Leads() {
   const [page, setPage] =
     useState(1);
 
+const [activities, setActivities] = useState([]);
+const [activitiesLoading, setActivitiesLoading] = useState(false);
+
+const [users, setUsers] = useState([]);
+const [usersLoading, setUsersLoading] = useState(false);
+
+
+/* =========================================================
+   FETCH LEADS
+========================================================= */
+
+const fetchLeads = async () => {
+  try {
+    setLoading(true);
+    setError("");
+
+    const res = await API.get("/leads?limit=1000");
+
+    const data = Array.isArray(res.data)
+      ? res.data
+      : res.data?.data || [];
+
+    setLeads(data);
+
+  } catch (err) {
+    console.error("FETCH LEADS ERROR:", err);
+
+    setError(
+      "We couldn't load your leads. Please check your connection and try again."
+    );
+
+    toast.error(
+      err?.response?.data?.message ||
+      "Failed to load leads"
+    );
+
+    setLeads([]);
+
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+/* =========================================================
+   FETCH USERS
+========================================================= */
+
+const fetchUsers = async () => {
+  try {
+    setUsersLoading(true);
+
+    const res = await API.get("/admin/users");
+
+    console.log("USERS RESPONSE:", res.data);
+
+    const data =
+      res.data?.users ||
+      res.data?.data ||
+      (Array.isArray(res.data) ? res.data : []);
+
+    setUsers(data);
+
+  } catch (err) {
+    console.error("FETCH USERS ERROR:", err);
+    console.error("STATUS:", err?.response?.status);
+    console.error("ERROR DATA:", err?.response?.data);
+
+    toast.error(
+      err?.response?.data?.message ||
+      "Failed to load users"
+    );
+
+    setUsers([]);
+
+  } finally {
+    setUsersLoading(false);
+  }
+};
+
+
+/* =========================================================
+   INITIAL LOAD
+========================================================= */
+
+useEffect(() => {
+  fetchLeads();
+  fetchUsers();
+}, []);
+
 
   /* =========================================================
-     FETCH LEADS
-  ========================================================= */
+   SAVE LEAD
+========================================================= */
 
-  const fetchLeads = async () => {
-    try {
-      setLoading(true);
-      setError("");
+const saveLead = async (e) => {
+  e.preventDefault();
 
-      const res = await API.get(
-        "/leads?limit=1000"
-      );
-
-      const data = Array.isArray(res.data)
-        ? res.data
-        : res.data?.data || [];
-
-      setLeads(data);
-    } catch (err) {
-      console.error(
-        "FETCH LEADS ERROR:",
-        err
-      );
-
-      setError(
-        "We couldn't load your leads. Please check your connection and try again."
-      );
-
-      toast.error(
-        err?.response?.data?.message ||
-          "Failed to load leads"
-      );
-
-      setLeads([]);
-    } finally {
-      setLoading(false);
+  try {
+    if (!form.name?.trim()) {
+      toast.error("Lead name is required");
+      return;
     }
-  };
 
-  useEffect(() => {
-    fetchLeads();
-  }, []);
+   const payload = {
+  name: form.name?.trim() || "",
+  designation: form.designation?.trim() || "",
+  email: form.email?.trim() || "",
+  phone: form.phone?.trim() || "",
+  company: form.company?.trim() || "",
+  industry: form.industry?.trim() || "",
+  website: form.website?.trim() || "",
+  companySize: form.companySize || "",
+  requirement: form.requirement?.trim() || "",
+  message: form.message?.trim() || "",
 
-  /* =========================================================
-     SAVE LEAD
-  ========================================================= */
+  status: form.status || "New",
+  source: form.source || "Website",
+  priority: form.priority || "Medium",
+  assignedTo: form.assignedTo || "",
 
-  const saveLead = async (e) => {
-    e.preventDefault();
+  value: Number(form.value || 0),
+  expectedValue: Number(form.expectedValue || 0),
 
-    try {
-      if (!form.name?.trim()) {
-        toast.error("Lead name is required");
-        return;
-      }
+  followUpDate: form.followUpDate || null,
+  lastContactedAt: form.lastContactedAt || null,
+  nextFollowUpAt: form.nextFollowUpAt || null,
 
-      /*
-       * IMPORTANT:
-       * Payload contains ONLY backend LeadSchema fields.
-       *
-       * owner is intentionally NOT sent here.
-       * Backend controller should use req.user._id.
-       */
+  department: form.department || "Sales",
+  notes: form.notes?.trim() || "",
+};
 
-      const payload = {
-        name: form.name.trim(),
+    console.log("LEAD PAYLOAD:", payload);
 
-        email:
-          form.email?.trim() || "",
+    let response;
 
-        phone:
-          form.phone?.trim() || "",
-
-        company:
-          form.company?.trim() || "",
-
-        status:
-          form.status || "New",
-
-        source:
-          form.source || "Website",
-
-        priority:
-          form.priority || "Medium",
-
-        value:
-          Number(form.value || 0),
-
-        department:
-          form.department || "Sales",
-
-        notes:
-          form.notes?.trim() || "",
-      };
-
-      console.log(
-        "LEAD PAYLOAD:",
+    // =========================
+    // UPDATE LEAD
+    // =========================
+    if (form._id) {
+      response = await API.put(
+        `/leads/${form._id}`,
         payload
       );
 
-      if (form._id) {
-        await API.put(
-          `/leads/${form._id}`,
-          payload
-        );
-
-        toast.success(
-          "Lead updated successfully"
-        );
-      } else {
-        await API.post(
-          "/leads",
-          payload
-        );
-
-        toast.success(
-          "Lead created successfully"
-        );
-      }
-
-      setDrawerOpen(false);
-
-      setForm({
-        ...EMPTY_FORM,
-      });
-
-      await fetchLeads();
-    } catch (err) {
-      console.error(
-        "SAVE LEAD ERROR:",
-        err
+      console.log(
+        "UPDATE LEAD RESPONSE:",
+        response.data
       );
 
-      toast.error(
-        err?.response?.data?.message ||
-          err?.response?.data?.error ||
-          "Failed to save lead"
+      toast.success(
+        response?.data?.message ||
+        "Lead updated successfully"
+      );
+
+    // =========================
+    // CREATE LEAD
+    // =========================
+    } else {
+      response = await API.post(
+        "/leads",
+        payload
+      );
+
+      console.log(
+        "CREATE LEAD RESPONSE:",
+        response.data
+      );
+
+      toast.success(
+        response?.data?.message ||
+        "Lead created successfully"
       );
     }
-  };
+
+    // =========================
+    // SUCCESS
+    // =========================
+
+    setDrawerOpen(false);
+
+    setForm({
+      ...EMPTY_FORM,
+    });
+
+    await fetchLeads();
+
+  } catch (err) {
+    console.error(
+      "SAVE LEAD ERROR:",
+      err
+    );
+
+    toast.error(
+      err?.response?.data?.message ||
+      err?.response?.data?.error ||
+      "Failed to save lead"
+    );
+  }
+};
 
   /* =========================================================
      DELETE
@@ -404,7 +473,29 @@ const convertLead = async (lead) => {
         "Lead converted successfully"
     );
 
-    setProfileOpen(false);
+    setLeads((prev) =>
+  prev.map((item) =>
+    item._id === lead._id
+      ? {
+          ...item,
+          isConverted: true,
+          convertedAt: new Date().toISOString(),
+        }
+      : item
+  )
+);
+
+setActiveLead((prev) =>
+  prev
+    ? {
+        ...prev,
+        isConverted: true,
+        convertedAt: new Date().toISOString(),
+      }
+    : prev
+);
+
+setProfileOpen(true);
 
     await fetchLeads();
   } catch (err) {
@@ -417,6 +508,32 @@ const convertLead = async (lead) => {
   }
 };
   
+
+const fetchActivities = async (leadId) => {
+  if (!leadId) return;
+
+  try {
+    setActivitiesLoading(true);
+
+   const response = await fetch(
+  `${import.meta.env.VITE_API_URL}/activities?lead=${leadId}`
+);
+
+    const result = await response.json();
+
+    if (result.success) {
+      setActivities(result.data || []);
+    } else {
+      setActivities([]);
+    }
+  } catch (error) {
+    console.error("Failed to fetch activities:", error);
+    setActivities([]);
+  } finally {
+    setActivitiesLoading(false);
+  }
+};
+
   /* =========================================================
      INLINE STATUS UPDATE
   ========================================================= */
@@ -1318,17 +1435,14 @@ const convertLead = async (lead) => {
                         {/* LEAD */}
 
                         <td
-                          className="px-6 py-4 cursor-pointer"
-                          onClick={() => {
-                            setActiveLead(
-                              lead
-                            );
-
-                            setProfileOpen(
-                              true
-                            );
-                          }}
-                        >
+  className="px-6 py-4 cursor-pointer"
+  onClick={() => {
+  setActivities([]);
+  setActiveLead(lead);
+  setProfileOpen(true);
+  fetchActivities(lead._id);
+}}
+>
 
                           <div className="flex items-center gap-3">
 
@@ -1969,6 +2083,140 @@ const convertLead = async (lead) => {
   </div>
 </FormSection>
 
+{/* =====================================================
+    COMPANY & REQUIREMENT DETAILS
+===================================================== */}
+
+<FormSection
+  title="Company & Requirement"
+  icon="🏢"
+>
+  <div className="space-y-6">
+
+    <div className="flex items-start gap-3 p-4 border border-blue-100 bg-gradient-to-r from-blue-50/70 via-white to-white rounded-2xl">
+      <div className="flex items-center justify-center w-10 h-10 text-lg bg-white border border-blue-100 shadow-sm rounded-xl">
+        🏢
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900">
+          Business Information
+        </h3>
+
+        <p className="mt-0.5 text-xs text-slate-500">
+          Add company details and understand the customer's requirement.
+        </p>
+      </div>
+    </div>
+
+    <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+
+      {/* Designation */}
+      <Field label="Designation">
+        <input
+          value={form.designation || ""}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              designation: e.target.value,
+            })
+          }
+          placeholder="Managing Director"
+          className="w-full h-12 px-4 text-sm font-medium bg-white border outline-none text-slate-900 placeholder:text-slate-400 border-slate-200 rounded-xl hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+        />
+      </Field>
+
+      {/* Industry */}
+      <Field label="Industry">
+        <input
+          value={form.industry || ""}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              industry: e.target.value,
+            })
+          }
+          placeholder="IT Services"
+          className="w-full h-12 px-4 text-sm font-medium bg-white border outline-none text-slate-900 placeholder:text-slate-400 border-slate-200 rounded-xl hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+        />
+      </Field>
+
+      {/* Website */}
+      <Field label="Website">
+        <input
+          type="url"
+          value={form.website || ""}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              website: e.target.value,
+            })
+          }
+          placeholder="https://example.com"
+          className="w-full h-12 px-4 text-sm font-medium bg-white border outline-none text-slate-900 placeholder:text-slate-400 border-slate-200 rounded-xl hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+        />
+      </Field>
+
+      {/* Company Size */}
+      <Field label="Company Size">
+        <select
+          value={form.companySize || ""}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              companySize: e.target.value,
+            })
+          }
+          className="w-full h-12 px-4 text-sm font-medium bg-white border outline-none appearance-none cursor-pointer text-slate-800 border-slate-200 rounded-xl hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+        >
+          <option value="">Select company size</option>
+          <option value="1-10">1-10</option>
+          <option value="11-50">11-50</option>
+          <option value="51-200">51-200</option>
+          <option value="201-500">201-500</option>
+          <option value="501-1000">501-1000</option>
+          <option value="1001+">1001+</option>
+        </select>
+      </Field>
+
+      {/* Requirement */}
+      <div className="md:col-span-2">
+        <Field label="Requirement">
+          <input
+            value={form.requirement || ""}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                requirement: e.target.value,
+              })
+            }
+            placeholder="CRM Software"
+            className="w-full h-12 px-4 text-sm font-medium bg-white border outline-none text-slate-900 placeholder:text-slate-400 border-slate-200 rounded-xl hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+          />
+        </Field>
+      </div>
+
+      {/* Message */}
+      <div className="md:col-span-2">
+        <Field label="Customer Message">
+          <textarea
+            rows={4}
+            value={form.message || ""}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                message: e.target.value,
+              })
+            }
+            placeholder="We need a CRM for our company..."
+            className="w-full px-4 py-3 text-sm font-medium bg-white border outline-none resize-none text-slate-900 placeholder:text-slate-400 border-slate-200 rounded-xl hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+          />
+        </Field>
+      </div>
+
+    </div>
+  </div>
+</FormSection>
 
             {/* LEAD DETAILS */}
 <FormSection
@@ -2187,13 +2435,16 @@ const convertLead = async (lead) => {
 </FormSection>
 
            {/* SALES INFORMATION */}
+{/* =====================================================
+    SALES & FOLLOW-UP
+===================================================== */}
+
 <FormSection
-  title="Sales Information"
+  title="Sales & Follow-up"
   icon="💰"
 >
   <div className="space-y-6">
 
-    {/* Section intro */}
     <div className="flex items-start gap-3 p-4 border bg-gradient-to-r from-emerald-50/70 via-white to-white border-emerald-100 rounded-2xl">
       <div className="flex items-center justify-center w-10 h-10 text-lg bg-white border shadow-sm rounded-xl border-emerald-100">
         💰
@@ -2201,27 +2452,27 @@ const convertLead = async (lead) => {
 
       <div>
         <h3 className="text-sm font-semibold text-slate-900">
-          Deal Value
+          Deal & Follow-up Details
         </h3>
 
         <p className="mt-0.5 text-xs text-slate-500">
-          Add the estimated monetary value of this lead opportunity.
+          Track opportunity value and upcoming customer follow-ups.
         </p>
       </div>
     </div>
 
-    {/* Deal Value */}
-    <div className="max-w-xl">
+    <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+
+      {/* DEAL VALUE */}
       <Field label="Deal Value">
 
         <div className="relative group">
 
-          {/* Currency icon */}
           <div className="absolute z-10 -translate-y-1/2 left-3 top-1/2">
-            <div className="flex items-center justify-center w-8 h-8 transition-all border rounded-lg bg-slate-50 border-slate-200 group-focus-within:bg-emerald-50 group-focus-within:border-emerald-200">
+            <div className="flex items-center justify-center w-8 h-8 border rounded-lg bg-slate-50 border-slate-200">
               <IndianRupee
                 size={16}
-                className="text-slate-500 group-focus-within:text-emerald-600"
+                className="text-slate-500"
               />
             </div>
           </div>
@@ -2229,18 +2480,17 @@ const convertLead = async (lead) => {
           <input
             type="number"
             min="0"
-            value={form.value}
+            value={form.value ?? ""}
             onChange={(e) =>
               setForm({
                 ...form,
                 value: e.target.value,
               })
             }
-            placeholder="50,000"
-            className="w-full h-12 pr-16 text-sm font-semibold transition-all duration-200 bg-white border outline-none pl-14 text-slate-900 placeholder:text-slate-400 border-slate-200 rounded-xl hover:border-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
+            placeholder="50000"
+            className="w-full h-12 pr-16 text-sm font-semibold bg-white border outline-none pl-14 text-slate-900 placeholder:text-slate-400 border-slate-200 rounded-xl hover:border-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
           />
 
-          {/* Currency label */}
           <div className="absolute -translate-y-1/2 right-3 top-1/2">
             <span className="px-2 py-1 text-[10px] font-bold tracking-wide rounded-md text-slate-500 bg-slate-100">
               INR
@@ -2251,26 +2501,471 @@ const convertLead = async (lead) => {
 
       </Field>
 
-      {/* Value preview */}
-      {form.value && Number(form.value) > 0 && (
-        <div className="flex items-center gap-2 px-1 mt-3">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+      {/* EXPECTED VALUE */}
+      <Field label="Expected Value">
 
-          <span className="text-xs text-slate-500">
-            Estimated deal value:
-          </span>
+        <div className="relative group">
 
-          <span className="text-xs font-semibold text-emerald-600">
-            ₹
-            {Number(form.value).toLocaleString("en-IN")}
-          </span>
+          <div className="absolute z-10 -translate-y-1/2 left-3 top-1/2">
+            <div className="flex items-center justify-center w-8 h-8 border rounded-lg bg-slate-50 border-slate-200">
+              <IndianRupee
+                size={16}
+                className="text-slate-500"
+              />
+            </div>
+          </div>
+
+          <input
+            type="number"
+            min="0"
+            value={form.expectedValue ?? ""}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                expectedValue: e.target.value,
+              })
+            }
+            placeholder="75000"
+            className="w-full h-12 pr-16 text-sm font-semibold bg-white border outline-none pl-14 text-slate-900 placeholder:text-slate-400 border-slate-200 rounded-xl hover:border-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
+          />
+
+          <div className="absolute -translate-y-1/2 right-3 top-1/2">
+            <span className="px-2 py-1 text-[10px] font-bold tracking-wide rounded-md text-slate-500 bg-slate-100">
+              INR
+            </span>
+          </div>
+
         </div>
-      )}
+
+      </Field>
+
+      {/* FOLLOW UP DATE */}
+      <Field label="Follow-up Date">
+
+        <input
+          type="date"
+          value={
+            form.followUpDate
+              ? String(form.followUpDate).slice(0, 10)
+              : ""
+          }
+          onChange={(e) =>
+            setForm({
+              ...form,
+              followUpDate: e.target.value,
+            })
+          }
+          className="w-full h-12 px-4 text-sm font-medium bg-white border outline-none cursor-pointer text-slate-800 border-slate-200 rounded-xl hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+        />
+
+      </Field>
+
+      {/* LAST CONTACTED */}
+      <Field label="Last Contacted">
+
+        <input
+          type="datetime-local"
+          value={
+            form.lastContactedAt
+              ? String(form.lastContactedAt).slice(0, 16)
+              : ""
+          }
+          onChange={(e) =>
+            setForm({
+              ...form,
+              lastContactedAt: e.target.value,
+            })
+          }
+          className="w-full h-12 px-4 text-sm font-medium bg-white border outline-none cursor-pointer text-slate-800 border-slate-200 rounded-xl hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+        />
+
+      </Field>
+
+      {/* NEXT FOLLOW UP */}
+      <Field label="Next Follow-up">
+
+        <input
+          type="datetime-local"
+          value={
+            form.nextFollowUpAt
+              ? String(form.nextFollowUpAt).slice(0, 16)
+              : ""
+          }
+          onChange={(e) =>
+            setForm({
+              ...form,
+              nextFollowUpAt: e.target.value,
+            })
+          }
+          className="w-full h-12 px-4 text-sm font-medium bg-white border outline-none cursor-pointer text-slate-800 border-slate-200 rounded-xl hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+        />
+
+      </Field>
+
+      {/* ASSIGNED TO */}
+     <Field label="Assigned To">
+
+  <div className="relative group">
+
+    <div className="absolute z-10 -translate-y-1/2 left-3 top-1/2">
+      <div className="flex items-center justify-center w-8 h-8 border rounded-lg bg-slate-50 border-slate-200">
+        👤
+      </div>
+    </div>
+
+    <select
+      value={form.assignedTo || ""}
+      onChange={(e) =>
+        setForm({
+          ...form,
+          assignedTo: e.target.value,
+        })
+      }
+      disabled={usersLoading}
+      className="w-full h-12 pr-10 text-sm font-medium bg-white border outline-none appearance-none cursor-pointer pl-14 border-slate-200 rounded-xl text-slate-800 hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+    >
+
+      <option value="">
+        {usersLoading
+          ? "Loading users..."
+          : "Select team member"}
+      </option>
+
+      {users.map((user) => (
+        <option
+          key={user._id}
+          value={user._id}
+        >
+          {user.name}
+          {user.email
+            ? ` — ${user.email}`
+            : ""}
+        </option>
+      ))}
+
+    </select>
+
+    <div className="absolute -translate-y-1/2 pointer-events-none right-4 top-1/2">
+      <svg
+        className="w-4 h-4 text-slate-400"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          d="m19 9-7 7-7-7"
+        />
+      </svg>
+    </div>
+
+  </div>
+
+</Field>
 
     </div>
 
   </div>
 </FormSection>
+
+{/* =====================================================
+    ACTIVITY TIMELINE
+===================================================== */}
+
+<ProfileSection title="Activity Timeline">
+
+  <div className="space-y-6">
+
+    {activitiesLoading ? (
+
+      /* LOADING */
+
+      <div className="space-y-5">
+
+        {[1, 2, 3].map((item) => (
+          <div
+            key={item}
+            className="flex items-start gap-4 animate-pulse"
+          >
+
+            <div className="w-10 h-10 rounded-full bg-slate-100 shrink-0" />
+
+            <div className="flex-1 space-y-2">
+
+              <div className="w-1/3 h-3 rounded bg-slate-100" />
+
+              <div className="w-2/3 h-3 rounded bg-slate-100" />
+
+              <div className="w-1/4 h-2 rounded bg-slate-100" />
+
+            </div>
+
+          </div>
+        ))}
+
+      </div>
+
+    ) : activities.length === 0 ? (
+
+      /* EMPTY */
+
+      <div className="flex flex-col items-center justify-center py-10 text-center">
+
+        <div className="flex items-center justify-center w-12 h-12 text-indigo-500 rounded-2xl bg-indigo-50">
+
+          <Clock3 size={22} />
+
+        </div>
+
+        <h4 className="mt-3 text-sm font-semibold text-slate-800">
+          No activities yet
+        </h4>
+
+        <p className="max-w-xs mt-1 text-xs text-slate-500">
+          Calls, emails, follow-ups and other lead activities
+          will appear here.
+        </p>
+
+      </div>
+
+    ) : (
+
+      /* TIMELINE */
+
+      <div className="relative">
+
+        {/* Vertical Line */}
+
+        <div className="absolute w-px top-2 bottom-2 left-5 bg-slate-200" />
+
+        <div className="space-y-6">
+
+          {activities.map((activity) => {
+
+            const type =
+              String(activity.type || "")
+                .toLowerCase();
+
+            let ActivityIcon = ClipboardList;
+            let iconStyle =
+              "bg-indigo-50 text-indigo-600";
+
+            if (type === "call") {
+
+              ActivityIcon = Phone;
+              iconStyle =
+                "bg-emerald-50 text-emerald-600";
+
+            } else if (type === "email") {
+
+              ActivityIcon = Mail;
+              iconStyle =
+                "bg-blue-50 text-blue-600";
+
+            } else if (
+              type === "follow-up" ||
+              type === "followup"
+            ) {
+
+              ActivityIcon = CalendarClock;
+              iconStyle =
+                "bg-violet-50 text-violet-600";
+
+            } else if (type === "meeting") {
+
+              ActivityIcon = Users;
+              iconStyle =
+                "bg-orange-50 text-orange-600";
+
+            } else if (type === "task") {
+
+              ActivityIcon = CheckCircle;
+              iconStyle =
+                "bg-amber-50 text-amber-600";
+
+            }
+
+            return (
+
+              <div
+                key={activity._id}
+                className="relative flex items-start gap-4"
+              >
+
+                {/* ICON */}
+
+                <div
+                  className={`relative z-10 flex items-center justify-center w-10 h-10 border border-white rounded-full shadow-sm shrink-0 ${iconStyle}`}
+                >
+
+                  <ActivityIcon size={17} />
+
+                </div>
+
+                {/* CONTENT */}
+
+                <div className="flex-1 min-w-0">
+
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+
+                    <div>
+
+                      <h4 className="text-sm font-semibold text-slate-900">
+
+                        {activity.type ||
+                          "Activity"}
+
+                      </h4>
+
+                      {activity.notes && (
+
+                        <p className="mt-1 text-sm leading-6 text-slate-600">
+
+                          {activity.notes}
+
+                        </p>
+
+                      )}
+
+                    </div>
+
+                    {/* STATUS */}
+
+                    <span
+                      className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                        activity.done
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-amber-50 text-amber-700"
+                      }`}
+                    >
+
+                      {activity.done
+                        ? "Completed"
+                        : "Pending"}
+
+                    </span>
+
+                  </div>
+
+                  {/* META */}
+
+                  <div className="flex flex-wrap mt-3 text-xs gap-x-4 gap-y-2 text-slate-400">
+
+                    {/* CREATED */}
+
+                    <span className="flex items-center gap-1.5">
+
+                      <Clock3 size={13} />
+
+                      {activity.createdAt
+                        ? new Date(
+                            activity.createdAt
+                          ).toLocaleString(
+                            "en-IN",
+                            {
+                              dateStyle:
+                                "medium",
+                              timeStyle:
+                                "short",
+                            }
+                          )
+                        : "—"}
+
+                    </span>
+
+                    {/* PRIORITY */}
+
+                    {activity.priority && (
+
+                      <span className="flex items-center gap-1.5">
+
+                        <Flag size={13} />
+
+                        {activity.priority}
+
+                      </span>
+
+                    )}
+
+                    {/* CREATED BY */}
+
+                    {activity.createdBy?.name && (
+
+                      <span className="flex items-center gap-1.5">
+
+                        <User size={13} />
+
+                        {activity.createdBy.name}
+
+                      </span>
+
+                    )}
+
+                  </div>
+
+                  {/* DUE DATE */}
+
+                  {activity.dueDate && (
+
+                    <div className="flex items-center gap-1.5 mt-2 text-xs text-slate-500">
+
+                      <CalendarClock size={13} />
+
+                      Due:{" "}
+
+                      {new Date(
+                        activity.dueDate
+                      ).toLocaleString(
+                        "en-IN",
+                        {
+                          dateStyle:
+                            "medium",
+                          timeStyle:
+                            "short",
+                        }
+                      )}
+
+                    </div>
+
+                  )}
+
+                  {/* OUTCOME */}
+
+                  {activity.outcome && (
+
+                    <div className="p-3 mt-3 text-xs border rounded-xl bg-slate-50 border-slate-200">
+
+                      <span className="font-semibold text-slate-700">
+                        Outcome:
+                      </span>{" "}
+
+                      <span className="text-slate-600">
+                        {activity.outcome}
+                      </span>
+
+                    </div>
+
+                  )}
+
+                </div>
+
+              </div>
+
+            );
+
+          })}
+
+        </div>
+
+      </div>
+
+    )}
+
+  </div>
+
+</ProfileSection>
 
             {/* NOTES */}
 
@@ -2562,96 +3257,163 @@ const convertLead = async (lead) => {
 
               {/* CONTACT */}
 
-              <ProfileSection title="Contact Information">
+             <ProfileSection title="Contact Information">
 
-                <div className="grid gap-4 md:grid-cols-2">
+  <div className="grid gap-4 md:grid-cols-2">
 
-                  <Detail
-                    icon={Mail}
-                    label="Email"
-                    value={
-                      activeLead.email
-                    }
-                  />
+    <Detail
+      icon={Mail}
+      label="Email"
+      value={activeLead.email || "—"}
+    />
 
-                  <Detail
-                    icon={Phone}
-                    label="Phone"
-                    value={
-                      activeLead.phone
-                    }
-                  />
+    <Detail
+      icon={Phone}
+      label="Phone"
+      value={activeLead.phone || "—"}
+    />
 
-                  <Detail
-                    icon={Building2}
-                    label="Company"
-                    value={
-                      activeLead.company
-                    }
-                  />
+    <Detail
+      icon={Building2}
+      label="Company"
+      value={activeLead.company || "—"}
+    />
 
-                  <Detail
-                    icon={Flag}
-                    label="Source"
-                    value={
-                      activeLead.source
-                    }
-                  />
+    <Detail
+      icon={User}
+      label="Designation"
+      value={activeLead.designation || "—"}
+    />
 
-                </div>
+    <Detail
+      icon={Building2}
+      label="Industry"
+      value={activeLead.industry || "—"}
+    />
 
-              </ProfileSection>
+    <Detail
+      icon={Users}
+      label="Company Size"
+      value={activeLead.companySize || "—"}
+    />
+
+    <Detail
+      icon={Flag}
+      label="Source"
+      value={activeLead.source || "—"}
+    />
+
+    <Detail
+      icon={Briefcase}
+      label="Department"
+      value={activeLead.department || "—"}
+    />
+
+  </div>
+
+  {activeLead.website && (
+    <div className="mt-4">
+      <Detail
+        icon={Globe}
+        label="Website"
+        value={activeLead.website}
+      />
+    </div>
+  )}
+
+</ProfileSection>
 
               {/* SALES */}
 
-              <ProfileSection
-                title="Sales Information"
-              >
+              <ProfileSection title="Sales Information">
 
-                <div className="grid gap-4 md:grid-cols-2">
+  <div className="grid gap-4 md:grid-cols-2">
 
-                  <Detail
-                    icon={Target}
-                    label="Lead Status"
-                    value={
-                      activeLead.status
-                    }
-                  />
+    <Detail
+      icon={Target}
+      label="Lead Status"
+      value={activeLead.status || "—"}
+    />
 
-                  <Detail
-                    icon={Flag}
-                    label="Priority"
-                    value={
-                      activeLead.priority ||
-                      "Medium"
-                    }
-                  />
+    <Detail
+      icon={Flag}
+      label="Priority"
+      value={activeLead.priority || "Medium"}
+    />
 
-                  <Detail
-                    icon={Briefcase}
-                    label="Department"
-                    value={
-                      activeLead.department ||
-                      "Sales"
-                    }
-                  />
+    <Detail
+      icon={IndianRupee}
+      label="Deal Value"
+      value={`₹${Number(
+        activeLead.value || 0
+      ).toLocaleString("en-IN")}`}
+    />
 
-                  <Detail
-                    icon={
-                      IndianRupee
-                    }
-                    label="Deal Value"
-                    value={`₹${Number(
-                      activeLead.value ||
-                        0
-                    ).toLocaleString(
-                      "en-IN"
-                    )}`}
-                  />
+    <Detail
+      icon={IndianRupee}
+      label="Expected Value"
+      value={`₹${Number(
+        activeLead.expectedValue || 0
+      ).toLocaleString("en-IN")}`}
+    />
 
-                </div>
+    <Detail
+      icon={CalendarClock}
+      label="Follow-up Date"
+      value={
+        activeLead.followUpDate
+          ? new Date(
+              activeLead.followUpDate
+            ).toLocaleString("en-IN", {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })
+          : "Not Scheduled"
+      }
+    />
 
-              </ProfileSection>
+    <Detail
+      icon={CalendarClock}
+      label="Next Follow-up"
+      value={
+        activeLead.nextFollowUpAt
+          ? new Date(
+              activeLead.nextFollowUpAt
+            ).toLocaleString("en-IN", {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })
+          : "Not Scheduled"
+      }
+    />
+
+    <Detail
+      icon={Phone}
+      label="Last Contacted"
+      value={
+        activeLead.lastContactedAt
+          ? new Date(
+              activeLead.lastContactedAt
+            ).toLocaleString("en-IN", {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })
+          : "Not Contacted"
+      }
+    />
+
+    <Detail
+      icon={User}
+      label="Lead Owner"
+      value={
+        activeLead.owner?.name ||
+        "Unassigned"
+      }
+    />
+
+  </div>
+
+</ProfileSection>
 
               {/* CONVERSION */}
 
@@ -2686,6 +3448,19 @@ const convertLead = async (lead) => {
                         : "Not Converted"
                     }
                   />
+                  {activeLead.convertedOpportunity && (
+  <Detail
+    icon={Target}
+    label="Opportunity"
+    value={
+      typeof activeLead.convertedOpportunity === "object"
+        ? activeLead.convertedOpportunity.name ||
+          activeLead.convertedOpportunity._id ||
+          "Converted Opportunity"
+        : activeLead.convertedOpportunity
+    }
+  />
+)}
 
                 </div>
 
@@ -2696,7 +3471,14 @@ const convertLead = async (lead) => {
               <ProfileSection
                 title="Record Information"
               >
-
+<Detail
+  icon={User}
+  label="Lead Owner"
+  value={
+    activeLead.owner?.name ||
+    "Unassigned"
+  }
+/>
                 <Detail
                   icon={
                     CalendarClock
@@ -2730,6 +3512,60 @@ const convertLead = async (lead) => {
                 </div>
 
               </ProfileSection>
+
+{/* REQUIREMENT & MESSAGE */}
+
+<ProfileSection title="Requirement & Message">
+
+  <div className="space-y-4">
+
+    <div className="p-4 border border-indigo-100 rounded-2xl bg-indigo-50/50">
+
+      <div className="flex items-center gap-2 mb-2">
+
+        <Target
+          size={16}
+          className="text-indigo-600"
+        />
+
+        <span className="text-xs font-semibold text-indigo-700">
+          Customer Requirement
+        </span>
+
+      </div>
+
+      <p className="text-sm leading-6 text-slate-700">
+        {activeLead.requirement ||
+          "No requirement provided."}
+      </p>
+
+    </div>
+
+    <div className="p-4 border rounded-2xl bg-slate-50 border-slate-200">
+
+      <div className="flex items-center gap-2 mb-2">
+
+        <MessageSquare
+          size={16}
+          className="text-slate-600"
+        />
+
+        <span className="text-xs font-semibold text-slate-700">
+          Customer Message
+        </span>
+
+      </div>
+
+      <p className="text-sm leading-6 text-slate-600">
+        {activeLead.message ||
+          "No message provided."}
+      </p>
+
+    </div>
+
+  </div>
+
+</ProfileSection>
 
               {/* NOTES */}
 
