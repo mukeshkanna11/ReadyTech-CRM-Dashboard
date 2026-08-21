@@ -1053,6 +1053,7 @@ export default function HR() {
   );
 }
 
+
 /* ======================================================
    HR DASHBOARD  (GET /api/hr/reports/dashboard)
 ====================================================== */
@@ -1061,117 +1062,747 @@ function HRDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = () => {
-    setLoading(true);
-    setError("");
-    hr.getHRDashboard()
-      .then((res) => setData(res?.data ?? res))
-      .catch((err) =>
-        setError(
-          err?.response?.data?.message ||
-            err?.message ||
-            "Failed to load HR dashboard"
-        )
-      )
-      .finally(() => setLoading(false));
+  const load = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const res = await hr.getHRDashboard();
+
+      const dashboardData =
+        res?.data?.data ??
+        res?.data ??
+        res ??
+        {};
+
+      setData(dashboardData);
+    } catch (err) {
+      console.error("HR Dashboard Error:", err);
+
+      setError(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to load HR dashboard"
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+  }, []);
 
+  /* ======================================================
+     LOADING
+  ====================================================== */
   if (loading) {
     return (
-      <div className="grid gap-4 md:grid-cols-4">
-        {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-          <div
-            key={i}
-            className="h-28 bg-white border shadow-sm rounded-2xl border-slate-200 animate-pulse"
-          />
-        ))}
+      <div className="space-y-6">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[1, 2, 3, 4].map((item) => (
+            <div
+              key={item}
+              className="bg-white border shadow-sm h-36 rounded-2xl border-slate-200 animate-pulse"
+            />
+          ))}
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-3">
+          <div className="bg-white border shadow-sm h-80 rounded-2xl border-slate-200 animate-pulse xl:col-span-2" />
+          <div className="bg-white border shadow-sm h-80 rounded-2xl border-slate-200 animate-pulse" />
+        </div>
       </div>
     );
   }
 
+  /* ======================================================
+     ERROR
+  ====================================================== */
   if (error) {
     return (
-      <div className="p-10 text-center bg-white border shadow-sm rounded-2xl border-slate-200">
-        <AlertTriangle className="mx-auto mb-3 text-rose-500" size={28} />
-        <p className="font-semibold text-slate-800">Couldn't load HR dashboard</p>
-        <p className="mt-1 text-sm text-slate-500">{error}</p>
-        <button
-          onClick={load}
-          className="px-4 py-2 mt-4 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700"
-        >
-          Retry
-        </button>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="w-full max-w-md p-8 text-center bg-white border shadow-sm rounded-3xl border-slate-200">
+          <div className="flex items-center justify-center mx-auto mb-4 w-14 h-14 rounded-2xl bg-rose-50">
+            <AlertTriangle
+              className="text-rose-500"
+              size={28}
+            />
+          </div>
+
+          <h3 className="text-lg font-bold text-slate-900">
+            Couldn't load HR dashboard
+          </h3>
+
+          <p className="mt-2 text-sm text-slate-500">
+            {error}
+          </p>
+
+          <button
+            onClick={load}
+            className="px-5 py-2.5 mt-5 text-sm font-semibold text-white transition bg-indigo-600 rounded-xl hover:bg-indigo-700"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
 
-  /**
-   * The report returns nested groups, e.g.
-   *   { employees: { total, active, inactive }, attendance: {...}, ... }
-   * so render one card per group with its metrics inside.
-   */
-  const groups = Object.entries(data || {}).filter(
-    ([, v]) => v && typeof v === "object" && !Array.isArray(v)
-  );
+  /* ======================================================
+     DATA
+  ====================================================== */
 
-  if (!groups.length) {
+  const dashboard = data || {};
+
+  const employees = dashboard.employees || {};
+  const attendance = dashboard.attendance || {};
+  const leaves = dashboard.leaves || dashboard.leave || {};
+  const payroll = dashboard.payroll || {};
+  const expenses = dashboard.expenses || {};
+  const performance = dashboard.performance || {};
+  const holidays = dashboard.holidays || {};
+
+  const totalEmployees =
+    employees.total ??
+    employees.totalEmployees ??
+    dashboard.totalEmployees ??
+    0;
+
+  const activeEmployees =
+    employees.active ??
+    employees.activeEmployees ??
+    dashboard.activeEmployees ??
+    0;
+
+  const inactiveEmployees =
+    employees.inactive ??
+    employees.inactiveEmployees ??
+    dashboard.inactiveEmployees ??
+    0;
+
+  const presentToday =
+    attendance.present ??
+    attendance.presentToday ??
+    dashboard.presentToday ??
+    0;
+
+  const absentToday =
+    attendance.absent ??
+    attendance.absentToday ??
+    dashboard.absentToday ??
+    0;
+
+  const lateToday =
+    attendance.late ??
+    attendance.lateToday ??
+    dashboard.lateToday ??
+    0;
+
+  const onLeaveToday =
+    attendance.onLeave ??
+    attendance.onLeaveToday ??
+    dashboard.onLeaveToday ??
+    0;
+
+  const pendingLeaves =
+    leaves.pending ??
+    leaves.pendingLeaves ??
+    dashboard.pendingLeaves ??
+    0;
+
+  const approvedLeaves =
+    leaves.approved ??
+    leaves.approvedLeaves ??
+    dashboard.approvedLeaves ??
+    0;
+
+  const pendingPayroll =
+    payroll.pending ??
+    payroll.pendingPayroll ??
+    0;
+
+  const totalPayroll =
+    payroll.total ??
+    payroll.totalPayroll ??
+    0;
+
+  const pendingExpenses =
+    expenses.pending ??
+    expenses.pendingExpenses ??
+    0;
+
+  const totalExpenses =
+    expenses.total ??
+    expenses.totalExpenses ??
+    0;
+
+  const performanceReviews =
+    performance.total ??
+    performance.totalReviews ??
+    0;
+
+  const upcomingHolidays =
+    holidays.upcoming ??
+    holidays.upcomingHolidays ??
+    0;
+
+  /* ======================================================
+     CALCULATIONS
+  ====================================================== */
+
+  const attendanceTotal =
+    Number(presentToday) +
+    Number(absentToday) +
+    Number(onLeaveToday);
+
+  const attendancePercentage =
+    attendanceTotal > 0
+      ? Math.round(
+          (Number(presentToday) / attendanceTotal) * 100
+        )
+      : 0;
+
+  const activePercentage =
+    Number(totalEmployees) > 0
+      ? Math.round(
+          (Number(activeEmployees) /
+            Number(totalEmployees)) *
+            100
+        )
+      : 0;
+
+  /* ======================================================
+     EMPTY STATE
+  ====================================================== */
+
+  const hasData = Object.keys(dashboard).length > 0;
+
+  if (!hasData) {
     return (
       <div className="p-12 text-center bg-white border shadow-sm rounded-2xl border-slate-200">
-        <Inbox className="mx-auto mb-3 text-slate-300" size={32} />
-        <p className="font-semibold text-slate-700">No HR metrics yet</p>
+        <Inbox
+          className="mx-auto mb-3 text-slate-300"
+          size={36}
+        />
+
+        <p className="font-semibold text-slate-700">
+          No HR metrics yet
+        </p>
+
         <p className="mt-1 text-sm text-slate-400">
-          Add employees and attendance to populate the dashboard.
+          Add employees and HR data to populate the dashboard.
         </p>
       </div>
     );
   }
 
-  const label = (k) =>
-    k
-      .replace(/([A-Z])/g, " $1")
-      .replace(/^./, (c) => c.toUpperCase())
-      .trim();
+  /* ======================================================
+     DASHBOARD UI
+  ====================================================== */
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {groups.map(([group, metrics]) => {
-        const rows = Object.entries(metrics).filter(
-          ([, v]) => typeof v === "number" || typeof v === "string"
-        );
+    <div className="space-y-6">
 
-        const headline = rows.find(([k]) => k === "total") || rows[0];
+      {/* ==================================================
+          WELCOME / SUMMARY
+      ================================================== */}
+      <div className="relative p-6 overflow-hidden bg-gradient-to-br from-indigo-700 via-indigo-600 to-blue-600 rounded-3xl">
+        <div className="absolute w-64 h-64 rounded-full -top-32 -right-20 bg-white/10 blur-3xl" />
+        <div className="absolute w-48 h-48 rounded-full -bottom-24 left-20 bg-blue-300/10 blur-3xl" />
 
-        return (
-          <div
-            key={group}
-            className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200"
+        <div className="relative flex flex-col justify-between gap-5 md:flex-row md:items-center">
+          <div>
+            <p className="text-xs font-bold tracking-widest text-indigo-100 uppercase">
+              HR Overview
+            </p>
+
+            <h2 className="mt-2 text-2xl font-bold text-white">
+              Workforce Dashboard
+            </h2>
+
+            <p className="max-w-2xl mt-2 text-sm leading-6 text-indigo-100">
+              Monitor employees, attendance, leave, payroll,
+              expenses and performance from one place.
+            </p>
+          </div>
+
+          <button
+            onClick={load}
+            className="px-4 py-2.5 text-sm font-semibold text-indigo-700 transition bg-white rounded-xl hover:bg-indigo-50"
           >
-            <div className="flex items-start justify-between">
-              <p className="text-xs font-semibold tracking-wide uppercase text-slate-500">
-                {label(group)}
-              </p>
-              {headline && (
-                <h3 className="text-3xl font-bold leading-none text-slate-900">
-                  {headline[1]}
-                </h3>
-              )}
+            Refresh Data
+          </button>
+        </div>
+      </div>
+
+      {/* ==================================================
+          KPI CARDS
+      ================================================== */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+        {/* Employees */}
+        <div className="relative p-5 overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div className="absolute w-20 h-20 rounded-full -top-8 -right-8 bg-indigo-50 blur-2xl" />
+
+          <div className="relative">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center justify-center text-indigo-600 w-11 h-11 bg-indigo-50 rounded-xl">
+                <UsersIcon size={21} />
+              </div>
+
+              <span className="text-xs font-semibold text-indigo-600">
+                Workforce
+              </span>
             </div>
 
-            <div className="pt-4 mt-4 space-y-2 border-t border-slate-100">
-              {rows.map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between">
-                  <span className="text-xs text-slate-500">{label(k)}</span>
-                  <span className="text-sm font-semibold text-slate-800">
-                    {v}
-                  </span>
-                </div>
-              ))}
+            <p className="mt-5 text-3xl font-bold text-slate-900">
+              {totalEmployees}
+            </p>
+
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Total Employees
+            </p>
+
+            <div className="flex gap-4 mt-4 text-xs">
+              <span className="text-emerald-600">
+                ● {activeEmployees} Active
+              </span>
+
+              <span className="text-slate-400">
+                ● {inactiveEmployees} Inactive
+              </span>
             </div>
           </div>
-        );
-      })}
+        </div>
+
+        {/* Attendance */}
+        <div className="relative p-5 overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div className="absolute w-20 h-20 rounded-full -top-8 -right-8 bg-emerald-50 blur-2xl" />
+
+          <div className="relative">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center justify-center w-11 h-11 text-emerald-600 bg-emerald-50 rounded-xl">
+                <CalendarCheck size={21} />
+              </div>
+
+              <span className="text-xs font-bold text-emerald-600">
+                {attendancePercentage}%
+              </span>
+            </div>
+
+            <p className="mt-5 text-3xl font-bold text-slate-900">
+              {presentToday}
+            </p>
+
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Present Today
+            </p>
+
+            <div className="flex gap-4 mt-4 text-xs">
+              <span className="text-rose-500">
+                {absentToday} Absent
+              </span>
+
+              <span className="text-amber-500">
+                {lateToday} Late
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Leave */}
+        <div className="relative p-5 overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div className="absolute w-20 h-20 rounded-full -top-8 -right-8 bg-amber-50 blur-2xl" />
+
+          <div className="relative">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center justify-center w-11 h-11 text-amber-600 bg-amber-50 rounded-xl">
+                <Plane size={21} />
+              </div>
+
+              <span className="text-xs font-semibold text-amber-600">
+                Leave
+              </span>
+            </div>
+
+            <p className="mt-5 text-3xl font-bold text-slate-900">
+              {onLeaveToday}
+            </p>
+
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              On Leave Today
+            </p>
+
+            <div className="flex gap-4 mt-4 text-xs">
+              <span className="text-amber-600">
+                {pendingLeaves} Pending
+              </span>
+
+              <span className="text-emerald-600">
+                {approvedLeaves} Approved
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Payroll */}
+        <div className="relative p-5 overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div className="absolute w-20 h-20 rounded-full -top-8 -right-8 bg-violet-50 blur-2xl" />
+
+          <div className="relative">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center justify-center w-11 h-11 text-violet-600 bg-violet-50 rounded-xl">
+                <Wallet size={21} />
+              </div>
+
+              <span className="text-xs font-semibold text-violet-600">
+                Payroll
+              </span>
+            </div>
+
+            <p className="mt-5 text-3xl font-bold text-slate-900">
+              {totalPayroll}
+            </p>
+
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Payroll Records
+            </p>
+
+            <p className="mt-4 text-xs text-amber-600">
+              {pendingPayroll} Pending
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ==================================================
+          ATTENDANCE + WORKFORCE
+      ================================================== */}
+      <div className="grid gap-6 xl:grid-cols-3">
+
+        {/* Workforce */}
+        <div className="p-6 bg-white border shadow-sm xl:col-span-2 rounded-2xl border-slate-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-slate-900">
+                Workforce Overview
+              </h3>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Current employee distribution.
+              </p>
+            </div>
+
+            <UsersIcon
+              size={20}
+              className="text-indigo-500"
+            />
+          </div>
+
+          <div className="grid gap-8 mt-8 md:grid-cols-2">
+
+            {/* Circle */}
+            <div className="flex items-center justify-center">
+              <div
+                className="relative flex items-center justify-center rounded-full w-44 h-44"
+                style={{
+                  background: `conic-gradient(#4f46e5 ${
+                    activePercentage * 3.6
+                  }deg, #e2e8f0 0deg)`,
+                }}
+              >
+                <div className="flex flex-col items-center justify-center w-32 h-32 bg-white rounded-full">
+                  <span className="text-3xl font-bold text-slate-900">
+                    {activePercentage}%
+                  </span>
+
+                  <span className="mt-1 text-xs text-slate-500">
+                    Active
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Stats */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50">
+                <span className="text-sm text-slate-600">
+                  Total Employees
+                </span>
+
+                <span className="font-bold text-slate-900">
+                  {totalEmployees}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-4 rounded-xl bg-emerald-50">
+                <span className="text-sm text-emerald-700">
+                  Active Employees
+                </span>
+
+                <span className="font-bold text-emerald-700">
+                  {activeEmployees}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50">
+                <span className="text-sm text-slate-600">
+                  Inactive Employees
+                </span>
+
+                <span className="font-bold text-slate-700">
+                  {inactiveEmployees}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Attendance */}
+        <div className="p-6 bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-slate-900">
+                Today's Attendance
+              </h3>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Daily attendance summary.
+              </p>
+            </div>
+
+            <CalendarCheck
+              size={20}
+              className="text-emerald-500"
+            />
+          </div>
+
+          <div className="flex items-center justify-center mt-7">
+            <div
+              className="flex items-center justify-center w-32 h-32 rounded-full"
+              style={{
+                background: `conic-gradient(#10b981 ${
+                  attendancePercentage * 3.6
+                }deg, #e2e8f0 0deg)`,
+              }}
+            >
+              <div className="flex flex-col items-center justify-center w-24 h-24 bg-white rounded-full">
+                <span className="text-2xl font-bold text-slate-900">
+                  {attendancePercentage}%
+                </span>
+
+                <span className="text-[10px] text-slate-400">
+                  Attendance
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3 mt-7">
+
+            <div className="flex justify-between">
+              <span className="text-xs text-slate-500">
+                Present
+              </span>
+
+              <span className="text-sm font-bold text-emerald-600">
+                {presentToday}
+              </span>
+            </div>
+
+            <div className="flex justify-between">
+              <span className="text-xs text-slate-500">
+                Absent
+              </span>
+
+              <span className="text-sm font-bold text-rose-600">
+                {absentToday}
+              </span>
+            </div>
+
+            <div className="flex justify-between">
+              <span className="text-xs text-slate-500">
+                Late
+              </span>
+
+              <span className="text-sm font-bold text-amber-600">
+                {lateToday}
+              </span>
+            </div>
+
+            <div className="flex justify-between">
+              <span className="text-xs text-slate-500">
+                On Leave
+              </span>
+
+              <span className="text-sm font-bold text-indigo-600">
+                {onLeaveToday}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ==================================================
+          HR OPERATIONS
+      ================================================== */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center justify-center w-10 h-10 text-amber-600 bg-amber-50 rounded-xl">
+              <CalendarDays size={19} />
+            </div>
+
+            <span className="text-xs text-slate-400">
+              Holidays
+            </span>
+          </div>
+
+          <p className="mt-5 text-2xl font-bold text-slate-900">
+            {upcomingHolidays}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            Upcoming Holidays
+          </p>
+        </div>
+
+        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center justify-center w-10 h-10 text-rose-600 bg-rose-50 rounded-xl">
+              <Receipt size={19} />
+            </div>
+
+            <span className="text-xs text-slate-400">
+              Expenses
+            </span>
+          </div>
+
+          <p className="mt-5 text-2xl font-bold text-slate-900">
+            {totalExpenses}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            Expense Records
+          </p>
+
+          <p className="mt-3 text-xs text-amber-600">
+            {pendingExpenses} Pending
+          </p>
+        </div>
+
+        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center justify-center w-10 h-10 text-violet-600 bg-violet-50 rounded-xl">
+              <TrendingUp size={19} />
+            </div>
+
+            <span className="text-xs text-slate-400">
+              Performance
+            </span>
+          </div>
+
+          <p className="mt-5 text-2xl font-bold text-slate-900">
+            {performanceReviews}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            Performance Reviews
+          </p>
+        </div>
+
+        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center justify-center w-10 h-10 text-blue-600 bg-blue-50 rounded-xl">
+              <FileText size={19} />
+            </div>
+
+            <span className="text-xs text-slate-400">
+              Leave
+            </span>
+          </div>
+
+          <p className="mt-5 text-2xl font-bold text-slate-900">
+            {pendingLeaves}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            Pending Leave Requests
+          </p>
+        </div>
+      </div>
+
+      {/* ==================================================
+          RAW BACKEND GROUPS
+          Automatically shows any additional metrics returned
+          by backend without hardcoding them.
+      ================================================== */}
+      {Object.entries(dashboard)
+        .filter(
+          ([key, value]) =>
+            value &&
+            typeof value === "object" &&
+            !Array.isArray(value) &&
+            ![
+              "employees",
+              "attendance",
+              "leaves",
+              "leave",
+              "payroll",
+              "expenses",
+              "performance",
+              "holidays",
+            ].includes(key)
+        )
+        .map(([group, metrics]) => {
+          const rows = Object.entries(metrics).filter(
+            ([, value]) =>
+              typeof value === "number" ||
+              typeof value === "string"
+          );
+
+          if (!rows.length) return null;
+
+          const title = group
+            .replace(/([A-Z])/g, " $1")
+            .replace(/^./, (c) => c.toUpperCase());
+
+          return (
+            <div
+              key={group}
+              className="p-6 bg-white border shadow-sm rounded-2xl border-slate-200"
+            >
+              <h3 className="font-bold text-slate-900">
+                {title}
+              </h3>
+
+              <div className="grid gap-4 mt-5 sm:grid-cols-2 lg:grid-cols-4">
+                {rows.map(([key, value]) => (
+                  <div
+                    key={key}
+                    className="p-4 rounded-xl bg-slate-50"
+                  >
+                    <p className="text-xs text-slate-500">
+                      {key
+                        .replace(/([A-Z])/g, " $1")
+                        .replace(/^./, (c) =>
+                          c.toUpperCase()
+                        )}
+                    </p>
+
+                    <p className="mt-2 text-xl font-bold text-slate-900">
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
     </div>
   );
 }
+
+   
