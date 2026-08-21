@@ -66,6 +66,9 @@ const Inventory = lazy(() => import("./pages/Stcoks/Inventory"));
 const StockAdjustment = lazy(() => import("./pages/Stcoks/StockAdjustment"));
 const WarehouseTransfer = lazy(() => import("./pages/Stcoks/WarehouseTransfer"));
 
+/* HR */
+const HR = lazy(() => import("./pages/HR"));
+
 /* Info / Settings */
 const WhyReadyTech = lazy(() => import("./pages/WhyReadyTech"));
 const ContactPage = lazy(() => import("./pages/ContactPage"));
@@ -193,6 +196,11 @@ export default function App() {
               <Route path="stock-adjustment" element={<StockAdjustment />} />
               <Route path="warehouse-transfer" element={<WarehouseTransfer />} />
             </Route>
+
+            {/* ======================================================
+                          HR MODULE
+            ====================================================== */}
+            <Route path="hr" element={<HR />} />
 
             {/* ======================================================
                           SETTINGS & INFO

@@ -1632,7 +1632,7 @@ const fetchActivities = async (leadId) => {
     })()}
 
   </div>
-</td>
+</td> 
 {/* FOLLOW-UP */}
 <td className="hidden px-6 py-4 xl:table-cell">
 

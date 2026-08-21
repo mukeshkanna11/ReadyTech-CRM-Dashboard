@@ -26,6 +26,9 @@ import invoiceRoutes from "./routes/invoice.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
 import automationRoutes from "./routes/automationRoutes.js";
+// HR Module
+import hrRoutes from "./routes/hr/index.js";
+import hrReportRoutes from "./routes/hr/hrReport.routes.js";
 /* ===================== Middlewares ===================== */
 import auth from "./middlewares/auth.js";
 import role from "./middlewares/role.js";
@@ -117,7 +120,9 @@ app.use("/api/vendors", auth, vendorRoutes);
 app.use("/api/purchase", auth, purchaseRoutes);
 app.use("/api/sales", auth, salesRoutes);
 app.use("/api/warehouses", auth, warehouseRoutes);
-
+// HR Module
+app.use("/api/hr", auth, hrRoutes);
+app.use("/api/hr/reports", auth, hrReportRoutes);
 // CRM Modules
 app.use("/api/leads", auth, leadsRoutes);
 app.use("/api/opportunities", auth, opportunityRoutes);

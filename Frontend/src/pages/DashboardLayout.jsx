@@ -89,6 +89,7 @@ const ERP_LINKS = [
   { to: "/stocks/inventory", icon: Layers, label: "Inventory" },
   { to: "/stocks/stock-adjustment", icon: SlidersHorizontal, label: "Stock Adjustment" },
   { to: "/stocks/warehouse-transfer", icon: ArrowLeftRight, label: "Warehouse Transfer" },
+  { to: "/hr", icon: UserCheck, label: "Human Resources" },
 ];
 
 /* AI tools reuse existing routes where the feature lives; those without a page are marked "Soon" */

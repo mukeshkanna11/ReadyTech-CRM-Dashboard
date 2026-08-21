@@ -207,8 +207,15 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    organization: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Organization",
+  default: null,
+},
     // =========================================================
-    // EMPLOYEE ID
+    // EMPLOYEE ID    
+
+    
     // OPTIONAL
     // =========================================================
     employeeId: {
