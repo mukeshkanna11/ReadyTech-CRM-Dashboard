@@ -69,6 +69,9 @@ const WarehouseTransfer = lazy(() => import("./pages/Stcoks/WarehouseTransfer"))
 /* HR */
 const HR = lazy(() => import("./pages/HR"));
 
+/* Integrations */
+const MetaIntegration = lazy(() => import("./pages/Integrations/MetaIntegration"));
+
 /* Info / Settings */
 const WhyReadyTech = lazy(() => import("./pages/WhyReadyTech"));
 const ContactPage = lazy(() => import("./pages/ContactPage"));
@@ -129,16 +132,6 @@ export default function App() {
 
 
 
-            {/* ======================================================
-                          BILLING MODULE
-            ====================================================== */}
-            <Route path="invoices">
-              <Route index element={<InvoiceList />} />
-              <Route path="create" element={<CreateInvoice />} />
-              <Route path="analytics" element={<InvoiceAnalytics />} />
-              <Route path=":id" element={<ViewInvoice />} />
-            </Route>
-
 {/* /automations */}
   <Route
     index
@@ -172,6 +165,16 @@ export default function App() {
 </Route>
 
             {/* ======================================================
+                          BILLING MODULE
+            ====================================================== */}
+            <Route path="invoices">
+              <Route index element={<InvoiceList />} />
+              <Route path="create" element={<CreateInvoice />} />
+              <Route path="analytics" element={<InvoiceAnalytics />} />
+              <Route path=":id" element={<ViewInvoice />} />
+            </Route>
+
+            {/* ======================================================
                           SALESFORCE MODULE
             ====================================================== */}
             <Route path="salesforce" element={<SalesforceModule />}>
@@ -201,6 +204,11 @@ export default function App() {
                           HR MODULE
             ====================================================== */}
             <Route path="hr" element={<HR />} />
+
+            {/* ======================================================
+                          INTEGRATIONS MODULE
+            ====================================================== */}
+            <Route path="integrations/meta" element={<MetaIntegration />} />
 
             {/* ======================================================
                           SETTINGS & INFO

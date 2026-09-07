@@ -26,6 +26,8 @@ import invoiceRoutes from "./routes/invoice.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
 import automationRoutes from "./routes/automationRoutes.js";
+// Meta Integration Module (centralized for CRM / ERP / AI Content)
+import metaRoutes from "./routes/meta.routes.js";
 // HR Module
 import hrRoutes from "./routes/hr/index.js";
 import hrReportRoutes from "./routes/hr/hrReport.routes.js";
@@ -130,6 +132,8 @@ app.use("/api/activities", auth, activityRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/automations", automationRoutes);
+// Meta Integration (auth applied per-route; OAuth callback is public)
+app.use("/api/meta", metaRoutes);
 // User profile
 app.use("/api/user", auth, userRoutes);
 app.use("/api/ai", auth, aiRoutes);

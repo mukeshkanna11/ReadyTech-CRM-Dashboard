@@ -31,6 +31,7 @@ import {
   KeyRound,
   SlidersHorizontal,
   ArrowLeftRight,
+  Plug,
 } from "lucide-react";
 import { Cloud } from "lucide-react";
 import ChatSupportWidget from "../components/ChatSupportWidget";
@@ -104,11 +105,17 @@ const AI_LINKS = [
   { to: "/ai/sales-recommendations", icon: TrendingUp, label: "AI Sales Recommendations" },
 ];
 
+/* Centralized integrations — one Meta connection for CRM, ERP & AI Content */
+const INTEGRATION_LINKS = [
+  { to: "/integrations/meta", icon: Plug, label: "Meta Integration" },
+];
+
 function Sidebar({ open }) {
   const navigate = useNavigate();
   const [crmOpen, setCrmOpen] = useState(true);
   const [erpOpen, setErpOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(true);
+  const [integrationsOpen, setIntegrationsOpen] = useState(true);
 
   const logout = () => {
     localStorage.removeItem("token");
@@ -141,6 +148,7 @@ function Sidebar({ open }) {
         <NavGroup open={open} title="CRM" icon={Users} items={CRM_LINKS} expanded={crmOpen} onToggle={() => setCrmOpen(!crmOpen)} />
         <NavGroup open={open} title="ERP" icon={Layers} items={ERP_LINKS} expanded={erpOpen} onToggle={() => setErpOpen(!erpOpen)} />
         <NavGroup open={open} title="AI Tools" icon={Sparkles} items={AI_LINKS} expanded={aiOpen} onToggle={() => setAiOpen(!aiOpen)} />
+        <NavGroup open={open} title="Integrations" icon={Plug} items={INTEGRATION_LINKS} expanded={integrationsOpen} onToggle={() => setIntegrationsOpen(!integrationsOpen)} />
       </nav>
 
       {/* FOOTER (fixed bottom) */}

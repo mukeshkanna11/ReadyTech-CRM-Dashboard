@@ -992,32 +992,7 @@ export default function HR() {
   return (
     <div className="min-h-screen p-8 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
 
-      {/* ============ HEADER ============ */}
-      <div className="relative p-8 overflow-hidden shadow-2xl rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-900 to-blue-900">
-        <div className="absolute rounded-full -top-24 -right-24 w-80 h-80 bg-blue-500/20 blur-3xl" />
-        <div className="absolute rounded-full -bottom-24 -left-24 w-80 h-80 bg-indigo-500/20 blur-3xl" />
-
-        <div className="relative flex items-center gap-5">
-          <div className="flex items-center justify-center w-16 h-16 border shadow-lg rounded-2xl bg-white/10 backdrop-blur-xl border-white/20">
-            <UsersIcon size={32} className="text-white" />
-          </div>
-
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight text-white">
-                Human Resources
-              </h1>
-              <span className="px-3 py-1 text-xs font-semibold text-blue-200 border rounded-full bg-blue-500/20 border-blue-400/30">
-                ReadyTech Solutions
-              </span>
-            </div>
-            <p className="mt-2 text-sm text-slate-300">
-              Employees, attendance, leave, payroll, expenses and performance —
-              managed from one HR workspace.
-            </p>
-          </div>
-        </div>
-      </div>
+                  
 
       {/* ============ TABS ============ */}
       <div className="p-2 bg-white border shadow-sm rounded-2xl border-slate-200">
