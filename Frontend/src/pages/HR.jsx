@@ -3,6 +3,7 @@ import {
   Users as UsersIcon,
   CalendarCheck,
   CalendarDays,
+  CalendarRange,
   Plane,
   Clock,
   Wallet,
@@ -11,6 +12,7 @@ import {
   TrendingUp,
   LayoutDashboard,
   AlertTriangle,
+  Ban,
   Inbox,
   Check,
   X,
@@ -20,7 +22,15 @@ import {
 import toast from "react-hot-toast";
 
 import HRSection, { Badge } from "../components/hr/HRSection";
-import { statusTone, fmtDate, money } from "../components/hr/hrFormat";
+import HRCalendar from "../components/hr/HRCalendar";
+import ShiftsBoard from "../components/hr/ShiftsBoard";
+import {
+  statusTone,
+  fmtDate,
+  money,
+  empName,
+  fmtTime,
+} from "../components/hr/hrFormat";
 
 import * as hr from "../services/hr";
 import { HR_ENUMS } from "../services/hr";
@@ -37,6 +47,7 @@ const TABS = [
   { id: "attendance", label: "Attendance", icon: CalendarCheck },
   { id: "leaves", label: "Leaves", icon: Plane },
   { id: "holidays", label: "Holidays", icon: CalendarDays },
+  { id: "calendar", label: "HR Calendar", icon: CalendarRange },
   { id: "shifts", label: "Shifts", icon: Clock },
   { id: "salary", label: "Salary Structures", icon: Wallet },
   { id: "payroll", label: "Payroll", icon: IndianRupee },
@@ -44,16 +55,6 @@ const TABS = [
   { id: "expenses", label: "Expenses", icon: Receipt },
   { id: "performance", label: "Performance", icon: TrendingUp },
 ];
-
-/** Employee name helper — the API populates `employee` on most records. */
-const empName = (e) =>
-  !e
-    ? "—"
-    : typeof e === "string"
-    ? e
-    : [e.firstName, e.lastName].filter(Boolean).join(" ") ||
-      e.employeeCode ||
-      "—";
 
 const dateInput = (d) =>
   d ? new Date(d).toISOString().split("T")[0] : "";
@@ -64,6 +65,8 @@ export default function HR() {
   /* Employee options for the reference selects (shared across tabs). */
   const [employees, setEmployees] = useState([]);
   const [users, setUsers] = useState([]);
+  const [shiftList, setShiftList] = useState([]);
+  const [structureList, setStructureList] = useState([]);
 
   useEffect(() => {
     hr.getEmployees({ limit: 200 })
@@ -73,6 +76,14 @@ export default function HR() {
     API.get("/admin/users")
       .then((r) => setUsers(Array.isArray(r.data) ? r.data : r.data?.data || []))
       .catch(() => setUsers([]));
+
+    hr.getShifts({ limit: 100 })
+      .then((d) => setShiftList(hr.readList(d).rows))
+      .catch(() => setShiftList([]));
+
+    hr.getSalaryStructures({ limit: 100, status: "Active" })
+      .then((d) => setStructureList(hr.readList(d).rows))
+      .catch(() => setStructureList([]));
   }, []);
 
   const employeeOptions = useMemo(
@@ -88,6 +99,35 @@ export default function HR() {
     () => users.map((u) => ({ value: u._id, label: `${u.name} — ${u.email}` })),
     [users]
   );
+
+  const shiftOptions = useMemo(
+    () =>
+      shiftList.map((s) => ({
+        value: s._id,
+        label: `${s.name}${s.code ? ` (${s.code})` : ""} · ${fmtTime(
+          s.startTime
+        )}–${fmtTime(s.endTime)}`,
+      })),
+    [shiftList]
+  );
+
+  const structureOptions = useMemo(
+    () =>
+      structureList.map((s) => ({
+        value: s._id,
+        label: `${s.name} · ${money(s.basicSalary)}`,
+      })),
+    [structureList]
+  );
+
+  /* The employee list endpoint returns raw ObjectIds, so resolve names here. */
+  const shiftNameById = useMemo(
+    () => Object.fromEntries(shiftList.map((s) => [s._id, s.name])),
+    [shiftList]
+  );
+
+  const refName = (ref, map) =>
+    !ref ? "" : typeof ref === "object" ? ref.name || "" : map[ref] || "";
 
   /* ==================================================
      SECTION CONFIGS
@@ -125,9 +165,29 @@ export default function HR() {
             </div>
           ),
         },
-        { key: "department", label: "Department" },
-        { key: "designation", label: "Designation" },
+        {
+          key: "department",
+          label: "Department",
+          render: (r) => (
+            <div>
+              <p className="text-slate-700">{r.department || "—"}</p>
+              <p className="text-xs text-slate-500">{r.designation || "—"}</p>
+            </div>
+          ),
+        },
         { key: "employmentType", label: "Type" },
+        {
+          key: "shift",
+          label: "Shift",
+          render: (r) => {
+            const name = refName(r.shift, shiftNameById);
+            return name ? (
+              <Badge value={name} tone="blue" />
+            ) : (
+              <span className="text-xs text-slate-400">Unassigned</span>
+            );
+          },
+        },
         {
           key: "dateOfJoining",
           label: "Joined",
@@ -155,6 +215,9 @@ export default function HR() {
         designation: "",
         employmentType: "Full Time",
         status: "Active",
+        shift: "",
+        salaryStructure: "",
+        reportingManager: "",
         notes: "",
       },
       fields: [
@@ -202,6 +265,27 @@ export default function HR() {
           options: HR_ENUMS.employeeStatus,
           half: true,
         },
+        {
+          name: "shift",
+          label: "Shift",
+          type: "select",
+          options: shiftOptions,
+          half: true,
+        },
+        {
+          name: "salaryStructure",
+          label: "Salary Structure",
+          type: "select",
+          options: structureOptions,
+          half: true,
+        },
+        {
+          name: "reportingManager",
+          label: "Reporting Manager",
+          type: "select",
+          options: employeeOptions,
+          half: true,
+        },
         { name: "notes", label: "Notes", type: "textarea" },
       ],
       toForm: (r) => ({
@@ -218,11 +302,29 @@ export default function HR() {
         designation: r.designation || "",
         employmentType: r.employmentType || "Full Time",
         status: r.status || "Active",
+        shift: typeof r.shift === "object" ? r.shift?._id || "" : r.shift || "",
+        salaryStructure:
+          typeof r.salaryStructure === "object"
+            ? r.salaryStructure?._id || ""
+            : r.salaryStructure || "",
+        reportingManager:
+          typeof r.reportingManager === "object"
+            ? r.reportingManager?._id || ""
+            : r.reportingManager || "",
         notes: r.notes || "",
       }),
-      // Drop empty optional keys so we never write "" into an enum field.
-      toPayload: (f) =>
-        Object.fromEntries(Object.entries(f).filter(([, v]) => v !== "")),
+      // Drop empty optional keys so we never write "" into an enum field,
+      // but send an explicit null for references so they can be unassigned.
+      toPayload: (f) => {
+        const refs = ["shift", "salaryStructure", "reportingManager"];
+        const payload = Object.fromEntries(
+          Object.entries(f).filter(([k, v]) => v !== "" || refs.includes(k))
+        );
+        refs.forEach((k) => {
+          if (payload[k] === "") payload[k] = null;
+        });
+        return payload;
+      },
     },
 
     attendance: {
@@ -237,17 +339,57 @@ export default function HR() {
       },
       filters: [
         { name: "status", label: "Status", options: HR_ENUMS.attendanceStatus },
+        { name: "employee", label: "Employee", options: employeeOptions },
+        { name: "startDate", label: "From", type: "date" },
+        { name: "endDate", label: "To", type: "date" },
       ],
       columns: [
         {
           key: "employee",
           label: "Employee",
-          render: (r) => empName(r.employee),
+          render: (r) => (
+            <div>
+              <p className="font-medium text-slate-800">
+                {empName(r.employee)}
+              </p>
+              <p className="text-xs text-slate-500">
+                {r.employee?.employeeCode || ""}
+              </p>
+            </div>
+          ),
         },
-        { key: "date", label: "Date", render: (r) => fmtDate(r.date) },
-        { key: "checkIn", label: "Check In", render: (r) => r.checkIn || "—" },
-        { key: "checkOut", label: "Check Out", render: (r) => r.checkOut || "—" },
-        { key: "workHours", label: "Hours", render: (r) => r.workHours ?? "—" },
+        {
+          key: "date",
+          label: "Date",
+          render: (r) => (
+            <div>
+              <p className="text-slate-700">{fmtDate(r.date)}</p>
+              <p className="text-xs text-slate-500">
+                {r.date
+                  ? new Date(r.date).toLocaleDateString("en-IN", {
+                      weekday: "short",
+                    })
+                  : ""}
+              </p>
+            </div>
+          ),
+        },
+        {
+          key: "checkIn",
+          label: "Check In",
+          render: (r) => fmtTime(r.checkIn),
+        },
+        {
+          key: "checkOut",
+          label: "Check Out",
+          render: (r) => fmtTime(r.checkOut),
+        },
+        {
+          key: "workHours",
+          label: "Hours",
+          render: (r) =>
+            r.workHours ?? (r.workingMinutes ? (r.workingMinutes / 60).toFixed(1) : "—"),
+        },
         {
           key: "status",
           label: "Status",
@@ -319,17 +461,42 @@ export default function HR() {
       filters: [
         { name: "status", label: "Status", options: HR_ENUMS.leaveStatus },
         { name: "leaveType", label: "Type", options: HR_ENUMS.leaveType },
+        { name: "employee", label: "Employee", options: employeeOptions },
+        { name: "fromDate", label: "From", type: "date" },
+        { name: "toDate", label: "To", type: "date" },
       ],
       columns: [
         {
           key: "employee",
           label: "Employee",
-          render: (r) => empName(r.employee),
+          render: (r) => (
+            <div>
+              <p className="font-medium text-slate-800">
+                {empName(r.employee)}
+              </p>
+              <p className="text-xs text-slate-500">{r.reason || ""}</p>
+            </div>
+          ),
         },
         { key: "leaveType", label: "Type" },
-        { key: "fromDate", label: "From", render: (r) => fmtDate(r.fromDate) },
-        { key: "toDate", label: "To", render: (r) => fmtDate(r.toDate) },
-        { key: "totalDays", label: "Days" },
+        {
+          key: "fromDate",
+          label: "Duration",
+          render: (r) => (
+            <span className="whitespace-nowrap text-slate-700">
+              {fmtDate(r.fromDate)} → {fmtDate(r.toDate)}
+            </span>
+          ),
+        },
+        {
+          key: "totalDays",
+          label: "Days",
+          render: (r) => (
+            <span className="font-semibold text-slate-800">
+              {r.totalDays ?? "—"}
+            </span>
+          ),
+        },
         {
           key: "status",
           label: "Status",
@@ -419,6 +586,23 @@ export default function HR() {
               <X size={15} />
             </button>
           </>
+        ) : row.status === "Approved" ? (
+          <button
+            title="Cancel leave"
+            onClick={async () => {
+              if (!window.confirm("Cancel this approved leave?")) return;
+              try {
+                await hr.cancelLeave(row._id);
+                toast.success("Leave cancelled");
+                reload();
+              } catch (e) {
+                toast.error(e?.response?.data?.message || "Cancel failed");
+              }
+            }}
+            className="p-2 rounded-lg text-slate-600 bg-slate-100 hover:bg-slate-200"
+          >
+            <Ban size={15} />
+          </button>
         ) : null,
     },
 
@@ -431,20 +615,62 @@ export default function HR() {
         update: hr.updateHoliday,
         remove: hr.deleteHoliday,
       },
-      filters: [{ name: "type", label: "Type", options: HR_ENUMS.holidayType }],
+      filters: [
+        { name: "type", label: "Type", options: HR_ENUMS.holidayType },
+        {
+          name: "year",
+          label: "Year",
+          options: Array.from({ length: 5 }, (_, i) =>
+            String(new Date().getFullYear() - 2 + i)
+          ),
+        },
+      ],
       columns: [
         {
           key: "name",
           label: "Holiday",
           render: (r) => (
-            <span className="font-medium text-slate-800">{r.name}</span>
+            <div>
+              <p className="font-medium text-slate-800">{r.name}</p>
+              <p className="text-xs text-slate-500">
+                {r.date
+                  ? new Date(r.date).toLocaleDateString("en-IN", {
+                      weekday: "long",
+                    })
+                  : "—"}
+              </p>
+            </div>
           ),
         },
         { key: "date", label: "Date", render: (r) => fmtDate(r.date) },
         {
           key: "type",
           label: "Type",
-          render: (r) => <Badge value={r.type} tone="blue" />,
+          render: (r) => (
+            <Badge
+              value={r.type}
+              tone={
+                r.type === "Public"
+                  ? "blue"
+                  : r.type === "Optional"
+                  ? "amber"
+                  : "purple"
+              }
+            />
+          ),
+        },
+        {
+          key: "upcoming",
+          label: "Timeline",
+          render: (r) => {
+            const upcoming = r.date && new Date(r.date) >= new Date();
+            return (
+              <Badge
+                value={upcoming ? "Upcoming" : "Past"}
+                tone={upcoming ? "green" : "slate"}
+              />
+            );
+          },
         },
         { key: "description", label: "Description" },
       ],
@@ -465,67 +691,6 @@ export default function HR() {
         name: r.name || "",
         date: dateInput(r.date),
         type: r.type || "Public",
-        description: r.description || "",
-      }),
-    },
-
-    shifts: {
-      title: "Shifts",
-      singular: "Shift",
-      api: {
-        list: hr.getShifts,
-        create: hr.createShift,
-        update: hr.updateShift,
-        remove: hr.deleteShift,
-      },
-      filters: [
-        { name: "status", label: "Status", options: HR_ENUMS.activeStatus },
-      ],
-      columns: [
-        {
-          key: "name",
-          label: "Shift",
-          render: (r) => (
-            <span className="font-medium text-slate-800">{r.name}</span>
-          ),
-        },
-        { key: "code", label: "Code" },
-        { key: "startTime", label: "Start" },
-        { key: "endTime", label: "End" },
-        {
-          key: "status",
-          label: "Status",
-          render: (r) => <Badge value={r.status} tone={statusTone(r.status)} />,
-        },
-      ],
-      initialForm: {
-        name: "",
-        code: "",
-        startTime: "",
-        endTime: "",
-        status: "Active",
-        description: "",
-      },
-      fields: [
-        { name: "name", label: "Shift Name", required: true, half: true },
-        { name: "code", label: "Code", required: true, half: true },
-        { name: "startTime", label: "Start Time", type: "time", required: true, half: true },
-        { name: "endTime", label: "End Time", type: "time", required: true, half: true },
-        {
-          name: "status",
-          label: "Status",
-          type: "select",
-          options: HR_ENUMS.activeStatus,
-          half: true,
-        },
-        { name: "description", label: "Description", type: "textarea" },
-      ],
-      toForm: (r) => ({
-        name: r.name || "",
-        code: r.code || "",
-        startTime: r.startTime || "",
-        endTime: r.endTime || "",
-        status: r.status || "Active",
         description: r.description || "",
       }),
     },
@@ -990,9 +1155,25 @@ export default function HR() {
   };
 
   return (
-    <div className="min-h-screen p-8 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
+    <div className="min-h-screen p-4 space-y-6 sm:p-6 lg:p-8 bg-gradient-to-br from-slate-50 via-white to-slate-100">
 
-                  
+      {/* ============ HEADER ============ */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Human Resources
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {TABS.find((t) => t.id === tab)?.label} · people, time and payroll
+            operations
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 px-4 py-2 text-xs font-medium bg-white border shadow-sm rounded-xl border-slate-200 text-slate-500">
+          <UsersIcon size={14} className="text-indigo-500" />
+          {employees.length} employee{employees.length === 1 ? "" : "s"} loaded
+        </div>
+      </div>
 
       {/* ============ TABS ============ */}
       <div className="p-2 bg-white border shadow-sm rounded-2xl border-slate-200">
@@ -1020,7 +1201,11 @@ export default function HR() {
 
       {/* ============ CONTENT ============ */}
       {tab === "dashboard" ? (
-        <HRDashboard />
+        <HRDashboard onJump={setTab} />
+      ) : tab === "calendar" ? (
+        <HRCalendar />
+      ) : tab === "shifts" ? (
+        <ShiftsBoard />
       ) : (
         <HRSection key={tab} config={configs[tab]} />
       )}
@@ -1032,12 +1217,38 @@ export default function HR() {
 /* ======================================================
    HR DASHBOARD  (GET /api/hr/reports/dashboard)
 ====================================================== */
-function HRDashboard() {
+function HRDashboard({ onJump }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  /* Live lists the dashboard endpoint doesn't return, pulled from the
+     existing holidays/leaves endpoints. */
+  const [holidayList, setHolidayList] = useState([]);
+  const [pendingLeaveList, setPendingLeaveList] = useState([]);
+  const [listsLoading, setListsLoading] = useState(true);
+
+  const todayKey = new Date().toISOString().split("T")[0];
+
+  const loadLists = async () => {
+    setListsLoading(true);
+    try {
+      const [hol, lv] = await Promise.all([
+        hr
+          .getHolidays({ fromDate: todayKey, isActive: true, limit: 5 })
+          .catch(() => null),
+        hr.getLeaves({ status: "Pending", limit: 5 }).catch(() => null),
+      ]);
+      setHolidayList(hol ? hr.readList(hol).rows : []);
+      setPendingLeaveList(lv ? hr.readList(lv).rows : []);
+    } finally {
+      setListsLoading(false);
+    }
+  };
+
   const load = async () => {
+    loadLists();
+
     try {
       setLoading(true);
       setError("");
@@ -1220,7 +1431,7 @@ function HRDashboard() {
   const upcomingHolidays =
     holidays.upcoming ??
     holidays.upcomingHolidays ??
-    0;
+    holidayList.length;
 
   /* ======================================================
      CALCULATIONS
@@ -1302,12 +1513,22 @@ function HRDashboard() {
             </p>
           </div>
 
-          <button
-            onClick={load}
-            className="px-4 py-2.5 text-sm font-semibold text-indigo-700 transition bg-white rounded-xl hover:bg-indigo-50"
-          >
-            Refresh Data
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onJump?.("calendar")}
+              className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white transition border border-white/30 rounded-xl bg-white/10 hover:bg-white/20"
+            >
+              <CalendarRange size={16} />
+              HR Calendar
+            </button>
+
+            <button
+              onClick={load}
+              className="px-4 py-2.5 text-sm font-semibold text-indigo-700 transition bg-white rounded-xl hover:bg-indigo-50"
+            >
+              Refresh Data
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1706,6 +1927,158 @@ function HRDashboard() {
           <p className="mt-1 text-xs text-slate-500">
             Pending Leave Requests
           </p>
+        </div>
+      </div>
+
+      {/* ==================================================
+          UPCOMING HOLIDAYS + PENDING APPROVALS
+      ================================================== */}
+      <div className="grid gap-6 xl:grid-cols-2">
+
+        {/* Upcoming holidays */}
+        <div className="p-6 bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-slate-900">Upcoming Holidays</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Next holidays from the company calendar.
+              </p>
+            </div>
+
+            <button
+              onClick={() => onJump?.("calendar")}
+              className="px-3 py-1.5 text-xs font-semibold text-indigo-700 rounded-lg bg-indigo-50 hover:bg-indigo-100"
+            >
+              Open Calendar
+            </button>
+          </div>
+
+          {listsLoading ? (
+            <div className="mt-5 space-y-2">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-14 rounded-xl bg-slate-100 animate-pulse"
+                />
+              ))}
+            </div>
+          ) : holidayList.length === 0 ? (
+            <div className="py-8 text-center">
+              <CalendarDays className="mx-auto mb-2 text-slate-300" size={28} />
+              <p className="text-sm text-slate-500">No upcoming holidays</p>
+            </div>
+          ) : (
+            <div className="mt-5 space-y-2">
+              {holidayList.map((h) => (
+                <div
+                  key={h._id}
+                  className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate text-slate-800">
+                      {h.name}
+                    </p>
+                    <p className="text-xs text-slate-500">{fmtDate(h.date)}</p>
+                  </div>
+                  <Badge value={h.type} tone="blue" />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Pending leave approvals */}
+        <div className="p-6 bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-slate-900">Pending Leave Approvals</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Requests waiting on an HR decision.
+              </p>
+            </div>
+
+            <button
+              onClick={() => onJump?.("leaves")}
+              className="px-3 py-1.5 text-xs font-semibold text-indigo-700 rounded-lg bg-indigo-50 hover:bg-indigo-100"
+            >
+              View All
+            </button>
+          </div>
+
+          {listsLoading ? (
+            <div className="mt-5 space-y-2">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-14 rounded-xl bg-slate-100 animate-pulse"
+                />
+              ))}
+            </div>
+          ) : pendingLeaveList.length === 0 ? (
+            <div className="py-8 text-center">
+              <Check className="mx-auto mb-2 text-emerald-400" size={28} />
+              <p className="text-sm text-slate-500">
+                No leave requests pending
+              </p>
+            </div>
+          ) : (
+            <div className="mt-5 space-y-2">
+              {pendingLeaveList.map((l) => (
+                <div
+                  key={l._id}
+                  className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate text-slate-800">
+                      {empName(l.employee)}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {l.leaveType} · {fmtDate(l.fromDate)} →{" "}
+                      {fmtDate(l.toDate)} · {l.totalDays}d
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      title="Approve"
+                      onClick={async () => {
+                        try {
+                          await hr.approveLeave(l._id);
+                          toast.success("Leave approved");
+                          load();
+                        } catch (e) {
+                          toast.error(
+                            e?.response?.data?.message || "Approve failed"
+                          );
+                        }
+                      }}
+                      className="p-2 text-green-600 rounded-lg bg-green-100/70 hover:bg-green-200/70"
+                    >
+                      <Check size={14} />
+                    </button>
+
+                    <button
+                      title="Reject"
+                      onClick={async () => {
+                        try {
+                          await hr.rejectLeave(l._id);
+                          toast.success("Leave rejected");
+                          load();
+                        } catch (e) {
+                          toast.error(
+                            e?.response?.data?.message || "Reject failed"
+                          );
+                        }
+                      }}
+                      className="p-2 text-red-600 rounded-lg bg-red-100/70 hover:bg-red-200/70"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

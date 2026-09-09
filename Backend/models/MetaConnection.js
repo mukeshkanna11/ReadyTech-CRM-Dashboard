@@ -54,6 +54,24 @@ const metaConnectionSchema = new mongoose.Schema(
       profilePictureUrl: { type: String, default: null },
     },
 
+    /* 💬 WhatsApp Cloud API
+       Authenticated with its own System User token (env), NOT the
+       Facebook OAuth user token — so it survives an FB/IG disconnect. */
+    whatsapp: {
+      connected: { type: Boolean, default: false },
+      phoneNumberId: { type: String, default: null },
+      wabaId: { type: String, default: null },
+      displayPhoneNumber: { type: String, default: null },
+      verifiedName: { type: String, default: null },
+      qualityRating: { type: String, default: null },
+      // Optional DB-stored token; env is the source of truth initially
+      encryptedToken: { type: String, default: null },
+      webhookSubscribed: { type: Boolean, default: false },
+      lastInboundAt: { type: Date, default: null },
+      lastSyncedAt: { type: Date, default: null },
+      lastError: { type: String, default: null },
+    },
+
     lastSyncedAt: { type: Date, default: null },
     lastError: { type: String, default: null },
 
@@ -113,6 +131,20 @@ metaConnectionSchema.methods.toSafeJSON = function () {
       username: this.instagram?.username || null,
       name: this.instagram?.name || null,
       profilePictureUrl: this.instagram?.profilePictureUrl || null,
+    },
+
+    whatsapp: {
+      connected: !!this.whatsapp?.connected,
+      phoneNumberId: this.whatsapp?.phoneNumberId || null,
+      wabaId: this.whatsapp?.wabaId || null,
+      displayPhoneNumber: this.whatsapp?.displayPhoneNumber || null,
+      verifiedName: this.whatsapp?.verifiedName || null,
+      qualityRating: this.whatsapp?.qualityRating || null,
+      tokenPresent: !!this.whatsapp?.encryptedToken,
+      webhookSubscribed: !!this.whatsapp?.webhookSubscribed,
+      lastInboundAt: this.whatsapp?.lastInboundAt || null,
+      lastSyncedAt: this.whatsapp?.lastSyncedAt || null,
+      lastError: this.whatsapp?.lastError || null,
     },
 
     lastSyncedAt: this.lastSyncedAt,

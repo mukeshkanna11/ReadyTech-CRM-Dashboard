@@ -28,6 +28,7 @@ import chatRoutes from "./routes/chat.routes.js";
 import automationRoutes from "./routes/automationRoutes.js";
 // Meta Integration Module (centralized for CRM / ERP / AI Content)
 import metaRoutes from "./routes/meta.routes.js";
+import whatsappRoutes from "./routes/whatsapp.routes.js";
 // HR Module
 import hrRoutes from "./routes/hr/index.js";
 import hrReportRoutes from "./routes/hr/hrReport.routes.js";
@@ -50,20 +51,23 @@ app.use(
     crossOriginResourcePolicy: false, // allow images, fonts across origins
   })
 );
-
 const allowedOrigins = [
   "http://localhost:5173",
+  "http://localhost:5174",
   "http://localhost:3000",
-  "http://localhost:8081",      // Expo Web
-  "http://127.0.0.1:8081",   
-  "http://192.168.0.101:8081",  // Optional
+  "http://localhost:8081",
+  "http://127.0.0.1:8081",
+  "http://192.168.0.101:8081",
+
   "https://readytechcrm.netlify.app",
   "https://readytech-crm-site.netlify.app",
-  // No trailing slash — the browser Origin header never has one.
+
   "https://crmreadytechsolutions.in",
   "https://www.crmreadytechsolutions.in",
-  // Honour the deployed CLIENT_URL instead of relying on this list alone.
-  ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL.replace(/\/+$/, "")] : []),
+
+  ...(process.env.CLIENT_URL
+    ? [process.env.CLIENT_URL.replace(/\/+$/, "")]
+    : []),
 ];
 app.use(
   cors({
@@ -84,7 +88,18 @@ app.options("*", cors());
 /* ======================================================
    BODY PARSERS
 ====================================================== */
-app.use(express.json({ limit: "10mb" }));
+app.use(
+  express.json({
+    limit: "10mb",
+    // Preserve the original bytes ONLY for the WhatsApp webhook, which needs
+    // them for the X-Hub-Signature-256 HMAC check. All other routes unchanged.
+    verify: (req, res, buf) => {
+      if ((req.originalUrl || req.url || "").startsWith("/api/whatsapp/webhook")) {
+        req.rawBody = buf;
+      }
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true }));
 
 /* ======================================================
@@ -134,6 +149,8 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/automations", automationRoutes);
 // Meta Integration (auth applied per-route; OAuth callback is public)
 app.use("/api/meta", metaRoutes);
+// WhatsApp Cloud API (auth applied per-route; webhook is public)
+app.use("/api/whatsapp", whatsappRoutes);
 // User profile
 app.use("/api/user", auth, userRoutes);
 app.use("/api/ai", auth, aiRoutes);

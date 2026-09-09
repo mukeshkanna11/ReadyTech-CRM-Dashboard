@@ -71,6 +71,7 @@ const HR = lazy(() => import("./pages/HR"));
 
 /* Integrations */
 const MetaIntegration = lazy(() => import("./pages/Integrations/MetaIntegration"));
+const WhatsAppInbox = lazy(() => import("./pages/Integrations/WhatsAppInbox"));
 
 /* Info / Settings */
 const WhyReadyTech = lazy(() => import("./pages/WhyReadyTech"));
@@ -209,6 +210,7 @@ export default function App() {
                           INTEGRATIONS MODULE
             ====================================================== */}
             <Route path="integrations/meta" element={<MetaIntegration />} />
+            <Route path="integrations/whatsapp" element={<WhatsAppInbox />} />
 
             {/* ======================================================
                           SETTINGS & INFO

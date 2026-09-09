@@ -108,6 +108,7 @@ const AI_LINKS = [
 /* Centralized integrations — one Meta connection for CRM, ERP & AI Content */
 const INTEGRATION_LINKS = [
   { to: "/integrations/meta", icon: Plug, label: "Meta Integration" },
+  { to: "/integrations/whatsapp", icon: MessageSquare, label: "WhatsApp Inbox" },
 ];
 
 function Sidebar({ open }) {

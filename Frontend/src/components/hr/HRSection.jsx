@@ -191,24 +191,59 @@ export default function HRSection({ config }) {
             </div>
           )}
 
-          {filters.map((f) => (
-            <select
-              key={f.name}
-              value={filterState[f.name] || ""}
-              onChange={(e) => {
-                setFilterState((s) => ({ ...s, [f.name]: e.target.value }));
+          {filters.map((f) => {
+            const setFilter = (value) => {
+              setFilterState((s) => ({ ...s, [f.name]: value }));
+              setPage(1);
+            };
+
+            if (f.type === "date")
+              return (
+                <label key={f.name} className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">
+                    {f.label}
+                  </span>
+                  <input
+                    type="date"
+                    value={filterState[f.name] || ""}
+                    onChange={(e) => setFilter(e.target.value)}
+                    className="py-2 px-3 text-sm bg-slate-50 border border-slate-200 outline-none rounded-xl focus:border-indigo-500"
+                  />
+                </label>
+              );
+
+            return (
+              <select
+                key={f.name}
+                value={filterState[f.name] || ""}
+                onChange={(e) => setFilter(e.target.value)}
+                className="py-2.5 px-3 text-sm bg-slate-50 border border-slate-200 outline-none rounded-xl focus:border-indigo-500 max-w-[14rem]"
+              >
+                <option value="">{f.label}: All</option>
+                {f.options.map((o) => {
+                  const value = typeof o === "string" ? o : o.value;
+                  const label = typeof o === "string" ? o : o.label;
+                  return (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  );
+                })}
+              </select>
+            );
+          })}
+
+          {Object.values(filterState).some(Boolean) && (
+            <button
+              onClick={() => {
+                setFilterState({});
                 setPage(1);
               }}
-              className="py-2.5 px-3 text-sm bg-slate-50 border border-slate-200 outline-none rounded-xl focus:border-indigo-500"
+              className="px-3 py-2 text-xs font-semibold rounded-xl text-slate-500 hover:bg-slate-100"
             >
-              <option value="">{f.label}: All</option>
-              {f.options.map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
-            </select>
-          ))}
+              Clear filters
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
