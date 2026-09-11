@@ -141,6 +141,70 @@ export default function Users() {
   const [drawer, setDrawer] = useState(false);  
   const [editingId, setEditingId] = useState(null);
 
+  /* ===== CHANGE OWN PASSWORD ===== */
+  const [pwdOpen, setPwdOpen] = useState(false);
+  const [pwdSaving, setPwdSaving] = useState(false);
+  const [pwdError, setPwdError] = useState("");
+  const [pwdForm, setPwdForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+
+  const closePwd = () => {
+    setPwdOpen(false);
+    setPwdError("");
+    setPwdForm({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
+  };
+
+  const submitPwd = async (e) => {
+    e.preventDefault();
+
+    const { currentPassword, newPassword, confirmPassword } = pwdForm;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return setPwdError("All password fields are required");
+    }
+
+    if (newPassword !== confirmPassword) {
+      return setPwdError("New password and confirm password do not match");
+    }
+
+    if (newPassword.length < 6) {
+      return setPwdError("New password must be at least 6 characters");
+    }
+
+    if (newPassword === currentPassword) {
+      return setPwdError(
+        "New password must be different from the current password"
+      );
+    }
+
+    try {
+      setPwdSaving(true);
+      setPwdError("");
+
+      const res = await API.patch("/user/change-password", {
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      });
+
+      toast.success(res.data?.message || "Password changed successfully");
+      closePwd();
+    } catch (err) {
+      setPwdError(
+        err?.response?.data?.message || "Failed to change password"
+      );
+    } finally {
+      setPwdSaving(false);
+    }
+  };
+
   const [form, setForm] = useState({
   name: "",
   email: "",
@@ -681,6 +745,14 @@ console.table(
     >
       <Plus size={18} />
       Add New User
+    </button>
+
+    <button
+      onClick={() => setPwdOpen(true)}
+      className="inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold transition bg-white border shadow-sm rounded-2xl border-slate-200 text-slate-700 hover:bg-slate-50"
+    >
+      <Lock size={18} />
+      Change Password
     </button>
 
   </div>
@@ -1383,6 +1455,79 @@ function PremiumMetric({
 
 
       </div>
+
+      {/* ================= CHANGE PASSWORD ================= */}
+      {pwdOpen && (
+        <div className="fixed inset-0 z-50 grid p-4 bg-slate-900/50 place-items-center">
+          <form
+            onSubmit={submitPwd}
+            className="w-full max-w-md p-6 bg-white shadow-2xl rounded-3xl"
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-bold text-slate-900">
+                Change Password
+              </h2>
+
+              <button
+                type="button"
+                onClick={closePwd}
+                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                { name: "currentPassword", label: "Current Password" },
+                { name: "newPassword", label: "New Password" },
+                { name: "confirmPassword", label: "Confirm New Password" },
+              ].map((f) => (
+                <div key={f.name}>
+                  <label className="text-xs font-semibold tracking-wide uppercase text-slate-500">
+                    {f.label}
+                  </label>
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={pwdForm[f.name]}
+                    onChange={(e) =>
+                      setPwdForm({ ...pwdForm, [f.name]: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 mt-1 text-sm border rounded-xl border-slate-200 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {pwdError && (
+              <p className="p-3 mt-4 text-xs border rounded-xl border-rose-200 bg-rose-50 text-rose-700">
+                {pwdError}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                type="button"
+                onClick={closePwd}
+                disabled={pwdSaving}
+                className="px-4 py-2 text-sm font-medium border rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={pwdSaving}
+                className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {pwdSaving ? "Updating..." : "Update Password"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
     </div>
   );
