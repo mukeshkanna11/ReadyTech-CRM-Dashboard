@@ -112,6 +112,47 @@ export const handleMetaOAuthCallback = async (req, res) => {
   }
 };
 
+/* =========================================================
+   INSTAGRAM WEBHOOK — VERIFY (public, called once by Meta)
+   GET /api/meta/instagram/webhook
+========================================================= */
+export const verifyInstagramWebhook = (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  const expected = process.env.META_INSTAGRAM_VERIFY_TOKEN;
+
+  if (expected && mode === "subscribe" && token === expected) {
+    return res.status(200).send(String(challenge ?? ""));
+  }
+
+  console.error("Instagram webhook verification failed");
+
+  return res.status(403).send("Forbidden");
+};
+
+/* =========================================================
+   INSTAGRAM WEBHOOK — RECEIVE (public)
+   POST /api/meta/instagram/webhook
+   Acknowledge fast; processing is not implemented yet.
+========================================================= */
+export const receiveInstagramWebhook = (req, res) => {
+  res.status(200).json({ success: true });
+
+  try {
+    console.log(
+      "Instagram webhook event:",
+      JSON.stringify({
+        object: req.body?.object,
+        entries: Array.isArray(req.body?.entry) ? req.body.entry.length : 0,
+      })
+    );
+  } catch (error) {
+    console.error("Instagram webhook logging error:", error.message);
+  }
+};
+
 /* ================= REFRESH STATUS ================= */
 export const refreshMetaConnection = async (req, res) => {
   try {

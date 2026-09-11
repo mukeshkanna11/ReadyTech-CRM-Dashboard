@@ -5,6 +5,8 @@ import {
   handleMetaOAuthCallback,
   refreshMetaConnection,
   disconnectMeta,
+  verifyInstagramWebhook,
+  receiveInstagramWebhook,
 } from "../controllers/meta.controller.js";
 
 import auth from "../middlewares/auth.js";
@@ -14,6 +16,12 @@ const router = express.Router();
 
 /* Public — Meta redirects the browser here (guarded by signed state) */
 router.get("/oauth/callback", handleMetaOAuthCallback);
+
+/* Public — Meta Instagram webhook
+   GET  = one-time verification (hub.challenge)
+   POST = events (acknowledged only, processing not implemented yet) */
+router.get("/instagram/webhook", verifyInstagramWebhook);
+router.post("/instagram/webhook", receiveInstagramWebhook);
 
 /* Read status — any authenticated user (CRM / ERP / AI Content) */
 router.get("/status", auth, getMetaStatus);
