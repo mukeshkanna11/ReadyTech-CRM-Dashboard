@@ -141,6 +141,11 @@ export const receiveInstagramWebhook = (req, res) => {
   res.status(200).json({ success: true });
 
   try {
+    // Temporary delivery check: confirms Meta POST events reach production.
+    // Payload only — no tokens, app secret or env values are logged.
+    console.log("[IG-WEBHOOK] received", new Date().toISOString());
+    console.log("[IG-WEBHOOK] body:", JSON.stringify(req.body));
+
     console.log(
       "Instagram webhook event:",
       JSON.stringify({
