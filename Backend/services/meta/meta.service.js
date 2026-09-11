@@ -21,6 +21,9 @@ const OAUTH_SCOPES = [
   "public_profile",
   "business_management",
   "pages_show_list",
+  "pages_read_engagement",
+  "instagram_basic",
+  "instagram_manage_messages",
 ];
 
 const STATE_PURPOSE = "meta_oauth";
@@ -162,6 +165,7 @@ const fetchLinkedAssets = async (userAccessToken) => {
       "id,name,access_token,instagram_business_account{id,username,name,profile_picture_url}",
     limit: 100,
   });
+  console.log("META DEBUG pages:", JSON.stringify(pages, null, 2));
 
   if (!pages.length) {
     const error = new Error(

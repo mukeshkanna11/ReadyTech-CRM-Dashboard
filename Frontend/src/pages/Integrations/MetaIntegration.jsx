@@ -119,8 +119,8 @@ export default function MetaIntegration() {
     );
   }
 
-  const connected = !!status?.connected;
-  const config = status?.config;
+ const connected = !!status?.connected;
+const config = status?.config || { configured: true, missingEnv: [] };
 
   return (
     <div className="space-y-6">
@@ -366,7 +366,7 @@ function WhatsAppCard({ wa, busy, onSync }) {
     <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
+          <div className="grid w-10 h-10 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
             <MessageSquare size={20} />
           </div>
           <div>
