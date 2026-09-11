@@ -147,7 +147,7 @@ const SalesOrderSchema = new mongoose.Schema(
 /* ==========================================
    AUTO CALCULATE LINE TOTAL + GRAND TOTAL
 ========================================== */
-SalesOrderSchema.pre("save", function (next) {
+SalesOrderSchema.pre("save", function () {
   let grandTotal = 0;
 
   this.items.forEach((item) => {
@@ -156,8 +156,6 @@ SalesOrderSchema.pre("save", function (next) {
   });
 
   this.totalAmount = grandTotal;
-
-  next();
 });
 
 /* ==========================================

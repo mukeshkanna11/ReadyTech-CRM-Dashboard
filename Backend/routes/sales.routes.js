@@ -2,6 +2,9 @@ import express from "express";
 import {
   createSalesOrder,
   getSalesOrders,
+  getSalesOrderById,
+  updateSalesOrder,
+  deleteSalesOrder,
   approveSalesOrder,
   deliverSalesOrder,
   cancelSalesOrder,
@@ -15,6 +18,9 @@ const router = express.Router();
 ================================ */
 router.post("/", auth, createSalesOrder);
 router.get("/", auth, getSalesOrders);
+router.get("/:id", auth, getSalesOrderById);
+router.put("/:id", auth, updateSalesOrder);
+router.delete("/:id", auth, deleteSalesOrder);
 
 // 🔥 Workflow actions
 router.post("/:id/approve", auth, approveSalesOrder);

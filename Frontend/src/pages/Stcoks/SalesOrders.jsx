@@ -14,13 +14,35 @@ import {
   Download,
   TrendingUp,
   Plus,
+  Eye,
+  Pencil,
+  Trash2,
 } from "lucide-react";
+
+const EMPTY_ITEM = { product: "", qty: 1, price: 0 };
 
 export default function SalesOrders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+
+  /* ===== SELECTION SOURCES (existing APIs) ===== */
+  const [clients, setClients] = useState([]);
+  const [products, setProducts] = useState([]);
+
+  /* ===== CREATE / EDIT ===== */
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    customer: "",
+    notes: "",
+    items: [{ ...EMPTY_ITEM }],
+  });
+
+  /* ===== VIEW ===== */
+  const [viewSO, setViewSO] = useState(null);
 
   /* ================= FETCH ================= */
   const fetchOrders = async () => {
@@ -62,9 +84,189 @@ export default function SalesOrders() {
   };
 
 
+  const fetchClients = async () => {
+    try {
+      const res = await API.get("/clients");
+      setClients(
+        Array.isArray(res.data)
+          ? res.data
+          : res.data?.clients || res.data?.data || []
+      );
+    } catch {
+      /* interceptor already surfaced the error */
+    }
+  };
+
+  const fetchProducts = async () => {
+    try {
+      const res = await API.get("/products");
+      setProducts(
+        Array.isArray(res.data)
+          ? res.data
+          : res.data?.products || res.data?.data || []
+      );
+    } catch {
+      /* interceptor already surfaced the error */
+    }
+  };
+
   useEffect(() => {
     fetchOrders();
+    fetchClients();
+    fetchProducts();
   }, []);
+
+  /* ================= FORM HELPERS ================= */
+  const openCreate = () => {
+    setEditingId(null);
+    setForm({ customer: "", notes: "", items: [{ ...EMPTY_ITEM }] });
+    setDrawerOpen(true);
+  };
+
+  const openEdit = (so) => {
+    if (so.status !== "DRAFT") {
+      return toast.error(`Only DRAFT orders can be edited (this is ${so.status})`);
+    }
+
+    setEditingId(so._id);
+    setForm({
+      customer: so.customer?._id || so.customer || "",
+      notes: so.notes || "",
+      items: (so.items || []).map((i) => ({
+        product: i.product?._id || i.product || "",
+        qty: i.qty ?? 1,
+        price: i.price ?? 0,
+      })),
+    });
+    setDrawerOpen(true);
+  };
+
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setEditingId(null);
+    setForm({ customer: "", notes: "", items: [{ ...EMPTY_ITEM }] });
+  };
+
+  const setItem = (index, key, value) =>
+    setForm((prev) => ({
+      ...prev,
+      items: prev.items.map((item, i) =>
+        i === index
+          ? { ...item, [key]: key === "product" ? value : Number(value) }
+          : item
+      ),
+    }));
+
+  const addItemRow = () =>
+    setForm((prev) => ({ ...prev, items: [...prev.items, { ...EMPTY_ITEM }] }));
+
+  const removeItemRow = (index) =>
+    setForm((prev) => ({
+      ...prev,
+      items:
+        prev.items.length > 1
+          ? prev.items.filter((_, i) => i !== index)
+          : prev.items,
+    }));
+
+  /* Default the unit price from the selected product */
+  const onProductChange = (index, productId) => {
+    const picked = products.find((p) => p._id === productId);
+
+    setForm((prev) => ({
+      ...prev,
+      items: prev.items.map((item, i) =>
+        i === index
+          ? {
+              ...item,
+              product: productId,
+              price:
+                Number(item.price) > 0
+                  ? item.price
+                  : Number(picked?.price ?? picked?.sellingPrice ?? 0),
+            }
+          : item
+      ),
+    }));
+  };
+
+  const formTotal = form.items.reduce(
+    (sum, i) => sum + (Number(i.qty) || 0) * (Number(i.price) || 0),
+    0
+  );
+
+  /* ================= CREATE / UPDATE ================= */
+  const saveOrder = async (e) => {
+    e?.preventDefault();
+
+    if (!form.customer) return toast.error("Customer is required");
+
+    const items = form.items.filter((i) => i.product);
+
+    if (!items.length) return toast.error("At least one item is required");
+
+    if (items.some((i) => Number(i.qty) < 1))
+      return toast.error("Quantity must be at least 1");
+
+    if (items.some((i) => Number(i.price) < 0))
+      return toast.error("Unit price cannot be negative");
+
+    const payload = {
+      customer: form.customer,
+      notes: form.notes?.trim() || "",
+      items: items.map((i) => ({
+        product: i.product,
+        qty: Number(i.qty),
+        price: Number(i.price),
+      })),
+    };
+
+    try {
+      setSaving(true);
+
+      const res = editingId
+        ? await API.put(`/sales/${editingId}`, payload)
+        : await API.post("/sales", payload);
+
+      toast.success(
+        res.data?.message ||
+          (editingId ? "Sales order updated" : "Sales order created")
+      );
+
+      closeDrawer();
+      fetchOrders();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message ||
+          (editingId ? "Failed to update sales order" : "Failed to create sales order")
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /* ================= VIEW ================= */
+  const openView = async (id) => {
+    try {
+      const res = await API.get(`/sales/${id}`);
+      setViewSO(res.data?.salesOrder || res.data);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to load sales order");
+    }
+  };
+
+  /* ================= DELETE ================= */
+  const deleteOrder = async (so) => {
+    if (!confirm(`Delete ${so.soNumber}?`)) return;
+
+    try {
+      const res = await API.delete(`/sales/${so._id}`);
+      toast.success(res.data?.message || "Sales order deleted");
+      fetchOrders();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Delete failed");
+    }
+  };
 
   /* ================= FILTER ================= */
   const filteredOrders = useMemo(() => {
@@ -72,7 +274,7 @@ export default function SalesOrders() {
     return (Array.isArray(orders) ? orders : []).filter((so) => {
       const matchSearch =
         so.soNumber?.toLowerCase().includes(search.toLowerCase()) ||
-        so.customer?.name?.toLowerCase().includes(search.toLowerCase());
+        (so.customer?.companyName || "").toLowerCase().includes(search.toLowerCase());
 
       const matchStatus =
         statusFilter === "ALL" || so.status === statusFilter;
@@ -213,6 +415,7 @@ export default function SalesOrders() {
             </button>
 
             <button
+              onClick={openCreate}
               className="flex h-14 min-w-[220px] items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-600 px-6 font-semibold shadow-xl transition hover:-translate-y-1"
             >
               <Plus size={18} />
@@ -440,7 +643,7 @@ export default function SalesOrders() {
         {loading ? (
           <Loader />
         ) : filteredOrders.length === 0 ? (
-          <Empty />
+          <Empty onCreate={openCreate} />
         ) : (
 
           <div className="overflow-x-auto">
@@ -459,6 +662,7 @@ export default function SalesOrders() {
                   <Th>Status</Th>
                   <Th>Date</Th>
                   <Th>Created By</Th>
+                  <Th>Actions</Th>
 
                 </tr>
 
@@ -469,20 +673,20 @@ export default function SalesOrders() {
 
                 {filteredOrders.map((so) => {
 
-                  const totalQty = so.items.reduce(
-                    (s, i) => s + i.qty,
+                  const totalQty = (so.items || []).reduce(
+                    (s, i) => s + (i.qty || 0),
                     0
                   );
 
 
-                  const totalAmt = so.items.reduce(
-                    (s, i) => s + (i.qty * i.price),
+                  const totalAmt = (so.items || []).reduce(
+                    (s, i) => s + ((i.qty || 0) * (i.price || 0)),
                     0
                   );
 
 
                   const customerName =
-                    so.customer?.name || "Unknown";
+                    so.customer?.companyName || so.customer?.contactPerson || "Unknown";
 
 
                   const initials =
@@ -499,7 +703,7 @@ export default function SalesOrders() {
 
                     <tr
                       key={so._id}
-                      onClick={() => toast(`SO ${so.soNumber}`)}
+                      onClick={() => openView(so._id)}
                       className="transition border-t cursor-pointer hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
                     >
 
@@ -684,6 +888,43 @@ export default function SalesOrders() {
                       </Td>
 
 
+                      {/* ACTIONS */}
+                      <Td>
+
+                        <div
+                          className="flex items-center gap-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+
+                          <button
+                            onClick={() => openView(so._id)}
+                            title="View"
+                            className="p-2 text-blue-600 transition bg-blue-100 rounded-xl hover:bg-blue-200"
+                          >
+                            <Eye size={15} />
+                          </button>
+
+                          <button
+                            onClick={() => openEdit(so)}
+                            title="Edit"
+                            className="p-2 transition rounded-xl bg-amber-100 text-amber-600 hover:bg-amber-200"
+                          >
+                            <Pencil size={15} />
+                          </button>
+
+                          <button
+                            onClick={() => deleteOrder(so)}
+                            title="Delete"
+                            className="p-2 text-red-600 transition bg-red-100 rounded-xl hover:bg-red-200"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+
+                        </div>
+
+                      </Td>
+
+
 
                     </tr>
 
@@ -703,6 +944,308 @@ export default function SalesOrders() {
         )}
 
       </div>
+
+      {/* ================= CREATE / EDIT DRAWER ================= */}
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/50">
+          <form
+            onSubmit={saveOrder}
+            className="flex h-full w-full max-w-2xl flex-col bg-white dark:bg-slate-900"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 text-white bg-gradient-to-r from-indigo-700 via-violet-700 to-blue-700">
+              <div>
+                <h3 className="text-lg font-bold">
+                  {editingId ? "Edit Sales Order" : "Create Sales Order"}
+                </h3>
+                <p className="mt-1 text-xs text-indigo-100">
+                  Order number and totals are generated by the server.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeDrawer}
+                className="px-3 py-1.5 text-sm rounded-xl bg-white/10 hover:bg-white/20"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 p-6 space-y-5 overflow-y-auto">
+
+              {/* Customer */}
+              <div>
+                <label className="block mb-1 text-xs font-semibold text-slate-500">
+                  Customer
+                </label>
+
+                <select
+                  value={form.customer}
+                  onChange={(e) =>
+                    setForm({ ...form, customer: e.target.value })
+                  }
+                  className="w-full px-3 py-3 text-sm border rounded-2xl border-slate-200 bg-slate-50 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                >
+                  <option value="">Select customer</option>
+                  {clients.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {c.companyName || c.contactPerson}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Items */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-slate-500">
+                    Line Items
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={addItemRow}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-100 rounded-xl hover:bg-indigo-200"
+                  >
+                    <Plus size={14} />
+                    Add Item
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {form.items.map((item, index) => {
+                    const lineTotal =
+                      (Number(item.qty) || 0) * (Number(item.price) || 0);
+
+                    return (
+                      <div
+                        key={index}
+                        className="p-4 border rounded-2xl border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
+                      >
+                        <div className="grid gap-3 sm:grid-cols-12">
+
+                          <div className="sm:col-span-5">
+                            <label className="block mb-1 text-[11px] text-slate-500">
+                              Product
+                            </label>
+
+                            <select
+                              value={item.product}
+                              onChange={(e) =>
+                                onProductChange(index, e.target.value)
+                              }
+                              className="w-full px-3 py-2 text-sm bg-white border rounded-xl border-slate-200 focus:border-indigo-500 focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                            >
+                              <option value="">Select product</option>
+                              {products.map((p) => (
+                                <option key={p._id} value={p._id}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="sm:col-span-2">
+                            <label className="block mb-1 text-[11px] text-slate-500">
+                              Qty
+                            </label>
+
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.qty}
+                              onChange={(e) =>
+                                setItem(index, "qty", e.target.value)
+                              }
+                              className="w-full px-3 py-2 text-sm bg-white border rounded-xl border-slate-200 focus:border-indigo-500 focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-3">
+                            <label className="block mb-1 text-[11px] text-slate-500">
+                              Unit Price
+                            </label>
+
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.price}
+                              onChange={(e) =>
+                                setItem(index, "price", e.target.value)
+                              }
+                              className="w-full px-3 py-2 text-sm bg-white border rounded-xl border-slate-200 focus:border-indigo-500 focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                            />
+                          </div>
+
+                          <div className="flex items-end justify-between gap-2 sm:col-span-2">
+                            <div>
+                              <label className="block mb-1 text-[11px] text-slate-500">
+                                Line Total
+                              </label>
+
+                              <p className="py-2 text-sm font-bold text-emerald-600">
+                                ₹{lineTotal.toLocaleString()}
+                              </p>
+                            </div>
+
+                            {form.items.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeItemRow(index)}
+                                className="p-2 mb-1 text-red-600 bg-red-100 rounded-xl hover:bg-red-200"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block mb-1 text-xs font-semibold text-slate-500">
+                  Notes
+                </label>
+
+                <textarea
+                  rows={3}
+                  maxLength={1000}
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder="Delivery instructions, payment terms..."
+                  className="w-full px-3 py-3 text-sm border rounded-2xl border-slate-200 bg-slate-50 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between gap-4 px-6 py-5 border-t border-slate-200 dark:border-slate-700">
+              <div>
+                <p className="text-xs text-slate-500">Grand Total</p>
+                <p className="text-xl font-bold text-emerald-600">
+                  ₹{formTotal.toLocaleString()}
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={closeDrawer}
+                  disabled={saving}
+                  className="px-5 py-3 text-sm font-semibold border rounded-2xl border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-white"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-6 py-3 text-sm font-semibold text-white rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:shadow-xl disabled:opacity-50"
+                >
+                  {saving
+                    ? "Saving..."
+                    : editingId
+                    ? "Update Sales Order"
+                    : "Create Sales Order"}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ================= VIEW MODAL ================= */}
+      {viewSO && (
+        <div className="fixed inset-0 z-50 grid p-4 bg-slate-900/50 place-items-center">
+          <div className="w-full max-w-xl overflow-hidden bg-white shadow-2xl rounded-3xl dark:bg-slate-900">
+
+            <div className="flex items-center justify-between px-6 py-5 text-white bg-gradient-to-r from-indigo-700 via-violet-700 to-blue-700">
+              <div>
+                <h3 className="text-lg font-bold">{viewSO.soNumber}</h3>
+                <p className="mt-1 text-xs text-indigo-100">
+                  {viewSO.customer?.companyName || viewSO.customer?.contactPerson || "—"} ·{" "}
+                  {viewSO.createdAt
+                    ? new Date(viewSO.createdAt).toLocaleDateString()
+                    : "—"}
+                </p>
+              </div>
+
+              <button
+                onClick={() => setViewSO(null)}
+                className="px-3 py-1.5 text-sm rounded-xl bg-white/10 hover:bg-white/20"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-6">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs uppercase text-slate-500">
+                    <th className="py-2 text-left">Product</th>
+                    <th className="py-2 text-right">Qty</th>
+                    <th className="py-2 text-right">Price</th>
+                    <th className="py-2 text-right">Line Total</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {(viewSO.items || []).map((item, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="py-2">{item.product?.name || "—"}</td>
+                      <td className="py-2 text-right">{item.qty}</td>
+                      <td className="py-2 text-right">
+                        ₹{(item.price || 0).toLocaleString()}
+                      </td>
+                      <td className="py-2 font-semibold text-right">
+                        ₹
+                        {(
+                          item.lineTotal ??
+                          (item.qty || 0) * (item.price || 0)
+                        ).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {viewSO.notes && (
+                <p className="p-3 mt-4 text-xs border rounded-xl border-slate-200 bg-slate-50 text-slate-600">
+                  {viewSO.notes}
+                </p>
+              )}
+
+              <div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-200 dark:border-slate-700">
+                <span className="px-3 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700">
+                  {viewSO.status}
+                </span>
+
+                <div className="text-right">
+                  <p className="text-xs text-slate-500">Grand Total</p>
+                  <p className="text-xl font-bold text-emerald-600">
+                    ₹
+                    {(
+                      viewSO.totalAmount ??
+                      (viewSO.items || []).reduce(
+                        (s, i) => s + (i.qty || 0) * (i.price || 0),
+                        0
+                      )
+                    ).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -854,7 +1397,7 @@ function Loader() {
 
 
 
-function Empty() {
+function Empty({ onCreate }) {
 
   return (
 
@@ -880,6 +1423,7 @@ function Empty() {
       </p>
 
       <button
+        onClick={onCreate}
         className="px-6 py-3 mt-8 font-semibold text-white transition shadow-lg rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:-translate-y-1 hover:shadow-2xl"
       >
         Create Sales Order

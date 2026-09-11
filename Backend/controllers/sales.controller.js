@@ -90,13 +90,13 @@ export const createSalesOrder = async (req, res) => {
       totalAmount,
       notes,
       status: "DRAFT",
-      createdBy: req.user.id,
+      createdBy: req.user._id,
     });
 
     const populatedSO = await SalesOrder.findById(
       salesOrder._id
     )
-      .populate("customer", "name email phone")
+      .populate("customer", "companyName contactPerson email phone")
       .populate("items.product", "name sku price");
 
     return res.status(201).json({
@@ -128,7 +128,7 @@ export const createSalesOrder = async (req, res) => {
 export const getSalesOrders = async (req, res) => {
   try {
     const salesOrders = await SalesOrder.find()
-      .populate("customer", "name email phone")
+      .populate("customer", "companyName contactPerson email phone")
       .populate("items.product", "name sku price")
       .populate("createdBy", "name email")
       .sort({ createdAt: -1 });
@@ -156,7 +156,7 @@ export const getSalesOrderById = async (req, res) => {
     const salesOrder = await SalesOrder.findById(
       req.params.id
     )
-      .populate("customer", "name email phone")
+      .populate("customer", "companyName contactPerson email phone")
       .populate("items.product", "name sku price")
       .populate("createdBy", "name email")
       .populate("approvedBy", "name email")
@@ -175,6 +175,121 @@ export const getSalesOrderById = async (req, res) => {
     });
   } catch (err) {
     console.error("Get SO By ID Error:", err);
+
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
+/* ==========================================
+   UPDATE SALES ORDER (DRAFT ONLY)
+   Stock is reserved at approval, so an approved or
+   delivered order must not be edited in place.
+========================================== */
+export const updateSalesOrder = async (req, res) => {
+  try {
+    const salesOrder = await SalesOrder.findById(req.params.id);
+
+    if (!salesOrder) {
+      return res.status(404).json({
+        success: false,
+        message: "Sales order not found",
+      });
+    }
+
+    if (salesOrder.status !== "DRAFT") {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot edit order in ${salesOrder.status} status`,
+      });
+    }
+
+    const { customer, items, notes } = req.body;
+
+    if (customer) salesOrder.customer = customer;
+    if (notes !== undefined) salesOrder.notes = notes;
+
+    if (items) {
+      if (!items.length) {
+        return res.status(400).json({
+          success: false,
+          message: "At least one item is required",
+        });
+      }
+
+      const productIds = [...new Set(items.map((item) => item.product))];
+
+      const products = await Product.find({
+        _id: { $in: productIds },
+      });
+
+      if (products.length !== productIds.length) {
+        return res.status(400).json({
+          success: false,
+          message: "One or more products are invalid",
+        });
+      }
+
+      salesOrder.items = items.map((item) => ({
+        product: item.product,
+        qty: item.qty,
+        price: item.price,
+      }));
+    }
+
+    // pre("save") recalculates lineTotal + totalAmount
+    await salesOrder.save();
+
+    const populatedSO = await SalesOrder.findById(salesOrder._id)
+      .populate("customer", "companyName contactPerson email phone")
+      .populate("items.product", "name sku price");
+
+    return res.status(200).json({
+      success: true,
+      message: "Sales order updated successfully",
+      salesOrder: populatedSO,
+    });
+  } catch (err) {
+    console.error("Update SO Error:", err);
+
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
+/* ==========================================
+   DELETE SALES ORDER (DRAFT / CANCELLED ONLY)
+========================================== */
+export const deleteSalesOrder = async (req, res) => {
+  try {
+    const salesOrder = await SalesOrder.findById(req.params.id);
+
+    if (!salesOrder) {
+      return res.status(404).json({
+        success: false,
+        message: "Sales order not found",
+      });
+    }
+
+    if (!["DRAFT", "CANCELLED"].includes(salesOrder.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete order in ${salesOrder.status} status`,
+      });
+    }
+
+    await salesOrder.deleteOne();
+
+    return res.status(200).json({
+      success: true,
+      message: "Sales order deleted successfully",
+    });
+  } catch (err) {
+    console.error("Delete SO Error:", err);
 
     return res.status(500).json({
       success: false,
@@ -223,7 +338,7 @@ export const approveSalesOrder = async (req, res) => {
 
       salesOrder.status = "APPROVED";
       salesOrder.approvedAt = new Date();
-      salesOrder.approvedBy = req.user.id;
+      salesOrder.approvedBy = req.user._id;
 
       await salesOrder.save({ session });
     });
@@ -307,7 +422,7 @@ export const deliverSalesOrder = async (req, res) => {
               outQty: item.qty,
               type: "SALE",
               reference: salesOrder._id,
-              createdBy: req.user.id,
+              createdBy: req.user._id,
             },
           ],
           { session }
@@ -321,7 +436,7 @@ export const deliverSalesOrder = async (req, res) => {
 
       salesOrder.status = "DELIVERED";
       salesOrder.deliveredAt = new Date();
-      salesOrder.deliveredBy = req.user.id;
+      salesOrder.deliveredBy = req.user._id;
 
       await salesOrder.save({ session });
     });
@@ -377,7 +492,7 @@ export const cancelSalesOrder = async (req, res) => {
 
       salesOrder.status = "CANCELLED";
       salesOrder.cancelledAt = new Date();
-      salesOrder.cancelledBy = req.user.id;
+      salesOrder.cancelledBy = req.user._id;
 
       await salesOrder.save({ session });
     });
