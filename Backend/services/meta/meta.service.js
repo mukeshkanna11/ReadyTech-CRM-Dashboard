@@ -194,8 +194,26 @@ const fetchLinkedAssets = async (userAccessToken) => {
     }
   }
 
+  /* Business Portfolio: env wins, else read the connected portfolio
+     (allowed by business_management). Non-fatal. */
+  let businessPortfolioId = portfolioId || null;
+
+  if (!businessPortfolioId) {
+    try {
+      const { data: businesses = [] } = await graphRequest("me/businesses", {
+        access_token: userAccessToken,
+        fields: "id,name",
+        limit: 10,
+      });
+
+      businessPortfolioId = businesses[0]?.id || null;
+    } catch (error) {
+      console.error("Business portfolio lookup failed:", error.message);
+    }
+  }
+
   return {
-    businessPortfolioId: portfolioId || null,
+    businessPortfolioId,
     facebookPage: {
       id: page.id,
       name: page.name,
