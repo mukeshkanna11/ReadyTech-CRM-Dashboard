@@ -175,7 +175,24 @@ const fetchLinkedAssets = async (userAccessToken) => {
   const page =
     pages.find((p) => p.instagram_business_account?.id) || pages[0];
 
-  const instagram = page.instagram_business_account || null;
+  let instagram = page.instagram_business_account || null;
+
+  /* Fallback: the user token sometimes omits the Instagram edge.
+     Re-read it from the Page itself with the Page access token.
+     Non-fatal — needs pages_read_engagement + instagram_basic. */
+  if (!instagram?.id && page.access_token) {
+    try {
+      const linked = await graphRequest(page.id, {
+        access_token: page.access_token,
+        fields:
+          "instagram_business_account{id,username,name,profile_picture_url}",
+      });
+
+      instagram = linked.instagram_business_account || null;
+    } catch (error) {
+      console.error("Instagram link lookup failed:", error.message);
+    }
+  }
 
   return {
     businessPortfolioId: portfolioId || null,
