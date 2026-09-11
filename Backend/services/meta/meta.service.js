@@ -12,13 +12,15 @@ import { encryptToken, decryptToken } from "./tokenVault.js";
    Meta Business — this service only READS that linkage.
 ========================================================= */
 
+/* Only permissions this app can currently request. Instagram
+   permissions (instagram_basic, instagram_manage_insights) and
+   pages_read_engagement are rejected as "Invalid Scopes" until the
+   Instagram product is added to the Meta app and approved — re-add
+   them here once available. */
 const OAUTH_SCOPES = [
   "public_profile",
   "business_management",
   "pages_show_list",
-  "pages_read_engagement",
-  "instagram_basic",
-  "instagram_manage_insights",
 ];
 
 const STATE_PURPOSE = "meta_oauth";
