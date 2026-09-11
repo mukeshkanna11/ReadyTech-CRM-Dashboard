@@ -107,6 +107,19 @@ const LeadSchema = new Schema(
     },
 
     // =========================
+    // INSTAGRAM DM REFERENCE
+    // Sender ID (IGSID) of the Instagram DM thread this lead came
+    // from. Used to de-duplicate webhook leads and to enrich the
+    // same lead across multiple messages.
+    // =========================
+    instagramSenderId: {
+      type: String,
+      trim: true,
+      default: null,
+      index: true,
+    },
+
+    // =========================
     // OWNER
     // =========================
     owner: {

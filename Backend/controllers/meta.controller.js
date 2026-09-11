@@ -9,6 +9,7 @@ import {
   refreshConnection,
   disconnectConnection,
 } from "../services/meta/meta.service.js";
+import { processWebhookPayload as processInstagramWebhook } from "../services/meta/instagram.service.js";
 
 /* =========================================================
    Frontend page that shows the connection result
@@ -139,26 +140,27 @@ export const verifyInstagramWebhook = (req, res) => {
 /* =========================================================
    INSTAGRAM WEBHOOK — RECEIVE (public)
    POST /api/meta/instagram/webhook
-   Acknowledge fast; processing is not implemented yet.
+   Acknowledge immediately (Meta retries on slow replies), then
+   turn inbound DMs into CRM Leads.
 ========================================================= */
-export const receiveInstagramWebhook = (req, res) => {
+export const receiveInstagramWebhook = async (req, res) => {
   res.status(200).json({ success: true });
 
-  try {
-    // Temporary delivery check: confirms Meta POST events reach production.
-    // Payload only — no tokens, app secret or env values are logged.
-    console.log("[IG-WEBHOOK] received", new Date().toISOString());
-    console.log("[IG-WEBHOOK] body:", JSON.stringify(req.body));
+  const payload = req.body;
 
-    console.log(
-      "Instagram webhook event:",
-      JSON.stringify({
-        object: req.body?.object,
-        entries: Array.isArray(req.body?.entry) ? req.body.entry.length : 0,
-      })
-    );
+  // Payload only — no tokens, app secret or env values are logged.
+  console.log("[IG-WEBHOOK] received", new Date().toISOString());
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[IG-WEBHOOK] body:", JSON.stringify(payload));
+  }
+
+  try {
+    const result = await processInstagramWebhook(payload);
+
+    console.log("[IG-WEBHOOK] processed", JSON.stringify(result));
   } catch (error) {
-    console.error("Instagram webhook logging error:", error.message);
+    console.error("Instagram webhook processing error:", error.message);
   }
 };
 
