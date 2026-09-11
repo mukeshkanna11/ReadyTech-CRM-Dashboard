@@ -256,6 +256,10 @@ export default function MetaIntegration() {
           />
           <Detail label="Graph API version" value={config?.apiVersion || "—"} />
           <Detail
+            label="OAuth redirect URI"
+            value={config?.redirectUri || "Not set (META_REDIRECT_URI)"}
+          />
+          <Detail
             label="Access token"
             value={
               status?.token?.present

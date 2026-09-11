@@ -27,7 +27,8 @@ const clientRedirect = (params) => {
 /* ================= GET CONNECTION STATUS ================= */
 export const getMetaStatus = async (req, res) => {
   try {
-    const { configured, missing, portfolioId, apiVersion } = getMetaConfig();
+    const { configured, missing, portfolioId, apiVersion, redirectUri } =
+      getMetaConfig();
     const connection = await MetaConnection.getSingleton();
 
     res.json({
@@ -39,6 +40,9 @@ export const getMetaStatus = async (req, res) => {
           missingEnv: missing,
           apiVersion,
           businessPortfolioId: portfolioId || null,
+          // Public callback URL only — must match the Meta app's
+          // "Valid OAuth Redirect URIs". Not a secret.
+          redirectUri: redirectUri || null,
         },
       },
     });
