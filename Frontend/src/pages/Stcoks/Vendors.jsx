@@ -20,6 +20,8 @@ export default function Vendors() {
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   /* ================= FETCH ================= */
   const fetchVendors = async () => {
@@ -38,20 +40,49 @@ export default function Vendors() {
     fetchVendors();
   }, []);
 
-  /* ================= ADD ================= */
+  /* ================= FORM HELPERS ================= */
+  const resetForm = () => {
+    setEditingId(null);
+    setName("");
+    setContact("");
+  };
+
+  const openEdit = (v) => {
+    setEditingId(v._id);
+    setName(v.name || "");
+    setContact(v.phone || "");
+  };
+
+  /* ================= ADD / UPDATE ================= */
   const addVendor = async () => {
     if (!name.trim()) return toast.error("Vendor name required");
+
+    // Vendor model fields: name, email, phone, address
+    const payload = {
+      name: name.trim(),
+      phone: contact.trim(),
+    };
+
     try {
-      await API.post("/inventory/vendors", {
-        name: name.trim(),
-        contact: contact.trim(),
-      });
-      toast.success("Vendor added");
-      setName("");
-      setContact("");
+      setSaving(true);
+
+      if (editingId) {
+        await API.put(`/vendors/${editingId}`, payload);
+        toast.success("Vendor updated");
+      } else {
+        await API.post("/vendors", payload);
+        toast.success("Vendor added");
+      }
+
+      resetForm();
       fetchVendors();
-    } catch {
-      toast.error("Failed to add vendor");
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message ||
+          (editingId ? "Failed to update vendor" : "Failed to add vendor")
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -59,11 +90,12 @@ export default function Vendors() {
   const deleteVendor = async (id) => {
     if (!confirm("Delete this vendor?")) return;
     try {
-      await API.delete(`/inventory/vendors/${id}`);
+      await API.delete(`/vendors/${id}`);
       toast.success("Vendor removed");
+      if (editingId === id) resetForm();
       fetchVendors();
-    } catch {
-      toast.error("Delete failed");
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Delete failed");
     }
   };
 
@@ -71,13 +103,13 @@ export default function Vendors() {
   const filtered = useMemo(
     () =>
       vendors.filter((v) =>
-        v.name.toLowerCase().includes(search.toLowerCase())
+        (v.name || "").toLowerCase().includes(search.toLowerCase())
       ),
     [vendors, search]
   );
 
   const total = vendors.length;
-  const active = vendors.filter((v) => v.contact).length;
+  const active = vendors.filter((v) => v.phone).length;
   const incomplete = total - active;
 
   /* ================= UI ================= */
@@ -150,6 +182,7 @@ export default function Vendors() {
       </button>
 
       <button
+        onClick={resetForm}
         className="flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-lg transition hover:scale-105"
       >
         <Plus size={16} />
@@ -308,12 +341,22 @@ export default function Vendors() {
       </div>
 
       {/* Add Button */}
+      {editingId && (
+        <button
+          onClick={resetForm}
+          className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+        >
+          Cancel
+        </button>
+      )}
+
       <button
         onClick={addVendor}
-        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-indigo-300"
+        disabled={saving}
+        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-indigo-300 disabled:opacity-50"
       >
         <Plus size={18} />
-        Add Vendor
+        {editingId ? "Update Vendor" : "Add Vendor"}
       </button>
 
     </div>
@@ -329,7 +372,7 @@ export default function Vendors() {
   {loading ? (
     <Loader />
   ) : filtered.length === 0 ? (
-    <Empty />
+    <Empty onAdd={resetForm} />
   ) : (
     <div className="overflow-x-auto">
 
@@ -354,7 +397,7 @@ export default function Vendors() {
 
           {filtered.map((v) => {
 
-            const active = Boolean(v.contact);
+            const active = Boolean(v.phone);
 
             const initials = v.name
               ?.split(" ")
@@ -389,7 +432,7 @@ export default function Vendors() {
                       </p>
 
                       <p className="text-xs text-slate-400">
-                        {v.contact || "No contact"}
+                        {v.phone || "No contact"}
                       </p>
 
                     </div>
@@ -504,6 +547,7 @@ export default function Vendors() {
 
                     <IconBtn
                       icon={Edit}
+                      onClick={() => openEdit(v)}
                     />
 
 
@@ -618,7 +662,7 @@ function Loader() {
     </div>
   );
 }
-function Empty() {
+function Empty({ onAdd }) {
   return (
     <div className="flex flex-col items-center justify-center py-16">
 
@@ -635,7 +679,7 @@ function Empty() {
       </p>
 
       <button
-        onClick={addVendor}
+        onClick={onAdd}
         className="mt-6 rounded-xl bg-indigo-600 px-5 py-2.5 text-white transition hover:bg-indigo-700"
       >
         + Add Vendor
