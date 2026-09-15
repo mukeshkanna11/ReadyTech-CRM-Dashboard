@@ -69,16 +69,27 @@ const allowedOrigins = [
     ? [process.env.CLIENT_URL.replace(/\/+$/, "")]
     : []),
 ];
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // allow non-browser requests (Postman, server-to-server)
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`CORS policy: ${origin} is not allowed`));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
 app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // allow non-browser requests (Postman, server-to-server)
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error(`CORS policy: ${origin} is not allowed`));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+  cors((req, callback) => {
+    // Meta calls the Instagram webhook server-to-server. A stray Origin header
+    // (proxy, API client, `null` from a sandboxed page) must not reject the
+    // verification handshake with a 403 before the route runs — CORS is a
+    // browser-side policy. Every other route keeps the strict allowlist.
+    if (req.path === "/api/meta/instagram/webhook") {
+      return callback(null, { ...corsOptions, origin: true });
+    }
+    return callback(null, corsOptions);
   })
 );
 
