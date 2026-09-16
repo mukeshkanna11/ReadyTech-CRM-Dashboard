@@ -29,6 +29,8 @@ import automationRoutes from "./routes/automationRoutes.js";
 // Meta Integration Module (centralized for CRM / ERP / AI Content)
 import metaRoutes from "./routes/meta.routes.js";
 import whatsappRoutes from "./routes/whatsapp.routes.js";
+// Twilio Voice (browser calling from the CRM Lead page)
+import voipRoutes from "./routes/voip.routes.js";
 // HR Module
 import hrRoutes from "./routes/hr/index.js";
 import hrReportRoutes from "./routes/hr/hrReport.routes.js";
@@ -162,6 +164,8 @@ app.use("/api/automations", automationRoutes);
 app.use("/api/meta", metaRoutes);
 // WhatsApp Cloud API (auth applied per-route; webhook is public)
 app.use("/api/whatsapp", whatsappRoutes);
+// Twilio Voice (auth applied per-route; Twilio webhooks are public)
+app.use("/api/voip", voipRoutes);
 // User profile
 app.use("/api/user", auth, userRoutes);
 app.use("/api/ai", auth, aiRoutes);

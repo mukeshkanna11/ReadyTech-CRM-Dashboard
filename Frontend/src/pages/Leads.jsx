@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import API from "../services/api";
 import toast from "react-hot-toast";
@@ -36,6 +36,8 @@ import {
   BarChart3,
   Megaphone,
   Zap,
+  PhoneCall,
+  PhoneOff,
 } from "lucide-react";
 
 import LeadAIAssistant from "../components/LeadAIAssistant";
@@ -224,6 +226,158 @@ const [activitiesLoading, setActivitiesLoading] = useState(false);
 
 const [users, setUsers] = useState([]);
 const [usersLoading, setUsersLoading] = useState(false);
+
+/* =========================================================
+   TWILIO BROWSER CALL (outbound only)
+   The Device is created lazily on the first Call click and
+   destroyed when the panel closes — never on page load.
+========================================================= */
+
+const [callLead, setCallLead] = useState(null);
+// idle | connecting | ringing | connected | completed | failed
+const [callState, setCallState] = useState("idle");
+const [callError, setCallError] = useState("");
+const [callSeconds, setCallSeconds] = useState(0);
+
+const deviceRef = useRef(null);
+const callRef = useRef(null);
+
+/* Tick the duration only while connected */
+useEffect(() => {
+  if (callState !== "connected") return;
+
+  const id = setInterval(
+    () => setCallSeconds((s) => s + 1),
+    1000
+  );
+
+  return () => clearInterval(id);
+}, [callState]);
+
+const formatDuration = (total) => {
+  const m = String(Math.floor(total / 60)).padStart(2, "0");
+  const s = String(total % 60).padStart(2, "0");
+  return `${m}:${s}`;
+};
+
+const teardownCall = () => {
+  try {
+    callRef.current?.disconnect?.();
+  } catch {
+    /* already gone */
+  }
+  callRef.current = null;
+
+  try {
+    deviceRef.current?.destroy?.();
+  } catch {
+    /* already gone */
+  }
+  deviceRef.current = null;
+};
+
+const startCall = async (lead) => {
+  // Requirement 4: guard a missing number, never start a call.
+  if (!lead?.phone) {
+    toast.error("This lead has no phone number");
+    return;
+  }
+
+  if (callState === "connecting" || callState === "ringing" || callState === "connected") {
+    toast.error("A call is already in progress");
+    return;
+  }
+
+  setCallLead(lead);
+  setCallError("");
+  setCallSeconds(0);
+  setCallState("connecting");
+
+  try {
+    // Reuses the shared axios instance -> Authorization header
+    const { data } = await API.get("/voip/token");
+    const token = data?.data?.token;
+
+    if (!token) throw new Error("No Twilio token returned");
+
+    // Loaded on demand so the SDK never runs on page load
+    const { Device } = await import("@twilio/voice-sdk");
+
+    teardownCall();
+
+    const device = new Device(token, {
+      codecPreferences: ["opus", "pcmu"],
+      disableAudioContextSounds: true,
+    });
+
+    deviceRef.current = device;
+
+    device.on("error", (err) => {
+      console.error("Twilio device error:", err);
+      setCallError(err?.message || "Device error");
+      setCallState("failed");
+    });
+
+    const call = await device.connect({
+      // Requirement 8: lead mapping travels with the call
+      params: {
+        To: String(lead.phone),
+        leadId: String(lead._id),
+      },
+    });
+
+    callRef.current = call;
+
+    call.on("ringing", () => setCallState("ringing"));
+    call.on("accept", () => setCallState("connected"));
+
+    call.on("disconnect", () => {
+      setCallState("completed");
+      callRef.current = null;
+      // Requirement 10: refresh this lead's timeline via the existing helper
+      setTimeout(() => fetchActivities(lead._id), 1500);
+    });
+
+    call.on("cancel", () => setCallState("completed"));
+
+    call.on("error", (err) => {
+      console.error("Twilio call error:", err);
+      setCallError(err?.message || "Call error");
+      setCallState("failed");
+    });
+  } catch (err) {
+    console.error("Failed to start call:", err);
+    setCallError(
+      err?.response?.data?.message || err?.message || "Unable to start call"
+    );
+    setCallState("failed");
+    teardownCall();
+  }
+};
+
+const endCall = () => {
+  try {
+    callRef.current?.disconnect?.();
+  } catch {
+    /* ignore */
+  }
+  setCallState("completed");
+};
+
+const closeCallPanel = () => {
+  const leadId = callLead?._id;
+
+  teardownCall();
+  setCallLead(null);
+  setCallState("idle");
+  setCallSeconds(0);
+  setCallError("");
+
+  if (leadId) fetchActivities(leadId);
+};
+
+/* Clean up if the page unmounts mid-call */
+useEffect(() => teardownCall, []);
 
 
 /* =========================================================
@@ -1730,6 +1884,30 @@ const fetchActivities = async (leadId) => {
                         <td className="px-6 py-4">
 
                           <div className="flex items-center justify-end gap-1">
+
+                            <IconButton
+                              onClick={() =>
+                                startCall(
+                                  lead
+                                )
+                              }
+                              title={
+                                lead.phone
+                                  ? `Call ${lead.phone}`
+                                  : "No phone number"
+                              }
+                              className={
+                                lead.phone
+                                  ? "text-emerald-600 hover:bg-emerald-50"
+                                  : "text-slate-300 cursor-not-allowed"
+                              }
+                            >
+                              <PhoneCall
+                                size={
+                                  16
+                                }
+                              />
+                            </IconButton>
 
                             <IconButton
                               onClick={() =>
@@ -3784,6 +3962,83 @@ const fetchActivities = async (leadId) => {
             setAiLead(null)
           }
         />
+      )}
+
+      {/* CALL */}
+
+      {callLead && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-900/50 p-4">
+
+          <div className="w-full max-w-sm overflow-hidden bg-white shadow-2xl rounded-3xl">
+
+            <div className="p-6 text-center">
+
+              <div className="grid w-16 h-16 mx-auto mb-4 place-items-center rounded-2xl bg-emerald-50">
+                <PhoneCall size={26} className="text-emerald-600" />
+              </div>
+
+              <h3 className="text-lg font-semibold text-slate-800">
+                {callLead.name || "Unknown Lead"}
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-500">
+                {callLead.phone || "—"}
+              </p>
+
+              <p className="mt-4 text-xs font-semibold tracking-wide uppercase text-slate-400">
+                {callState === "connecting" && "Calling…"}
+                {callState === "ringing" && "Ringing…"}
+                {callState === "connected" && "Connected"}
+                {callState === "completed" && "Completed"}
+                {callState === "failed" && "Failed"}
+              </p>
+
+              {callState === "connected" && (
+                <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800">
+                  {formatDuration(callSeconds)}
+                </p>
+              )}
+
+              {callState === "completed" && callSeconds > 0 && (
+                <p className="mt-2 text-sm text-slate-500">
+                  Duration {formatDuration(callSeconds)}
+                </p>
+              )}
+
+              {callError && (
+                <p className="mt-3 text-xs text-red-500">
+                  {callError}
+                </p>
+              )}
+
+            </div>
+
+            <div className="flex gap-3 px-6 pb-6">
+
+              {["connecting", "ringing", "connected"].includes(callState) ? (
+                <button
+                  type="button"
+                  onClick={endCall}
+                  className="flex items-center justify-center flex-1 gap-2 px-4 py-3 font-medium text-white bg-red-500 rounded-xl hover:bg-red-600"
+                >
+                  <PhoneOff size={16} />
+                  End Call
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={closeCallPanel}
+                  className="flex items-center justify-center flex-1 gap-2 px-4 py-3 font-medium border rounded-xl hover:bg-slate-50"
+                >
+                  Close
+                </button>
+              )}
+
+            </div>
+
+          </div>
+
+        </div>
       )}
 
     </div>
