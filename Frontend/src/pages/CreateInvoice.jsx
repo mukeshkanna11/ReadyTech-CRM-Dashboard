@@ -407,6 +407,322 @@ const calculations = useMemo(() => {
   };
 }, [invoice]);
 
+/* ==================================================
+   PRINT (no save / no API call)
+   Renders the currently entered form data into an
+   isolated iframe using the invoice print layout and
+   opens the browser print dialog immediately.
+================================================== */
+
+const handlePrint = () => {
+  const esc = (v) =>
+    String(v ?? "").replace(
+      /[&<>"]/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])
+    );
+
+  const money = (x) =>
+    `₹ ${Number(x || 0).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "-");
+
+  const join = (parts) => parts.filter(Boolean).join(", ");
+
+  const company = {
+    companyName: "ReadyTech Solutions",
+    website: "www.readytechsolutions.com",
+    email: "quries.readytechsolutions@gmail.com",
+    phone: "+91 7010797721",
+    gstNumber: "29ABCDE1234F1Z5",
+    panNumber: "ABCDE1234F",
+    address: "149 Hope College",
+    city: "Coimbatore",
+    state: "Tamil Nadu",
+    pincode: "641004",
+    country: "India",
+  };
+
+  const billingAddress = join([
+    buyer.billingAddress.addressLine1,
+    buyer.billingAddress.addressLine2,
+    buyer.billingAddress.city,
+    buyer.billingAddress.state,
+    buyer.billingAddress.pincode,
+    buyer.billingAddress.country,
+  ]);
+
+  const shippingAddress =
+    join([
+      buyer.shippingAddress.addressLine1,
+      buyer.shippingAddress.addressLine2,
+      buyer.shippingAddress.city,
+      buyer.shippingAddress.state,
+      buyer.shippingAddress.pincode,
+      buyer.shippingAddress.country,
+    ]) || billingAddress;
+
+  const isIntra = invoice.taxType === "INTRA";
+
+  const metaItem = (label, value) =>
+    `<div class="meta"><span>${esc(label)}</span><strong>${esc(
+      value
+    )}</strong></div>`;
+
+  const summaryRow = (label, value, cls = "") =>
+    `<div class="row ${cls}"><span>${esc(label)}</span><span>${esc(
+      value
+    )}</span></div>`;
+
+  const itemRows = (invoice.items || [])
+    .map((item, index) => {
+      const qty = Number(item.quantity || 0);
+      const price = Number(item.unitPrice || 0);
+      const gst = Number(item.taxPercent || 0);
+      const taxable = qty * price;
+      const total = taxable + (taxable * gst) / 100;
+
+      return `<tr>
+        <td>${index + 1}</td>
+        <td>${esc(item.description || "-")}</td>
+        <td>${esc(item.hsnCode || "-")}</td>
+        <td>${esc(item.planType || "-")}</td>
+        <td class="c">${qty}</td>
+        <td class="r">${esc(money(price))}</td>
+        <td class="r">${esc(money(taxable))}</td>
+        <td class="r">${gst}%</td>
+        <td class="r b">${esc(money(total))}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Invoice</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px; font-family: Arial, Helvetica, sans-serif; color: #1e293b; font-size: 12px; background: #fff; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: .5px; }
+  h2 { margin: 0; font-size: 16px; }
+  .top { display: flex; justify-content: space-between; gap: 24px; border-bottom: 1px solid #e2e8f0; padding-bottom: 16px; }
+  .muted { color: #64748b; margin: 2px 0; }
+  .tiny { color: #64748b; font-size: 11px; margin: 2px 0; }
+  .badge { display: inline-block; margin-top: 6px; padding: 3px 10px; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 10px; font-weight: bold; color: #475569; }
+  .metas { display: flex; flex-wrap: wrap; gap: 20px; padding: 14px 0; border-bottom: 1px solid #e2e8f0; }
+  .meta span { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: .6px; color: #94a3b8; }
+  .meta strong { font-size: 12px; color: #1e293b; }
+  .parties { display: flex; gap: 24px; padding: 14px 0; border-bottom: 1px solid #e2e8f0; }
+  .parties > div { flex: 1; }
+  .label { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: .6px; color: #4f46e5; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; }
+  th { background: #f8fafc; color: #475569; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; text-align: left; padding: 8px; border-bottom: 1px solid #e2e8f0; }
+  td { padding: 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  td.c, th.c { text-align: center; }
+  td.r, th.r { text-align: right; }
+  td.b { font-weight: bold; }
+  .totals { display: flex; justify-content: flex-end; }
+  .totals .box { width: 300px; background: #f8fafc; border-radius: 10px; padding: 14px; }
+  .row { display: flex; justify-content: space-between; padding: 3px 0; }
+  .row span:first-child { color: #64748b; }
+  .row.grand { border-top: 1px solid #cbd5e1; margin-top: 6px; padding-top: 8px; font-size: 14px; font-weight: bold; }
+  .row.grand span { color: #1e293b; }
+  .notes { display: flex; gap: 24px; padding-top: 16px; }
+  .notes > div { flex: 1; }
+  .notes p { white-space: pre-line; color: #475569; margin: 4px 0 0; }
+  .foot { margin-top: 20px; text-align: center; color: #94a3b8; font-size: 10px; }
+  @page { margin: 12mm; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h2>${esc(company.companyName)}</h2>
+      <p class="muted">${esc(
+        join([
+          company.address,
+          company.city,
+          company.state,
+          company.pincode,
+          company.country,
+        ])
+      )}</p>
+      <p class="tiny">${esc(company.email)}</p>
+      <p class="tiny">${esc(company.phone)}</p>
+      <p class="tiny">${esc(company.website)}</p>
+      <p class="tiny">GSTIN: ${esc(company.gstNumber)}</p>
+      <p class="tiny">PAN: ${esc(company.panNumber)}</p>
+    </div>
+    <div style="text-align:right">
+      <h1>TAX INVOICE</h1>
+      <span class="badge">DRAFT &mdash; NOT SAVED</span>
+      <p class="tiny">${esc(invoice.invoiceType || "")}</p>
+    </div>
+  </div>
+
+  <div class="metas">
+    ${metaItem("Invoice #", "Auto-generated on create")}
+    ${metaItem("Invoice Date", fmtDate(invoice.issueDate))}
+    ${metaItem("Due Date", fmtDate(invoice.dueDate))}
+    ${metaItem("Order No", invoice.orderNumber || "-")}
+    ${metaItem("Order Date", fmtDate(invoice.orderDate))}
+    ${metaItem("Purchase Date", fmtDate(invoice.purchaseDate))}
+    ${metaItem("Currency", invoice.currency || "-")}
+    ${metaItem("Payment Mode", invoice.paymentMode || "-")}
+    ${
+      invoice.subscriptionStart || invoice.subscriptionEnd
+        ? metaItem(
+            "Subscription",
+            `${fmtDate(invoice.subscriptionStart)} → ${fmtDate(
+              invoice.subscriptionEnd
+            )}`
+          )
+        : ""
+    }
+  </div>
+
+  <div class="parties">
+    <div>
+      <p class="label">Bill To</p>
+      <p><strong>${esc(buyer.companyName || "-")}</strong></p>
+      ${buyer.contactPerson ? `<p class="muted">${esc(buyer.contactPerson)}</p>` : ""}
+      ${billingAddress ? `<p class="muted">${esc(billingAddress)}</p>` : ""}
+      ${buyer.email ? `<p class="tiny">Email: ${esc(buyer.email)}</p>` : ""}
+      ${buyer.phone ? `<p class="tiny">Phone: ${esc(buyer.phone)}</p>` : ""}
+      ${buyer.gstNumber ? `<p class="tiny">GSTIN: ${esc(buyer.gstNumber)}</p>` : ""}
+      ${buyer.panNumber ? `<p class="tiny">PAN: ${esc(buyer.panNumber)}</p>` : ""}
+    </div>
+    <div>
+      <p class="label">Ship To</p>
+      <p><strong>${esc(buyer.companyName || "-")}</strong></p>
+      ${buyer.contactPerson ? `<p class="muted">${esc(buyer.contactPerson)}</p>` : ""}
+      ${shippingAddress ? `<p class="muted">${esc(shippingAddress)}</p>` : ""}
+      ${buyer.phone ? `<p class="tiny">Phone: ${esc(buyer.phone)}</p>` : ""}
+      <p class="tiny">Tax Type: ${esc(invoice.taxType || "-")}</p>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Description</th>
+        <th>HSN/SAC</th>
+        <th>Plan</th>
+        <th class="c">Qty</th>
+        <th class="r">Rate</th>
+        <th class="r">Taxable</th>
+        <th class="r">Tax %</th>
+        <th class="r">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${
+        itemRows ||
+        `<tr><td colspan="9" style="text-align:center;color:#94a3b8">No items</td></tr>`
+      }
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div class="box">
+      ${summaryRow("Subtotal", money(calculations.subtotal))}
+      ${
+        calculations.discountAmount > 0
+          ? summaryRow(
+              `Discount${
+                invoice.discountType === "Percentage"
+                  ? ` (${Number(invoice.discountValue || 0)}%)`
+                  : ""
+              }`,
+              `- ${money(calculations.discountAmount)}`
+            )
+          : ""
+      }
+      ${summaryRow("Taxable Amount", money(calculations.taxableAmount))}
+      ${
+        isIntra
+          ? summaryRow(
+              `CGST (${Number(invoice.cgstRate || 0)}%)`,
+              money(calculations.cgst)
+            ) +
+            summaryRow(
+              `SGST (${Number(invoice.sgstRate || 0)}%)`,
+              money(calculations.sgst)
+            )
+          : summaryRow(
+              `IGST (${Number(invoice.igstRate || 0)}%)`,
+              money(calculations.igst)
+            )
+      }
+      ${summaryRow("Total Tax", money(calculations.totalTax))}
+      ${summaryRow("Round Off", money(calculations.roundOff))}
+      ${summaryRow("Grand Total", money(calculations.payable), "grand")}
+    </div>
+  </div>
+
+  ${
+    invoice.notes || invoice.termsAndConditions
+      ? `<div class="notes">
+          ${
+            invoice.notes
+              ? `<div><p class="label" style="color:#94a3b8">Notes</p><p>${esc(
+                  invoice.notes
+                )}</p></div>`
+              : ""
+          }
+          ${
+            invoice.termsAndConditions
+              ? `<div><p class="label" style="color:#94a3b8">Terms &amp; Conditions</p><p>${esc(
+                  invoice.termsAndConditions
+                )}</p></div>`
+              : ""
+          }
+        </div>`
+      : ""
+  }
+
+  <div class="foot">ReadyTech ERP &bull; Finance Module &bull; GST Invoice System</div>
+</body>
+</html>`;
+
+  const frame = document.createElement("iframe");
+  frame.setAttribute("aria-hidden", "true");
+  frame.style.position = "fixed";
+  frame.style.right = "0";
+  frame.style.bottom = "0";
+  frame.style.width = "0";
+  frame.style.height = "0";
+  frame.style.border = "0";
+  document.body.appendChild(frame);
+
+  const cleanup = () => {
+    if (frame.parentNode) frame.parentNode.removeChild(frame);
+  };
+
+  try {
+    const doc = frame.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    frame.contentWindow.focus();
+    frame.contentWindow.onafterprint = cleanup;
+    frame.contentWindow.print();
+  } catch (err) {
+    console.error(err);
+    cleanup();
+    toast.error("Unable to open print dialog");
+    return;
+  }
+
+  // Fallback cleanup for browsers that never fire onafterprint.
+  setTimeout(cleanup, 60000);
+};
+
 /* ================= CREATE INVOICE ================= */
 
 const handleSubmit = async () => {
@@ -2540,6 +2856,29 @@ setInvoice(createInvoiceState());
   </svg>
 
   Back to Invoices
+</button>
+
+  <button
+  type="button"
+  onClick={handlePrint}
+  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-medium shadow-sm hover:bg-slate-50 hover:border-slate-400 hover:shadow transition-all duration-200"
+>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className="w-5 h-5"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    strokeWidth={2}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175.621-.084 1.246-.166 1.872-.247m9.586 0a48.1 48.1 0 00-9.586 0m9.586 0V4.125c0-1.036-.84-1.875-1.875-1.875h-5.836c-1.036 0-1.875.84-1.875 1.875v2.909"
+    />
+  </svg>
+
+  Print
 </button>
 
   <button
