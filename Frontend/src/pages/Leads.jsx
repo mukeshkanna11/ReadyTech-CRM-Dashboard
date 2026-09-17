@@ -241,6 +241,39 @@ const [callSeconds, setCallSeconds] = useState(0);
 
 const deviceRef = useRef(null);
 const callRef = useRef(null);
+// Guards a second Device while the first one is still being created
+const callStartingRef = useRef(false);
+// device.connect() rejects with `undefined` when the signaling stream closes,
+// so the real TwilioError only ever arrives on the Device "error" event.
+const lastDeviceErrorRef = useRef(null);
+
+/* Pull code / message / causes / twilioError out of a Twilio error */
+const describeCallError = (err) => {
+  const twilioError = err?.twilioError || err;
+  const original = twilioError?.originalError;
+
+  const code = twilioError?.code ?? original?.code;
+  const message =
+    original?.message ||
+    twilioError?.description ||
+    twilioError?.message ||
+    err?.message;
+
+  if (!code && !message) return "";
+  return code ? `(${code}) ${message || "Signaling error"}` : message;
+};
+
+const logCallError = (label, err) => {
+  const twilioError = err?.twilioError || err;
+  console.error(label, {
+    code: twilioError?.code,
+    message: twilioError?.message,
+    causes: twilioError?.causes,
+    twilioError: err?.twilioError,
+    originalError: twilioError?.originalError,
+    raw: err,
+  });
+};
 
 /* Tick the duration only while connected */
 useEffect(() => {
@@ -283,10 +316,18 @@ const startCall = async (lead) => {
     return;
   }
 
-  if (callState === "connecting" || callState === "ringing" || callState === "connected") {
+  if (
+    callStartingRef.current ||
+    callState === "connecting" ||
+    callState === "ringing" ||
+    callState === "connected"
+  ) {
     toast.error("A call is already in progress");
     return;
   }
+
+  callStartingRef.current = true;
+  lastDeviceErrorRef.current = null;
 
   setCallLead(lead);
   setCallError("");
@@ -308,13 +349,18 @@ const startCall = async (lead) => {
     const device = new Device(token, {
       codecPreferences: ["opus", "pcmu"],
       disableAudioContextSounds: true,
+      // Without this the SDK collapses every signaling error it receives
+      // (31001-31107, 31202/31203/31207, 31404/31480/31486, 31603) into the
+      // generic "ConnectionError (53000)" with no code, message or causes.
+      enableImprovedSignalingErrorPrecision: true,
     });
 
     deviceRef.current = device;
 
     device.on("error", (err) => {
-      console.error("Twilio device error:", err);
-      setCallError(err?.message || "Device error");
+      lastDeviceErrorRef.current = err;
+      logCallError("Twilio device error:", err);
+      setCallError(describeCallError(err) || "Device error");
       setCallState("failed");
     });
 
@@ -341,17 +387,32 @@ const startCall = async (lead) => {
     call.on("cancel", () => setCallState("completed"));
 
     call.on("error", (err) => {
-      console.error("Twilio call error:", err);
-      setCallError(err?.message || "Call error");
+      logCallError("Twilio call error:", err);
+      setCallError(describeCallError(err) || "Call error");
       setCallState("failed");
     });
+
+    // connect() resolves after accept() has already been kicked off, so a very
+    // fast call can emit "accept" before the handlers above are attached.
+    const status = call.status?.();
+    if (status === "open") setCallState("connected");
+    else if (status === "ringing") setCallState("ringing");
   } catch (err) {
-    console.error("Failed to start call:", err);
+    // A closed signaling stream rejects with `undefined`; the Device "error"
+    // event carries the actual TwilioError.
+    const realErr = err || lastDeviceErrorRef.current;
+
+    logCallError("Failed to start call:", realErr);
     setCallError(
-      err?.response?.data?.message || err?.message || "Unable to start call"
+      err?.response?.data?.message ||
+        describeCallError(realErr) ||
+        describeCallError(lastDeviceErrorRef.current) ||
+        "Unable to start call"
     );
     setCallState("failed");
     teardownCall();
+  } finally {
+    callStartingRef.current = false;
   }
 };
 
