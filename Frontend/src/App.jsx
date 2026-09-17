@@ -73,6 +73,17 @@ const HR = lazy(() => import("./pages/HR"));
 const MetaIntegration = lazy(() => import("./pages/Integrations/MetaIntegration"));
 const WhatsAppInbox = lazy(() => import("./pages/Integrations/WhatsAppInbox"));
 
+/* Public Legal Pages (no authentication required) */
+const PrivacyPolicy = lazy(() =>
+  import("./pages/LegalPages").then((m) => ({ default: m.PrivacyPolicy }))
+);
+const TermsOfService = lazy(() =>
+  import("./pages/LegalPages").then((m) => ({ default: m.TermsOfService }))
+);
+const DataDeletion = lazy(() =>
+  import("./pages/LegalPages").then((m) => ({ default: m.DataDeletion }))
+);
+
 /* Info / Settings */
 const WhyReadyTech = lazy(() => import("./pages/WhyReadyTech"));
 const ContactPage = lazy(() => import("./pages/ContactPage"));
@@ -95,6 +106,11 @@ export default function App() {
 
           {/* ================= PUBLIC ROUTES ================= */}
           <Route path="/login" element={<Login />} />
+
+          {/* Legal pages – publicly accessible, no login required */}
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<TermsOfService />} />
+          <Route path="/data-deletion" element={<DataDeletion />} />
 
           {/* ================= PROTECTED AREA ================= */}
           <Route
