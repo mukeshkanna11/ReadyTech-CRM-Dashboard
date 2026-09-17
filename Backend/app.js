@@ -157,7 +157,10 @@ app.use("/api/warehouses", auth, warehouseRoutes);
 app.use("/api/hr", auth, hrRoutes);
 app.use("/api/hr/reports", auth, hrReportRoutes);
 // CRM Modules
-app.use("/api/leads", auth, leadsRoutes);
+// auth is applied per-route inside leads.routes.js so that the public
+// website enquiry form (POST /api/leads/public) is not blocked by a
+// mount-level guard. Every other /api/leads route keeps its own `auth`.
+app.use("/api/leads", leadsRoutes);
 app.use("/api/opportunities", auth, opportunityRoutes);
 app.use("/api/activities", auth, activityRoutes);
 app.use("/api/invoices", invoiceRoutes);
