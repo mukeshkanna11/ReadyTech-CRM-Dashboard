@@ -723,13 +723,12 @@ const fetchActivities = async (leadId) => {
   try {
     setActivitiesLoading(true);
 
-   const response = await fetch(
-  `${import.meta.env.VITE_API_URL}/activities?lead=${leadId}`
-);
+    // Uses the shared axios instance so the JWT Authorization header is sent
+    const { data: result } = await API.get("/activities", {
+      params: { lead: leadId },
+    });
 
-    const result = await response.json();
-
-    if (result.success) {
+    if (result?.success) {
       setActivities(result.data || []);
     } else {
       setActivities([]);
