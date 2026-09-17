@@ -3,6 +3,9 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 
 /* ===================== Routes ===================== */
 import authRoutes from "./routes/auth.routes.js";
@@ -203,6 +206,32 @@ app.get("/api/health", (req, res) => {
     time: new Date().toISOString(),
   });
 });
+
+/* ======================================================
+   FRONTEND (SPA) STATIC HOSTING
+   Serves the built Vite frontend so public pages such as
+   /privacy-policy, /terms and /data-deletion resolve to
+   index.html instead of the API 404 handler below.
+   API behaviour is untouched: this runs AFTER every /api
+   route, and never handles /api/* paths.
+====================================================== */
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FRONTEND_DIST =
+  process.env.FRONTEND_DIST_PATH ||
+  path.join(__dirname, "..", "Frontend", "dist");
+
+if (fs.existsSync(path.join(FRONTEND_DIST, "index.html"))) {
+  app.use(express.static(FRONTEND_DIST));
+
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api")) return next();
+    res.sendFile(path.join(FRONTEND_DIST, "index.html"));
+  });
+} else {
+  console.warn(
+    `⚠️  Frontend build not found at ${FRONTEND_DIST} — SPA routes will 404.`
+  );
+}
 
 /* ======================================================
    404 HANDLER
