@@ -227,6 +227,12 @@ followUpDate: {
   default: null,
 },
 
+// Latest customer interaction on this lead (inbound DM, website
+// enquiry, WhatsApp message, logged Call/Email/Meeting activity).
+// Initialized for new leads by the pre-save hook below — a schema
+// `default` cannot be used here, because Mongoose would also apply
+// it while hydrating older leads that predate the field, making
+// every one of them look contacted "just now".
 lastContactedAt: {
   type: Date,
   default: null,
@@ -285,5 +291,21 @@ nextFollowUpAt: {
     timestamps: true,
   }
 );
+
+// =========================
+// LEAD RECENCY
+// Every new lead starts its recency clock at creation, whatever
+// source built it (manual, website form, chat, WhatsApp, Instagram),
+// so the Leads list can order all sources consistently. Sources that
+// pass an explicit time (Instagram DM) keep theirs. `isNew` guards
+// existing leads: editing an old lead must not fake a contact.
+// =========================
+LeadSchema.pre("save", function (next) {
+  if (this.isNew && !this.lastContactedAt) {
+    this.lastContactedAt = new Date();
+  }
+
+  next();
+});
 
 export default mongoose.model("Lead", LeadSchema);

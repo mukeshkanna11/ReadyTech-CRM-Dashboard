@@ -353,6 +353,15 @@ export const listLeads = async (req, res) => {
       .populate("convertedOpportunity")
       .sort({ createdAt: -1 });
 
+    // Newest interaction first, across every source (Instagram DM,
+    // website enquiry, WhatsApp, logged Call/Email/Meeting...).
+    // Leads predating lastContactedAt fall back to createdAt, so they
+    // keep their natural position instead of sinking below old threads.
+    // The createdAt sort above is the stable tie-breaker.
+    const recencyOf = (lead) => new Date(lead.lastContactedAt || lead.createdAt).getTime();
+
+    leads.sort((a, b) => recencyOf(b) - recencyOf(a));
+
     return res.status(200).json({
       success: true,
       count: leads.length,

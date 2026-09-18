@@ -178,6 +178,22 @@ const resolveCrmRecords = async ({ phoneNumber, profileName }) => {
   return { lead: created._id, client: null };
 };
 
+/* Refresh lead recency so a live WhatsApp thread floats to the top
+   of the Leads list. $max keeps the newest time; never duplicates or
+   otherwise alters the lead. */
+const touchLeadRecency = async (leadId, when) => {
+  if (!leadId) return;
+
+  try {
+    await Lead.updateOne(
+      { _id: leadId },
+      { $max: { lastContactedAt: when || new Date() } }
+    );
+  } catch (error) {
+    console.error("Lead lastContactedAt update failed:", error.message);
+  }
+};
+
 /* =========================================================
    CONVERSATION UPSERT
 ========================================================= */
@@ -272,6 +288,9 @@ const processInboundMessage = async (message, contactProfile, metadata) => {
   conversation.unreadCount = (conversation.unreadCount || 0) + 1;
   if (conversation.status === "Closed") conversation.status = "Open";
   await conversation.save();
+
+  // Inbound WhatsApp message = customer interaction on the linked lead.
+  await touchLeadRecency(conversation.lead, timestamp);
 
   // Reflect activity on the centralized Meta connection
   await MetaConnection.updateOne(
@@ -440,6 +459,9 @@ export const sendTextMessage = async ({ conversationId, text, user }) => {
   conversation.lastMessagePreview = clean.slice(0, 300);
   conversation.lastMessageDirection = "outbound";
   await conversation.save();
+
+  // Replying to the customer also counts as contact.
+  await touchLeadRecency(conversation.lead, now);
 
   return record;
 };

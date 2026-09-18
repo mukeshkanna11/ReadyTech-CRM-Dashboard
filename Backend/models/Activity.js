@@ -121,4 +121,27 @@ ActivitySchema.index({ assignedTo: 1, dueDate: 1 });
 ActivitySchema.index({ done: 1, dueDate: 1 });
 ActivitySchema.index({ type: 1, createdAt: -1 });
 
+// =====================================================
+// LEAD RECENCY
+// A logged Call / Email / Meeting / Task is a real customer
+// interaction, so it refreshes the lead's lastContactedAt and
+// floats the lead to the top of the Leads list. $max keeps the
+// newest time — back-dated activities never rewind recency.
+// Failures are swallowed: activity logging must never break.
+// =====================================================
+ActivitySchema.post("save", async function (doc) {
+  if (!doc?.lead) return;
+
+  try {
+    await mongoose
+      .model("Lead")
+      .updateOne(
+        { _id: doc.lead },
+        { $max: { lastContactedAt: doc.createdAt || new Date() } }
+      );
+  } catch (error) {
+    console.error("Lead lastContactedAt update failed:", error.message);
+  }
+});
+
 export default mongoose.model("Activity", ActivitySchema);
