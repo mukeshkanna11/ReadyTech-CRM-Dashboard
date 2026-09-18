@@ -5,7 +5,6 @@ import {
   Plus,
   Edit,
   Trash2,
-  X,
   Search,
   Filter,
   Users as UsersIcon,
@@ -15,7 +14,6 @@ import {
   UserCheckIcon,
   ShieldCheckIcon,
   Mail,
-  Lock,
   UserCheck,     // Active Users metric
   UserCog,       // User management
   Activity,      // Live status
@@ -141,69 +139,28 @@ export default function Users() {
   const [drawer, setDrawer] = useState(false);  
   const [editingId, setEditingId] = useState(null);
 
-  /* ===== CHANGE OWN PASSWORD ===== */
-  const [pwdOpen, setPwdOpen] = useState(false);
-  const [pwdSaving, setPwdSaving] = useState(false);
-  const [pwdError, setPwdError] = useState("");
-  const [pwdForm, setPwdForm] = useState({
+  /* ===== OPTIONAL PASSWORD CHANGE (inside the Update User form) ===== */
+  const EMPTY_PWD = {
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
-  });
-
-  const closePwd = () => {
-    setPwdOpen(false);
-    setPwdError("");
-    setPwdForm({
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
-    });
   };
 
-  const submitPwd = async (e) => {
-    e.preventDefault();
+  const [pwdForm, setPwdForm] = useState(EMPTY_PWD);
 
-    const { currentPassword, newPassword, confirmPassword } = pwdForm;
-
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      return setPwdError("All password fields are required");
-    }
-
-    if (newPassword !== confirmPassword) {
-      return setPwdError("New password and confirm password do not match");
-    }
-
-    if (newPassword.length < 6) {
-      return setPwdError("New password must be at least 6 characters");
-    }
-
-    if (newPassword === currentPassword) {
-      return setPwdError(
-        "New password must be different from the current password"
-      );
-    }
-
+  // The existing change-password API is self-service only, so this
+  // section is offered only while editing your own profile.
+  const selfId = useMemo(() => {
     try {
-      setPwdSaving(true);
-      setPwdError("");
-
-      const res = await API.patch("/user/change-password", {
-        currentPassword,
-        newPassword,
-        confirmPassword,
-      });
-
-      toast.success(res.data?.message || "Password changed successfully");
-      closePwd();
-    } catch (err) {
-      setPwdError(
-        err?.response?.data?.message || "Failed to change password"
-      );
-    } finally {
-      setPwdSaving(false);
+      const stored = JSON.parse(localStorage.getItem("user") || "null");
+      return String(stored?._id || stored?.id || "");
+    } catch {
+      return "";
     }
-  };
+  }, []);
+
+  const canChangeOwnPassword =
+    Boolean(selfId) && String(editingId || "") === selfId;
 
   const [form, setForm] = useState({
   name: "",
@@ -307,6 +264,7 @@ useEffect(() => {
       employeeId: "",
       joiningDate: "",
     });
+    setPwdForm(EMPTY_PWD);
     setDrawer(true);
   };
 
@@ -331,6 +289,7 @@ const openEdit = (u) => {
 
   });
 
+  setPwdForm(EMPTY_PWD);
   setDrawer(true);
 };
 
@@ -363,6 +322,63 @@ const saveUser = async (e) => {
     if (!form.designation) {
       toast.error("Designation is required");
       return;
+    }
+
+    // ============ OPTIONAL PASSWORD CHANGE ============
+    // Same form, same "Update User" button. All three fields blank =>
+    // details-only update, exactly as before.
+
+    const oldPwd = pwdForm.currentPassword.trim();
+    const newPwd = pwdForm.newPassword.trim();
+    const confirmPwd = pwdForm.confirmPassword.trim();
+
+    const wantsPasswordChange =
+      canChangeOwnPassword && Boolean(oldPwd || newPwd || confirmPwd);
+
+    if (wantsPasswordChange) {
+      if (!oldPwd) {
+        toast.error("Old password is required to change your password");
+        return;
+      }
+
+      if (!newPwd) {
+        toast.error("New password is required");
+        return;
+      }
+
+      if (newPwd !== confirmPwd) {
+        toast.error("New password and confirm password do not match");
+        return;
+      }
+
+      if (newPwd.length < 6) {
+        toast.error("New password must be at least 6 characters");
+        return;
+      }
+
+      if (newPwd === oldPwd) {
+        toast.error("New password must be different from the old password");
+        return;
+      }
+
+      // Existing API verifies the old password and re-hashes with the
+      // existing bcrypt hook. Runs before the detail update so a wrong
+      // old password aborts without changing anything.
+      try {
+        await API.patch("/user/change-password", {
+          currentPassword: oldPwd,
+          newPassword: newPwd,
+          confirmPassword: confirmPwd,
+        });
+
+        setPwdForm(EMPTY_PWD);
+        toast.success("Password updated successfully");
+      } catch (err) {
+        toast.error(
+          err?.response?.data?.message || "Failed to change password"
+        );
+        return;
+      }
     }
 
     // ================= PAYLOAD =================
@@ -476,6 +492,7 @@ const saveUser = async (e) => {
 
     setDrawer(false);
     setEditingId(null);
+    setPwdForm(EMPTY_PWD);
 
     setForm({
       name: "",
@@ -745,14 +762,6 @@ console.table(
     >
       <Plus size={18} />
       Add New User
-    </button>
-
-    <button
-      onClick={() => setPwdOpen(true)}
-      className="inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold transition bg-white border shadow-sm rounded-2xl border-slate-200 text-slate-700 hover:bg-slate-50"
-    >
-      <Lock size={18} />
-      Change Password
     </button>
 
   </div>
@@ -1341,6 +1350,50 @@ console.table(
 
 
 
+          {/* CHANGE PASSWORD — optional, submitted by the same button */}
+          {canChangeOwnPassword && (
+            <div className="p-4 border rounded-2xl bg-slate-50">
+
+              <p className="text-sm font-semibold text-slate-700">
+                Change Password
+              </p>
+
+              <p className="mt-1 mb-3 text-xs text-slate-500">
+                Leave blank to keep your current password.
+              </p>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {[
+                  { name: "currentPassword", label: "Old Password" },
+                  { name: "newPassword", label: "New Password" },
+                  { name: "confirmPassword", label: "Confirm New Password" },
+                ].map((f) => (
+                  <div key={f.name}>
+
+                    <label className="text-xs font-semibold text-slate-500">
+                      {f.label}
+                    </label>
+
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={pwdForm[f.name]}
+                      onChange={(e) =>
+                        setPwdForm({ ...pwdForm, [f.name]: e.target.value })
+                      }
+                      className="w-full p-3 mt-2 text-sm bg-white border outline-none rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500"
+                    />
+
+                  </div>
+                ))}
+              </div>
+
+            </div>
+          )}
+
+
+
+
           {/* SECURITY NOTE */}
           <div className="p-4 text-xs text-indigo-700 border border-indigo-100 rounded-2xl bg-indigo-50">
 
@@ -1368,79 +1421,6 @@ console.table(
     </motion.div>
   )}
 </AnimatePresence>
-
-      {/* ================= CHANGE PASSWORD ================= */}
-      {pwdOpen && (
-        <div className="fixed inset-0 z-50 grid p-4 bg-slate-900/50 place-items-center">
-          <form
-            onSubmit={submitPwd}
-            className="w-full max-w-md p-6 bg-white shadow-2xl rounded-3xl"
-          >
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-slate-900">
-                Change Password
-              </h2>
-
-              <button
-                type="button"
-                onClick={closePwd}
-                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {[
-                { name: "currentPassword", label: "Old Password" },
-                { name: "newPassword", label: "New Password" },
-                { name: "confirmPassword", label: "Confirm New Password" },
-              ].map((f) => (
-                <div key={f.name}>
-                  <label className="text-xs font-semibold tracking-wide uppercase text-slate-500">
-                    {f.label}
-                  </label>
-
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    value={pwdForm[f.name]}
-                    onChange={(e) =>
-                      setPwdForm({ ...pwdForm, [f.name]: e.target.value })
-                    }
-                    className="w-full px-4 py-2.5 mt-1 text-sm border rounded-xl border-slate-200 focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
-              ))}
-            </div>
-
-            {pwdError && (
-              <p className="p-3 mt-4 text-xs border rounded-xl border-rose-200 bg-rose-50 text-rose-700">
-                {pwdError}
-              </p>
-            )}
-
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                type="button"
-                onClick={closePwd}
-                disabled={pwdSaving}
-                className="px-4 py-2 text-sm font-medium border rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="submit"
-                disabled={pwdSaving}
-                className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {pwdSaving ? "Updating..." : "Update Password"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
     </div>
   );
