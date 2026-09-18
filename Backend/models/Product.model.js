@@ -23,7 +23,6 @@ const productSchema = new mongoose.Schema(
     sku: {
         type: String,
         required: true,
-        unique: true,
         uppercase: true,
         trim: true,
     },
@@ -65,6 +64,9 @@ const productSchema = new mongoose.Schema(
 {
     timestamps: true,
 });
+
+// Unique per workspace, so each workspace can reuse SKUs
+productSchema.index({ workspace: 1, sku: 1 }, { unique: true });
 
 const Product =
     mongoose.models.Product ||

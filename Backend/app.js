@@ -1,4 +1,9 @@
 // app.js
+// Registers the workspace-isolation plugin on mongoose. MUST stay the
+// first import: mongoose.plugin() only applies to schemas compiled
+// after it, and the route imports below pull in every model.
+import "./utils/workspaceScope.js";
+
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";

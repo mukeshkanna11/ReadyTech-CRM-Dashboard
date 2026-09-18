@@ -300,12 +300,10 @@ nextFollowUpAt: {
 // pass an explicit time (Instagram DM) keep theirs. `isNew` guards
 // existing leads: editing an old lead must not fake a contact.
 // =========================
-LeadSchema.pre("save", function (next) {
+LeadSchema.pre("save", function () {
   if (this.isNew && !this.lastContactedAt) {
     this.lastContactedAt = new Date();
   }
-
-  next();
 });
 
 export default mongoose.model("Lead", LeadSchema);

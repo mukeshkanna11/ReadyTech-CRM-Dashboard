@@ -8,7 +8,7 @@ const ItemSchema = new mongoose.Schema({
 
 const PurchaseOrderSchema = new mongoose.Schema(
   {
-    poNumber: { type: String, required: true, unique: true },
+    poNumber: { type: String, required: true },
     vendor: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", required: true },
     items: [ItemSchema],
     status: { type: String, enum: ["DRAFT", "RECEIVED"], default: "DRAFT" },
@@ -16,5 +16,8 @@ const PurchaseOrderSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Unique per workspace, so each workspace can reuse PO numbers
+PurchaseOrderSchema.index({ workspace: 1, poNumber: 1 }, { unique: true });
 
 export default mongoose.model("PurchaseOrder", PurchaseOrderSchema);

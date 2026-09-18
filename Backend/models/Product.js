@@ -34,7 +34,6 @@ const productSchema = new mongoose.Schema(
 
   sku: {
     type: String,
-    unique: true,
     default: function () {
       return (
         "SKU-" +
@@ -48,7 +47,6 @@ const productSchema = new mongoose.Schema(
 
 barcode: {
   type: String,
-  unique: true,
   required: true,
   trim: true,
   default: function () {
@@ -92,5 +90,9 @@ barcode: {
   timestamps: true,
 }
 );
+
+// Unique per workspace, so each workspace can reuse SKUs / barcodes
+productSchema.index({ workspace: 1, sku: 1 }, { unique: true });
+productSchema.index({ workspace: 1, barcode: 1 }, { unique: true });
 
 export default mongoose.model("Product", productSchema);

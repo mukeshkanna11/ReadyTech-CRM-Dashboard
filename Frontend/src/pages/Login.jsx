@@ -13,11 +13,10 @@ import {
 import API from "../services/api";
 import companyLogo from "../assets/Rtech-logo.png";
 
-const ADMIN_EMAIL = "siva@readytechsolutions.in";
-
 export default function Login() {
   const navigate = useNavigate();
 
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -42,6 +41,11 @@ export default function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
 
+    if (!email.trim()) {
+      setError("Email is required");
+      return;
+    }
+
     if (!password.trim()) {
       setError("Password is required");
       return;
@@ -52,7 +56,7 @@ export default function Login() {
       setError("");
 
       const { data } = await API.post("/auth/login", {
-        email: ADMIN_EMAIL,
+        email: email.trim().toLowerCase(),
         password,
       });
 
@@ -197,7 +201,7 @@ export default function Login() {
                 {/* Email */}
                 <div>
                   <label className="block mb-2 text-sm font-medium text-slate-700">
-                    Admin Email
+                    Email
                   </label>
 
                   <div className="relative">
@@ -207,8 +211,11 @@ export default function Login() {
                     />
 
                     <input
-                      value={ADMIN_EMAIL}
-                      disabled
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="Enter your email"
                       className="w-full py-3 pr-4 font-medium border pl-11 rounded-xl bg-slate-100 text-slate-700"
                     />
                   </div>

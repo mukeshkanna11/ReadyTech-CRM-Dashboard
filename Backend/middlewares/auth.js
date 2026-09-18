@@ -1,6 +1,7 @@
 // middlewares/auth.js
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import { runWithWorkspace } from "../utils/workspaceContext.js";
 
 /* =========================================================
    🔐 AUTHENTICATION MIDDLEWARE
@@ -66,7 +67,11 @@ const auth = async (req, res, next) => {
     // 📎 Attach user to request
     req.user = user;
 
-    next();
+    // 🧱 Bind this request to the user's own workspace. The workspace id
+    // IS the user id, so every login email is isolated automatically.
+    req.workspace = user._id;
+
+    return runWithWorkspace(user._id, next);
   } catch (error) {
     console.error("🔐 AUTH MIDDLEWARE ERROR:", error);
     return res.status(500).json({

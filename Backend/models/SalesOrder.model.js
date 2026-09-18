@@ -33,7 +33,6 @@ const SalesOrderSchema = new mongoose.Schema(
     soNumber: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       index: true,
     },
@@ -164,6 +163,8 @@ SalesOrderSchema.pre("save", function () {
 SalesOrderSchema.index({ customer: 1 });
 SalesOrderSchema.index({ createdAt: -1 });
 SalesOrderSchema.index({ status: 1 });
+// Unique per workspace, so each workspace can reuse SO numbers
+SalesOrderSchema.index({ workspace: 1, soNumber: 1 }, { unique: true });
 
 export default mongoose.model(
   "SalesOrder",

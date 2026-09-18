@@ -105,7 +105,6 @@ const invoiceSchema = new mongoose.Schema(
     // =========================
     invoiceNumber: {
       type: String,
-      unique: true,
       required: true,
     },
 
@@ -491,5 +490,8 @@ invoiceSchema.pre("save", function () {
     this.status = "Overdue";
   }
 });
+
+// Unique per workspace, so each workspace can reuse invoice numbers
+invoiceSchema.index({ workspace: 1, invoiceNumber: 1 }, { unique: true });
 
 export default mongoose.model("Invoice", invoiceSchema);
