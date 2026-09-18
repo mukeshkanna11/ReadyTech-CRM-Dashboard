@@ -1154,27 +1154,28 @@ console.table(
 
 
 
-          <div>
+          {/* Set only while creating a user. Existing users change their
+              password through the separate Change Password form, which
+              verifies the old password on the backend. */}
+          {!editingId && (
+            <div>
 
-            <label className="text-xs font-semibold text-slate-500">
-              PASSWORD
-            </label>
+              <label className="text-xs font-semibold text-slate-500">
+                PASSWORD
+              </label>
 
-            <input
-              type="password"
-              placeholder={
-                editingId
-                  ? "Leave blank to keep existing password"
-                  : "Create secure password"
-              }
-              value={form.password}
-              onChange={(e) =>
-                setForm({ ...form, password: e.target.value })
-              }
-              className="w-full p-3 mt-2 text-sm border outline-none rounded-xl bg-slate-50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500"
-            />
+              <input
+                type="password"
+                placeholder="Create secure password"
+                value={form.password}
+                onChange={(e) =>
+                  setForm({ ...form, password: e.target.value })
+                }
+                className="w-full p-3 mt-2 text-sm border outline-none rounded-xl bg-slate-50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500"
+              />
 
-          </div>
+            </div>
+          )}
 
 
 
@@ -1391,7 +1392,7 @@ console.table(
 
             <div className="space-y-3">
               {[
-                { name: "currentPassword", label: "Current Password" },
+                { name: "currentPassword", label: "Old Password" },
                 { name: "newPassword", label: "New Password" },
                 { name: "confirmPassword", label: "Confirm New Password" },
               ].map((f) => (
