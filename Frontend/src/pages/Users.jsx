@@ -148,20 +148,6 @@ export default function Users() {
 
   const [pwdForm, setPwdForm] = useState(EMPTY_PWD);
 
-  // The existing change-password API is self-service only, so this
-  // section is offered only while editing your own profile.
-  const selfId = useMemo(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem("user") || "null");
-      return String(stored?._id || stored?.id || "");
-    } catch {
-      return "";
-    }
-  }, []);
-
-  const canChangeOwnPassword =
-    Boolean(selfId) && String(editingId || "") === selfId;
-
   const [form, setForm] = useState({
   name: "",
   email: "",
@@ -333,11 +319,11 @@ const saveUser = async (e) => {
     const confirmPwd = pwdForm.confirmPassword.trim();
 
     const wantsPasswordChange =
-      canChangeOwnPassword && Boolean(oldPwd || newPwd || confirmPwd);
+      Boolean(editingId) && Boolean(oldPwd || newPwd || confirmPwd);
 
     if (wantsPasswordChange) {
       if (!oldPwd) {
-        toast.error("Old password is required to change your password");
+        toast.error("Current password is required to change the password");
         return;
       }
 
@@ -353,30 +339,6 @@ const saveUser = async (e) => {
 
       if (newPwd.length < 6) {
         toast.error("New password must be at least 6 characters");
-        return;
-      }
-
-      if (newPwd === oldPwd) {
-        toast.error("New password must be different from the old password");
-        return;
-      }
-
-      // Existing API verifies the old password and re-hashes with the
-      // existing bcrypt hook. Runs before the detail update so a wrong
-      // old password aborts without changing anything.
-      try {
-        await API.patch("/user/change-password", {
-          currentPassword: oldPwd,
-          newPassword: newPwd,
-          confirmPassword: confirmPwd,
-        });
-
-        setPwdForm(EMPTY_PWD);
-        toast.success("Password updated successfully");
-      } catch (err) {
-        toast.error(
-          err?.response?.data?.message || "Failed to change password"
-        );
         return;
       }
     }
@@ -402,6 +364,14 @@ const saveUser = async (e) => {
     // Password only when entered
     if (form.password.trim()) {
       payload.password = form.password.trim();
+    }
+
+    // Optional password change on update — the backend verifies the
+    // current password before applying the new one.
+    if (wantsPasswordChange) {
+      payload.currentPassword = oldPwd;
+      payload.password = newPwd;
+      payload.confirmPassword = confirmPwd;
     }
 
     console.log("=================================");
@@ -1351,7 +1321,7 @@ console.table(
 
 
           {/* CHANGE PASSWORD — optional, submitted by the same button */}
-          {canChangeOwnPassword && (
+          {editingId && (
             <div className="p-4 border rounded-2xl bg-slate-50">
 
               <p className="text-sm font-semibold text-slate-700">

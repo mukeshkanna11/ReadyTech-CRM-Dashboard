@@ -264,6 +264,8 @@ export const updateUser = async (req, res) => {
       joiningDate,
       isActive,
       password,
+      currentPassword,
+      confirmPassword,
     } = req.body;
 
     console.log("=================================");
@@ -368,11 +370,42 @@ export const updateUser = async (req, res) => {
     }
 
     /* =====================================================
-       PASSWORD
+       PASSWORD (OPTIONAL)
+       Blank => password left untouched. When a new password is
+       supplied, the user's CURRENT password must be verified first.
+       Assignment goes through the existing bcrypt pre("save") hook,
+       so nothing is ever stored in plain text.
     ===================================================== */
 
-    if (password?.trim()) {
-      existingUser.passwordHash = password.trim();
+    const newPassword = password?.trim();
+
+    if (newPassword) {
+      const current = currentPassword?.trim();
+
+      if (!current) {
+        return res.status(400).json({
+          success: false,
+          message: "Current password is required to change the password",
+        });
+      }
+
+      const isMatch = await existingUser.comparePassword(current);
+
+      if (!isMatch) {
+        return res.status(400).json({
+          success: false,
+          message: "Current password is incorrect.",
+        });
+      }
+
+      if (confirmPassword !== undefined && newPassword !== confirmPassword.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "New password and confirm password do not match",
+        });
+      }
+
+      existingUser.passwordHash = newPassword;
     }
 
     /* =====================================================
