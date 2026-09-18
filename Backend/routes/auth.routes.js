@@ -5,7 +5,6 @@ import User from "../models/User.js";
 
 const router = express.Router();
 
-const SUPER_ADMIN_EMAIL = "siva@readytechsolutions.in";
 
 /* =========================================================
    TOKEN
@@ -44,18 +43,11 @@ router.post("/login", async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    if (normalizedEmail !== SUPER_ADMIN_EMAIL) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Only super admin allowed",
-      });
-    }
-
     const user = await User.findOne({
       email: normalizedEmail,
     });
 
-    if (!user || user.role !== "admin") {
+    if (!user) {
       return res.status(401).json({
         success: false,
         message: "Invalid credentials",
@@ -75,7 +67,7 @@ router.post("/login", async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Admin login successful",
+      message: "Login successful",
       token,
       user,
     });
