@@ -9,6 +9,7 @@ import {
   sendTextMessage,
   syncWhatsAppAccount,
   markWebhookSubscribed,
+  subscribeWabaToWebhook,
 } from "../services/meta/whatsapp.service.js";
 
 /* =========================================================
@@ -196,6 +197,29 @@ export const markConversationRead = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || "Failed to mark as read",
+    });
+  }
+};
+
+/* =========================================================
+   POST /subscribe  (admin) — subscribes the WABA to this app's webhook
+========================================================= */
+export const subscribeWaba = async (req, res) => {
+  try {
+    const result = await subscribeWabaToWebhook();
+
+    res.json({
+      success: true,
+      message: "WABA subscribed to webhook",
+      data: result,
+    });
+  } catch (error) {
+    console.error("WhatsApp WABA subscribe error:", error.message);
+    res.status(error.status || 500).json({
+      success: false,
+      message: error.message || "Failed to subscribe WABA",
+      metaCode: error.metaCode || null,
+      missingEnv: getWhatsAppConfig().missing,
     });
   }
 };

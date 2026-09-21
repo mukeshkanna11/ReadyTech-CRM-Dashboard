@@ -509,6 +509,31 @@ export const syncWhatsAppAccount = async () => {
   return connection;
 };
 
+/* =========================================================
+   WABA WEBHOOK SUBSCRIPTION — registers this app on the WABA
+   so Meta delivers events to /api/whatsapp/webhook.
+   Explicit admin action only; never runs automatically.
+========================================================= */
+export const subscribeWabaToWebhook = async () => {
+  const { wabaId } = getWhatsAppConfig();
+
+  if (!wabaId) {
+    const error = new Error("WhatsApp is not configured. Missing: WHATSAPP_WABA_ID");
+    error.status = 400;
+    throw error;
+  }
+
+  // POST /{waba-id}/subscribed_apps — token is applied inside graphFetch
+  const data = await graphFetch(`${wabaId}/subscribed_apps`, { method: "POST" });
+
+  const connection = await MetaConnection.getSingleton();
+  connection.whatsapp.wabaId = wabaId || connection.whatsapp.wabaId;
+  connection.whatsapp.webhookSubscribed = data?.success === true;
+  await connection.save();
+
+  return { wabaId, success: data?.success === true, response: data };
+};
+
 /* Marks the webhook as verified by Meta (called from the GET handler) */
 export const markWebhookSubscribed = async () => {
   await MetaConnection.updateOne(

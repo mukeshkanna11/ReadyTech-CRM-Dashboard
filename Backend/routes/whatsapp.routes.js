@@ -7,6 +7,7 @@ import {
   sendMessage,
   markConversationRead,
   syncAccount,
+  subscribeWaba,
 } from "../controllers/whatsapp.controller.js";
 
 import auth from "../middlewares/auth.js";
@@ -28,5 +29,8 @@ router.patch("/conversations/:id/read", auth, markConversationRead);
 
 /* Admin — refresh WhatsApp account metadata from Meta */
 router.post("/sync", auth, role("admin"), syncAccount);
+
+/* Admin — subscribe the WABA to this app's webhook (manual, one-time) */
+router.post("/subscribe", auth, role("admin"), subscribeWaba);
 
 export default router;
