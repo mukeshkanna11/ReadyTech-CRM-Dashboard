@@ -120,10 +120,13 @@ export default function Products() {
 
   /* ================= FILTER ================= */
   const filteredProducts = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return products;
+
     return products.filter((p) =>
-      `${p.name} ${p.sku} ${p.category}`
+      `${p.name} ${p.sku} ${p.category} ${getProductBarcode(p)}`
         .toLowerCase()
-        .includes(search.toLowerCase())
+        .includes(term)
     );
   }, [products, search]);
 
@@ -352,7 +355,7 @@ const inventoryValue = products.reduce(
 
       <input
         type="text"
-        placeholder="Search products by name, SKU or category..."
+        placeholder="Search products by name, SKU, barcode number or category..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         className="w-full pl-12 pr-4 text-sm transition border h-14 rounded-2xl border-slate-200 bg-slate-50 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100"

@@ -121,10 +121,13 @@ export default function Products() {
 
   /* ================= FILTER ================= */
   const filteredProducts = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return products;
+
     return products.filter((p) =>
-      `${p.name} ${p.sku} ${p.category}`
+      `${p.name} ${p.sku} ${p.category} ${getProductBarcode(p)}`
         .toLowerCase()
-        .includes(search.toLowerCase())
+        .includes(term)
     );
   }, [products, search]);
 
@@ -628,7 +631,7 @@ const inventoryValue = products.reduce(
       type="text"
       value={search}
       onChange={(e) => setSearch(e.target.value)}
-      placeholder="Search by Product Name, SKU, Category, Brand..."
+      placeholder="Search by Product Name, SKU, Barcode Number, Category, Brand..."
       className="w-full py-3 pl-12 pr-12 text-sm transition-all duration-300 bg-white border shadow-sm outline-none rounded-2xl border-slate-200 text-slate-700 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
     />
 
