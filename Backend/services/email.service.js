@@ -857,3 +857,30 @@ export const sendLeadAutoReply = async (lead) => {
     throw error;
   }
 };
+
+/* =========================================================
+   SEND DIRECT EMAIL TO A LEAD (from the Leads page)
+========================================================= */
+
+export const sendLeadEmail = async ({ to, subject, message }) => {
+  const html = `
+    <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;">
+      ${escapeHtml(message).replace(/\n/g, "<br />")}
+    </div>
+  `;
+
+  const response = await resend.emails.send({
+    from: RESEND_FROM_EMAIL,
+    to,
+    replyTo: COMPANY_EMAIL,
+    subject,
+    html,
+    text: message,
+  });
+
+  if (response?.error) {
+    throw new Error(response.error.message || "Resend failed to send email");
+  }
+
+  return { id: response?.data?.id || null };
+};

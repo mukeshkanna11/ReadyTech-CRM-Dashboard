@@ -171,3 +171,69 @@ export const outcomeForStatus = (status) => {
       return "Unknown";
   }
 };
+
+/* =========================================================
+   MESSAGING (SMS / WhatsApp)
+   Reuses the same Twilio credentials as Voice.
+   SMS sender:      TWILIO_SMS_FROM, else TWILIO_CALLER_ID
+   WhatsApp sender: TWILIO_WHATSAPP_FROM, else Twilio sandbox
+========================================================= */
+const TWILIO_WHATSAPP_SANDBOX = "+14155238886";
+
+const withWhatsAppPrefix = (number) =>
+  number.startsWith("whatsapp:") ? number : `whatsapp:${number}`;
+
+export const sendTwilioMessage = async ({ channel, to, body }) => {
+  const { accountSid, apiKeySid, apiKeySecret, authToken, callerId } = getVoipConfig();
+
+  if (!accountSid || !(authToken || (apiKeySid && apiKeySecret))) {
+    const error = new Error("Twilio is not configured (TWILIO_ACCOUNT_SID + auth token or API key required)");
+    error.status = 400;
+    throw error;
+  }
+
+  const client = authToken
+    ? twilio(accountSid, authToken)
+    : twilio(apiKeySid, apiKeySecret, { accountSid });
+
+  // Local trunk prefix: "09876543210" -> "9876543210" before E.164
+  const raw = String(to || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  const toNumber = toE164(
+    !raw.startsWith("+") && digits.length === 11 && digits.startsWith("0")
+      ? digits.slice(1)
+      : raw
+  );
+
+  const invalid =
+    !toNumber ||
+    !/^\+[1-9]\d{7,14}$/.test(toNumber) ||
+    (toNumber.startsWith("+91") && !/^\+91[6-9]\d{9}$/.test(toNumber));
+
+  if (invalid) {
+    const error = new Error(`Invalid mobile number "${raw || "—"}". Use a 10-digit Indian mobile or +countrycode format`);
+    error.status = 400;
+    throw error;
+  }
+
+  let from;
+  let destination = toNumber;
+
+  if (channel === "whatsapp") {
+    from = withWhatsAppPrefix(
+      String(process.env.TWILIO_WHATSAPP_FROM || TWILIO_WHATSAPP_SANDBOX).trim()
+    );
+    destination = withWhatsAppPrefix(toNumber);
+  } else {
+    from = process.env.TWILIO_SMS_FROM || callerId;
+    if (!from) {
+      const error = new Error("Twilio SMS sender missing. Set TWILIO_SMS_FROM or TWILIO_CALLER_ID");
+      error.status = 400;
+      throw error;
+    }
+  }
+
+  const message = await client.messages.create({ from, to: destination, body });
+
+  return { sid: message.sid, status: message.status, to: destination, from };
+};

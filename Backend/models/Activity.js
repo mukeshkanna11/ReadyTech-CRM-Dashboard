@@ -9,7 +9,7 @@ const ActivitySchema = new Schema(
     // =====================================================
     type: {
       type: String,
-      enum: ["Call", "Email", "Meeting", "Task"],
+      enum: ["Call", "Email", "Meeting", "Task", "SMS", "WhatsApp"],
       required: true,
       default: "Call",
     },

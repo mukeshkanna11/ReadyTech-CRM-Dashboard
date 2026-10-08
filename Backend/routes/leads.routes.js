@@ -11,6 +11,7 @@ import {
   convertLead,
   getLeadTimeline,
 } from "../controllers/leads.controller.js";
+import { sendLeadMessage } from "../controllers/leadMessage.controller.js";
 
 const router = express.Router();
 
@@ -24,5 +25,6 @@ router.delete("/:id", auth, deleteLead);
 
 router.post("/:id/convert", auth, convertLead);
 router.get("/:id/timeline", auth, getLeadTimeline);
+router.post("/:id/message", auth, sendLeadMessage);
 
 export default router;

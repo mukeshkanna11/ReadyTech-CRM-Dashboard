@@ -38,6 +38,10 @@ import {
   Zap,
   PhoneCall,
   PhoneOff,
+  MessageSquare,
+  MessageCircle,
+  Send,
+  Loader2,
 } from "lucide-react";
 
 import LeadAIAssistant from "../components/LeadAIAssistant";
@@ -226,6 +230,74 @@ const [activitiesLoading, setActivitiesLoading] = useState(false);
 
 const [users, setUsers] = useState([]);
 const [usersLoading, setUsersLoading] = useState(false);
+
+/* =========================================================
+   LEAD MESSAGING — Email (Resend) / SMS + WhatsApp (Twilio)
+========================================================= */
+
+const [messageChannel, setMessageChannel] = useState(null); // email | sms | whatsapp
+const [messageLead, setMessageLead] = useState(null);
+const [messageForm, setMessageForm] = useState({ subject: "", message: "" });
+const [messageSending, setMessageSending] = useState(false);
+const [messageResult, setMessageResult] = useState(null); // { ok, text }
+
+const openMessage = (channel, lead = activeLead) => {
+  if (!lead) return;
+  if (channel !== "email" && !lead.phone) {
+    toast.error("This lead has no phone number");
+    return;
+  }
+  setMessageLead(lead);
+  setMessageChannel(channel);
+  setMessageForm({ subject: "", message: "" });
+  setMessageResult(null);
+};
+
+const closeMessage = () => {
+  if (messageSending) return;
+  setMessageChannel(null);
+  setMessageLead(null);
+  setMessageResult(null);
+};
+
+const sendLeadMessage = async () => {
+  if (!messageLead?._id || !messageChannel || messageSending) return;
+
+  if (!messageForm.message.trim()) {
+    toast.error("Message is required");
+    return;
+  }
+
+  if (messageChannel === "email" && !messageForm.subject.trim()) {
+    toast.error("Subject is required");
+    return;
+  }
+
+  try {
+    setMessageSending(true);
+    setMessageResult(null);
+
+    const { data } = await API.post(`/leads/${messageLead._id}/message`, {
+      channel: messageChannel,
+      subject: messageForm.subject,
+      message: messageForm.message,
+    });
+
+    const detail = data?.data?.status ? ` (status: ${data.data.status})` : "";
+    const text = `${data?.message || "Message sent"}${detail}`;
+
+    setMessageResult({ ok: true, text });
+    setMessageForm({ subject: "", message: "" });
+    toast.success(data?.message || "Message sent");
+  } catch (error) {
+    const text = error?.response?.data?.message || error.message || "Failed to send message";
+    setMessageResult({ ok: false, text });
+    toast.error(text);
+  } finally {
+    setMessageSending(false);
+    if (activeLead?._id === messageLead._id) fetchActivities(messageLead._id);
+  }
+};
 
 /* =========================================================
    TWILIO BROWSER CALL (outbound only)
@@ -1963,6 +2035,31 @@ const fetchActivities = async (leadId) => {
                               }
                             >
                               <PhoneCall
+                                size={
+                                  16
+                                }
+                              />
+                            </IconButton>
+
+                            <IconButton
+                              onClick={() =>
+                                openMessage(
+                                  "sms",
+                                  lead
+                                )
+                              }
+                              title={
+                                lead.phone
+                                  ? `SMS ${lead.phone}`
+                                  : "No phone number"
+                              }
+                              className={
+                                lead.phone
+                                  ? "text-violet-600 hover:bg-violet-50"
+                                  : "text-slate-300 cursor-not-allowed"
+                              }
+                            >
+                              <MessageSquare
                                 size={
                                   16
                                 }
@@ -3950,31 +4047,26 @@ const fetchActivities = async (leadId) => {
       Edit Lead
     </button>
 
-    {/* CALL */}
-    <button
-      onClick={() =>
-        activeLead.phone &&
-        (window.location.href = `tel:${activeLead.phone}`)
-      }
-      disabled={!activeLead.phone}
-      className="flex items-center justify-center flex-1 gap-2 px-4 py-3 border rounded-xl hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <Phone size={16} />
-      Call
-    </button>
-
-    {/* EMAIL */}
-    <button
-      onClick={() =>
-        activeLead.email &&
-        (window.location.href = `mailto:${activeLead.email}`)
-      }
-      disabled={!activeLead.email}
-      className="flex items-center justify-center flex-1 gap-2 px-4 py-3 border rounded-xl hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <Mail size={16} />
-      Email
-    </button>
+    {/* COMMUNICATION: Email | SMS | WhatsApp | Voice */}
+    <div className="grid w-full grid-cols-4 gap-2">
+      {[
+        { key: "email", label: "Email", icon: Mail, disabled: !activeLead.email, tone: "text-blue-600", onClick: () => openMessage("email") },
+        { key: "sms", label: "SMS", icon: MessageSquare, disabled: !activeLead.phone, tone: "text-violet-600", onClick: () => openMessage("sms") },
+        { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, disabled: !activeLead.phone, tone: "text-emerald-600", onClick: () => openMessage("whatsapp") },
+        { key: "voice", label: "Voice", icon: PhoneCall, disabled: !activeLead.phone, tone: "text-emerald-600", onClick: () => startCall(activeLead) },
+      ].map(({ key, label, icon: Icon, disabled, tone, onClick }) => (
+        <button
+          key={key}
+          onClick={onClick}
+          disabled={disabled}
+          title={disabled ? (key === "email" ? "No email address" : "No phone number") : label}
+          className="flex flex-col items-center justify-center gap-1 px-2 py-3 text-xs font-medium bg-white border rounded-xl hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Icon size={16} className={tone} />
+          {label}
+        </button>
+      ))}
+    </div>
 
     {/* CONVERT TO OPPORTUNITY */}
     {!activeLead.isConverted ? (
@@ -4022,6 +4114,90 @@ const fetchActivities = async (leadId) => {
             setAiLead(null)
           }
         />
+      )}
+
+      {/* MESSAGE (Email / SMS / WhatsApp) */}
+
+      {messageChannel && messageLead && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-900/50 p-4">
+
+          <div className="w-full max-w-md overflow-hidden bg-white shadow-2xl rounded-3xl">
+
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800">
+                  {messageChannel === "email" ? "Send Email" : messageChannel === "sms" ? "Send SMS" : "Send WhatsApp"}
+                </h3>
+                <p className="text-sm text-slate-500">
+                  {messageLead.name || "Lead"} · {messageChannel === "email" ? messageLead.email : messageLead.phone}
+                </p>
+              </div>
+              <button
+                onClick={closeMessage}
+                disabled={messageSending}
+                className="p-2 rounded-xl hover:bg-slate-100 disabled:opacity-50"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+
+              {messageChannel === "email" && (
+                <input
+                  value={messageForm.subject}
+                  onChange={(e) => setMessageForm((f) => ({ ...f, subject: e.target.value }))}
+                  placeholder="Subject"
+                  disabled={messageSending}
+                  className="w-full px-4 py-3 border outline-none rounded-xl border-slate-200 focus:ring-2 focus:ring-indigo-500"
+                />
+              )}
+
+              <textarea
+                rows={5}
+                value={messageForm.message}
+                onChange={(e) => setMessageForm((f) => ({ ...f, message: e.target.value }))}
+                placeholder="Type your message..."
+                disabled={messageSending}
+                className="w-full px-4 py-3 border outline-none resize-none rounded-xl border-slate-200 focus:ring-2 focus:ring-indigo-500"
+              />
+
+              <p className="text-xs text-slate-400">
+                {messageChannel === "email" ? "Sent via Resend" : "Sent via Twilio"} · logged to lead activity
+              </p>
+
+              {messageResult && (
+                <div
+                  className={`flex items-start gap-2 p-3 text-sm rounded-xl ${
+                    messageResult.ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                  }`}
+                >
+                  {messageResult.ok ? <CheckCircle size={16} className="mt-0.5 shrink-0" /> : <AlertTriangle size={16} className="mt-0.5 shrink-0" />}
+                  <span>{messageResult.text}</span>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={closeMessage}
+                  disabled={messageSending}
+                  className="flex-1 px-4 py-3 font-medium border rounded-xl hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={sendLeadMessage}
+                  disabled={messageSending}
+                  className="flex items-center justify-center flex-1 gap-2 px-4 py-3 font-semibold text-white rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 disabled:opacity-60"
+                >
+                  {messageSending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  {messageSending ? "Sending..." : "Send"}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
       )}
 
       {/* CALL */}
