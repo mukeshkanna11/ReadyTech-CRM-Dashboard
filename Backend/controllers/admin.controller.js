@@ -3,6 +3,10 @@ import Client from "../models/Client.js";
 import Product from "../models/Product.js";
 import Lead from "../models/Lead.js";
 import bcrypt from "bcryptjs";
+import {
+  userWorkspaceFilter,
+  getDefaultWorkspaceId,
+} from "../utils/workspaceContext.js";
 
 /* =========================================================
    DASHBOARD SUMMARY
@@ -10,8 +14,9 @@ import bcrypt from "bcryptjs";
 
 export const summary = async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments();
-    const totalAdmins = await User.countDocuments({ role: "admin" });
+    const scope = userWorkspaceFilter(req.workspace);
+    const totalUsers = await User.countDocuments(scope);
+    const totalAdmins = await User.countDocuments({ ...scope, role: "admin" });
     const totalClients = await Client.countDocuments();
     const totalProducts = await Product.countDocuments();
     const totalLeads = await Lead.countDocuments();
@@ -40,7 +45,7 @@ export const summary = async (req, res) => {
 
 export const listUsers = async (req, res) => {
   try {
-    const users = await User.find()
+    const users = await User.find(userWorkspaceFilter(req.workspace))
       .select("-passwordHash -__v")
       .sort({ createdAt: -1 })
       .lean();
@@ -75,7 +80,10 @@ export const listUsers = async (req, res) => {
 
 export const getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id)
+    const user = await User.findOne({
+      _id: req.params.id,
+      ...userWorkspaceFilter(req.workspace),
+    })
       .select("-passwordHash -__v")
       .lean();
 
@@ -194,6 +202,14 @@ export const createUser = async (req, res) => {
       joiningDate: joiningDate || null,
 
       isActive: isActive ?? true,
+
+      // Employees/clients (and a tenant's co-admins) join the creator's
+      // workspace. Only the platform owner (default workspace) provisions
+      // a new client admin, who gets a fresh, empty workspace of their own.
+      workspace:
+        role === "admin" && String(req.workspace) === getDefaultWorkspaceId()
+          ? null
+          : req.workspace,
     });
 
     await user.save();
@@ -278,7 +294,10 @@ export const updateUser = async (req, res) => {
        FIND USER FIRST
     ===================================================== */
 
-    const existingUser = await User.findById(id);
+    const existingUser = await User.findOne({
+      _id: id,
+      ...userWorkspaceFilter(req.workspace),
+    });
 
     if (!existingUser) {
       return res.status(404).json({
@@ -472,7 +491,10 @@ export const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const user = await User.findByIdAndDelete(id);
+    const user = await User.findOneAndDelete({
+      _id: id,
+      ...userWorkspaceFilter(req.workspace),
+    });
 
     if (!user) {
       return res.status(404).json({

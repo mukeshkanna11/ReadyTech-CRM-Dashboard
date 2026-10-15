@@ -12,7 +12,6 @@ const shiftSchema = new mongoose.Schema(
     code: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       uppercase: true,
       maxlength: 30,
@@ -99,6 +98,12 @@ shiftSchema.index({
 shiftSchema.index({
   status: 1,
 });
+
+/* Unique per workspace (was global — collided across tenants) */
+shiftSchema.index(
+  { workspace: 1, code: 1 },
+  { unique: true }
+);
 
 const Shift =
   mongoose.models.Shift ||

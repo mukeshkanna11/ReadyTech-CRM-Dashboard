@@ -174,6 +174,15 @@ router.post("/register", async (req, res) => {
 
     /* ---------------- VALIDATION ---------------- */
 
+    // Public sign-up can never create an admin (= a new tenant workspace);
+    // client admins are provisioned by the platform owner (Users page).
+    if (role === "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin accounts must be provisioned by an administrator",
+      });
+    }
+
     if (!name?.trim()) {
       return res.status(400).json({
         success: false,

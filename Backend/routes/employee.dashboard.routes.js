@@ -2,6 +2,7 @@
 import express from "express";
 import auth, { authorize } from "../middlewares/auth.js";
 import User from "../models/User.js";
+import { userWorkspaceFilter } from "../utils/workspaceContext.js";
 
 const router = express.Router();
 
@@ -15,7 +16,10 @@ router.get("/dashboard", auth, authorize("employee"), async (req, res) => {
     const employee = await User.findById(req.user._id).select("-passwordHash");
 
     // Example stats (can add leads, tasks, etc. later)
-    const totalEmployees = await User.countDocuments({ role: "employee" });
+    const totalEmployees = await User.countDocuments({
+      ...userWorkspaceFilter(req.workspace),
+      role: "employee",
+    });
 
     res.json({
       success: true,

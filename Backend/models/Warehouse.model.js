@@ -14,8 +14,6 @@ const warehouseSchema = new mongoose.Schema(
       type: String,
       trim: true,
       uppercase: true,
-      unique: true,
-      sparse: true,
     },
 
     location: {
@@ -112,5 +110,11 @@ const warehouseSchema = new mongoose.Schema(
 warehouseSchema.index({ name: 1 });
 warehouseSchema.index({ code: 1 });
 warehouseSchema.index({ status: 1 });
+
+/* Unique per workspace (was global — collided across tenants) */
+warehouseSchema.index(
+  { workspace: 1, code: 1 },
+  { unique: true, partialFilterExpression: { code: { $type: "string" } } }
+);
 
 export default mongoose.model("Warehouse", warehouseSchema);

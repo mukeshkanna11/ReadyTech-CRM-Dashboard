@@ -1,10 +1,17 @@
 // controllers/audit.controller.js
 import AuditLog from "../models/AuditLog.js";
+import User from "../models/User.js";
+import { userWorkspaceFilter } from "../utils/workspaceContext.js";
+
+// AuditLog is global (excluded from the scope plugin) — limit every
+// read to users of the caller's workspace.
+const workspaceUserIds = (req) =>
+  User.find(userWorkspaceFilter(req.workspace)).distinct("_id");
 
 // Get all audit logs (admin only)
 export const getAllAuditLogs = async (req, res) => {
   try {
-    const logs = await AuditLog.find()
+    const logs = await AuditLog.find({ user: { $in: await workspaceUserIds(req) } })
       .populate("user", "name email role") // Make sure 'user' matches your AuditLog schema field
       .sort({ createdAt: -1 });
 
@@ -25,6 +32,11 @@ export const getAuditLogsByUser = async (req, res) => {
     const { userId } = req.params;
     if (!userId) {
       return res.status(400).json({ message: "User ID is required" });
+    }
+
+    const ids = (await workspaceUserIds(req)).map(String);
+    if (!ids.includes(String(userId))) {
+      return res.status(404).json({ message: "User not found" });
     }
 
     const logs = await AuditLog.find({ user: userId })

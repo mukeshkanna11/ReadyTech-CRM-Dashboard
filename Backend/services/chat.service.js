@@ -3,6 +3,7 @@
 import Chat from "../models/Chat.js";
 import Lead from "../models/Lead.js";
 import User from "../models/User.js";
+import { activeUserScope } from "../utils/workspaceContext.js";
 
 import {
   sendLeadNotification,
@@ -131,6 +132,7 @@ export const createChat = async (chatData) => {
       ----------------------------------------------------- */
 
       leadOwner = await User.findOne({
+        ...activeUserScope(),
         role: "admin",
         isActive: true,
       }).sort({
@@ -144,6 +146,7 @@ export const createChat = async (chatData) => {
 
       if (!leadOwner) {
         leadOwner = await User.findOne({
+          ...activeUserScope(),
           isActive: true,
         }).sort({
           createdAt: 1,
@@ -156,7 +159,7 @@ export const createChat = async (chatData) => {
       ----------------------------------------------------- */
 
       if (!leadOwner) {
-        leadOwner = await User.findOne({})
+        leadOwner = await User.findOne(activeUserScope())
           .sort({
             createdAt: 1,
           });

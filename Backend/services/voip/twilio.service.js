@@ -1,4 +1,5 @@
 import twilio from "twilio";
+import { usesPlatformCredentials } from "../../utils/workspaceContext.js";
 
 /* =========================================================
    CONFIG
@@ -6,12 +7,15 @@ import twilio from "twilio";
    { ...values, missing, configured }
 ========================================================= */
 export const getVoipConfig = () => {
+  // The env Twilio account/number is the default workspace's only
+  const own = usesPlatformCredentials();
+
   const config = {
-    accountSid: process.env.TWILIO_ACCOUNT_SID,
-    apiKeySid: process.env.TWILIO_API_KEY_SID,
-    apiKeySecret: process.env.TWILIO_API_KEY_SECRET,
-    twimlAppSid: process.env.TWILIO_TWIML_APP_SID,
-    callerId: process.env.TWILIO_CALLER_ID,
+    accountSid: own ? process.env.TWILIO_ACCOUNT_SID : null,
+    apiKeySid: own ? process.env.TWILIO_API_KEY_SID : null,
+    apiKeySecret: own ? process.env.TWILIO_API_KEY_SECRET : null,
+    twimlAppSid: own ? process.env.TWILIO_TWIML_APP_SID : null,
+    callerId: own ? process.env.TWILIO_CALLER_ID : null,
     // Only needed to validate inbound webhook signatures
     authToken: process.env.TWILIO_AUTH_TOKEN,
     // Public base URL of THIS api host, used to build the statusCallback

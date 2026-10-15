@@ -1,5 +1,7 @@
 import Lead from "../../models/Lead.js";
 import User from "../../models/User.js";
+import { activeUserScope } from "../../utils/workspaceContext.js";
+import MetaConnection from "../../models/MetaConnection.js";
 
 /* =========================================================
    INSTAGRAM DM -> CRM LEAD
@@ -145,7 +147,9 @@ const appendMessage = (previous, text) => {
 
 /* Same default-owner rule as createPublicLead */
 const resolveDefaultOwner = () =>
-  User.findOne({ role: "admin", isActive: true }).select("_id name");
+  User.findOne({ ...activeUserScope(), role: "admin", isActive: true }).select(
+    "_id name"
+  );
 
 export const upsertLeadFromInstagram = async ({ senderId, text, sentAt }) => {
   const parsed = parseEnquiry(text);
@@ -202,6 +206,22 @@ export const upsertLeadFromInstagram = async ({ senderId, text, sentAt }) => {
 /* ================= ENTRY POINT ================= */
 export const processWebhookPayload = async (payload) => {
   const result = { messages: 0, created: 0, updated: 0, ignored: 0 };
+
+  // Webhooks write into the default workspace — drop entries for an
+  // Instagram account connected by another workspace.
+  const foreignIds = (
+    await MetaConnection.distinct("instagram.id", {
+      key: { $ne: "default" },
+      "instagram.id": { $ne: null },
+    })
+  ).map(String);
+
+  if (foreignIds.length && Array.isArray(payload?.entry)) {
+    payload = {
+      ...payload,
+      entry: payload.entry.filter((e) => !foreignIds.includes(String(e?.id))),
+    };
+  }
 
   const events = extractMessagingEvents(payload);
 

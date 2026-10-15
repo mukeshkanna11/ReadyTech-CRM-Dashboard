@@ -29,6 +29,15 @@ const userSchema = new mongoose.Schema(
     // =========================================================
     // USER ROLE
     // =========================================================
+    // Owning workspace (the creating admin's workspace). null = the
+    // user's own workspace, or a legacy user of the default workspace.
+    workspace: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+
     role: {
       type: String,
       enum: {

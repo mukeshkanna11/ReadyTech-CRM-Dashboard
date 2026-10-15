@@ -67,6 +67,7 @@ holidaySchema.index({
 // Prevent duplicate holiday names on same date
 holidaySchema.index(
   {
+    workspace: 1,
     organization: 1,
     name: 1,
     date: 1,

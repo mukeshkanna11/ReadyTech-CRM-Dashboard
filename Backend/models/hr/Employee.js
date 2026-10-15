@@ -12,7 +12,6 @@ const employeeSchema = new mongoose.Schema(
     employeeCode: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
 
@@ -150,6 +149,12 @@ const employeeSchema = new mongoose.Schema(
   {
     timestamps: true,
   }
+);
+
+/* Unique per workspace (was global — collided across tenants) */
+employeeSchema.index(
+  { workspace: 1, employeeCode: 1 },
+  { unique: true }
 );
 
 const Employee =

@@ -6,10 +6,12 @@ import WhatsAppMessage from "../../models/WhatsAppMessage.js";
 import Lead from "../../models/Lead.js";
 import Client from "../../models/Client.js";
 import User from "../../models/User.js";
+import { activeUserScope } from "../../utils/workspaceContext.js";
 
 // Reuse the existing Meta config (Graph version + app secret) — no duplication
 import { getMetaConfig } from "./meta.service.js";
 import { decryptToken } from "./tokenVault.js";
+import { metaKeyFor } from "../../models/MetaConnection.js";
 
 /* =========================================================
    CONFIG
@@ -17,10 +19,14 @@ import { decryptToken } from "./tokenVault.js";
 export const getWhatsAppConfig = () => {
   const { apiVersion, appSecret } = getMetaConfig();
 
+  // The env number is the default workspace's (Siva's) — never shared
+  // with another workspace.
+  const own = metaKeyFor() === "default";
+
   const config = {
-    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
-    wabaId: process.env.WHATSAPP_WABA_ID,
-    accessToken: process.env.WHATSAPP_ACCESS_TOKEN,
+    phoneNumberId: own ? process.env.WHATSAPP_PHONE_NUMBER_ID : null,
+    wabaId: own ? process.env.WHATSAPP_WABA_ID : null,
+    accessToken: own ? process.env.WHATSAPP_ACCESS_TOKEN : null,
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
     appSecret,
     apiVersion,
@@ -159,7 +165,11 @@ const resolveCrmRecords = async ({ phoneNumber, profileName }) => {
 
   // No existing record — create a Lead using the existing model.
   // Lead.owner is required, so fall back to an admin user.
-  const owner = await User.findOne({ role: "admin", isActive: { $ne: false } })
+  const owner = await User.findOne({
+    ...activeUserScope(),
+    role: "admin",
+    isActive: { $ne: false },
+  })
     .select("_id")
     .lean();
 

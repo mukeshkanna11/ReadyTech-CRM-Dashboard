@@ -2,7 +2,8 @@
 import "dotenv/config";
 
 import app from "./app.js";
-import connectDB from "./config/db.js";
+import connectDB, { resolveDefaultWorkspace } from "./config/db.js";
+import { getDefaultWorkspaceId } from "./utils/workspaceContext.js";
 import User from "./models/User.js";
 import { askClaude } from "./services/claudeService.js";
 
@@ -59,6 +60,8 @@ const server = app.listen(PORT, "0.0.0.0", () => {
     try {
       console.log("⏳ Checking Super Admin...");
       await User.createAdminIfNotExists();
+      // Fresh DB: the super admin only exists now
+      if (!getDefaultWorkspaceId()) await resolveDefaultWorkspace();
       console.log("✅ Super Admin Verified");
     } catch (err) {
       console.error("⚠️ Super Admin Error:", err);

@@ -2,6 +2,7 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 
 import MetaConnection from "../../models/MetaConnection.js";
+import User from "../../models/User.js";
 import { encryptToken, decryptToken } from "./tokenVault.js";
 
 /* =========================================================
@@ -239,7 +240,17 @@ export const completeConnection = async ({ code, userId }) => {
   const { accessToken, expiresAt } = await exchangeCodeForToken(code);
   const assets = await fetchLinkedAssets(accessToken);
 
-  const connection = await MetaConnection.getSingleton();
+  // Public callback has no request workspace — use the connecting admin's
+  const owner = userId
+    ? await User.findById(userId).select("_id workspace").lean()
+    : null;
+
+  // Never fall back to the default (Siva's) connection
+  if (!owner) throw new Error("Connecting user not found");
+
+  const connection = await MetaConnection.getSingleton(
+    owner.workspace || owner._id
+  );
 
   connection.status = "connected";
   connection.scopes = OAUTH_SCOPES;

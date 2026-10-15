@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Lead from "../models/Lead.js";
 import Activity from "../models/Activity.js";
 import User from "../models/User.js";
+import { activeUserScope } from "../utils/workspaceContext.js";
 import AuditLog from "../models/AuditLog.js";
 import Opportunity from "../models/Opportunity.js";
 import {
@@ -192,6 +193,7 @@ export const createPublicLead = async (req, res) => {
     // Replace this with your User model / company admin logic.
 
     const defaultOwner = await User.findOne({
+      ...activeUserScope(),
       role: "admin",
       isActive: true,
     }).select("_id");

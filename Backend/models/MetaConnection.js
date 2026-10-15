@@ -1,4 +1,8 @@
 import mongoose from "mongoose";
+import {
+  getWorkspaceId,
+  getDefaultWorkspaceId,
+} from "../utils/workspaceContext.js";
 
 /* =========================================================
    META CONNECTION (SINGLETON)
@@ -89,11 +93,31 @@ const metaConnectionSchema = new mongoose.Schema(
 /* =========================================================
    FETCH / CREATE SINGLETON
 ========================================================= */
-metaConnectionSchema.statics.getSingleton = async function () {
-  let doc = await this.findOne({ key: "default" });
+/* One document per workspace. The default workspace keeps the
+   original "default" document (Siva's connection, unchanged); any
+   other workspace gets its own document keyed by its workspace id. */
+export const metaKeyFor = (workspaceId = getWorkspaceId()) => {
+  const id = workspaceId ? String(workspaceId) : null;
+  const defaultId = getDefaultWorkspaceId();
+
+  if (!id) return "default";
+
+  // Fail closed: an unresolved default never maps a tenant onto Siva's doc
+  return defaultId && id === defaultId ? "default" : id;
+};
+
+metaConnectionSchema.statics.getSingleton = async function (workspaceId) {
+  const key = metaKeyFor(workspaceId);
+  let doc = await this.findOne({ key });
 
   if (!doc) {
-    doc = await this.create({ key: "default" });
+    try {
+      doc = await this.create({ key });
+    } catch (error) {
+      // Concurrent first request already created it (unique key)
+      if (error?.code !== 11000) throw error;
+      doc = await this.findOne({ key });
+    }
   }
 
   return doc;

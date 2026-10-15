@@ -69,9 +69,11 @@ const auth = async (req, res, next) => {
 
     // 🧱 Bind this request to the user's own workspace. The workspace id
     // IS the user id, so every login email is isolated automatically.
-    req.workspace = user._id;
+    // Employees created by an admin carry that admin's workspace.
+    const workspaceId = user.workspace || user._id;
+    req.workspace = workspaceId;
 
-    return runWithWorkspace(user._id, next);
+    return runWithWorkspace(workspaceId, next);
   } catch (error) {
     console.error("🔐 AUTH MIDDLEWARE ERROR:", error);
     return res.status(500).json({

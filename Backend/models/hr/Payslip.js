@@ -9,7 +9,6 @@ const payslipSchema = new mongoose.Schema(
     payslipNumber: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       index: true,
     },
@@ -403,6 +402,12 @@ payslipSchema.index({
 // ======================================================
 // EXPORT
 // ======================================================
+
+/* Unique per workspace (was global — collided across tenants) */
+payslipSchema.index(
+  { workspace: 1, payslipNumber: 1 },
+  { unique: true }
+);
 
 export default mongoose.model(
   "Payslip",

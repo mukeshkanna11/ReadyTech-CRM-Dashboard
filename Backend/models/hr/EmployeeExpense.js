@@ -20,7 +20,6 @@ const employeeExpenseSchema = new mongoose.Schema(
     expenseNumber: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       index: true,
     },
@@ -268,6 +267,12 @@ employeeExpenseSchema.index({
 // ======================================================
 // EXPORT
 // ======================================================
+
+/* Unique per workspace (was global — collided across tenants) */
+employeeExpenseSchema.index(
+  { workspace: 1, expenseNumber: 1 },
+  { unique: true }
+);
 
 export default mongoose.model(
   "EmployeeExpense",

@@ -2,6 +2,7 @@
 import express from "express";
 import auth, { authorize } from "../middlewares/auth.js";
 import User from "../models/User.js";
+import { userWorkspaceFilter } from "../utils/workspaceContext.js";
 
 const router = express.Router();
 
@@ -11,9 +12,10 @@ const router = express.Router();
 ========================================================= */
 router.get("/dashboard", auth, authorize("admin"), async (req, res) => {
   try {
-    const totalEmployees = await User.countDocuments({ role: "employee" });
-    const totalClients = await User.countDocuments({ role: "client" });
-    const allUsers = await User.find().select("-passwordHash");
+    const scope = userWorkspaceFilter(req.workspace);
+    const totalEmployees = await User.countDocuments({ ...scope, role: "employee" });
+    const totalClients = await User.countDocuments({ ...scope, role: "client" });
+    const allUsers = await User.find(scope).select("-passwordHash");
 
     res.json({
       success: true,
