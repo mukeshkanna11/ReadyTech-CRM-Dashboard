@@ -1,189 +1,90 @@
-import { useState } from "react";
-import {
-  Bell,
-  CheckCircle,
-  AlertCircle,
-  Info,
-  Filter,
-  Check,
-} from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Bell, Check, UserPlus, Loader2 } from "lucide-react";
 
+import { getNotifications, markNotificationsRead, timeAgo } from "../services/profileService";
+
+/* =========================================================
+   NOTIFICATIONS — real new-lead events (GET /api/user/me/notifications)
+========================================================= */
 export default function Notifications() {
+  const navigate = useNavigate();
+  const [data, setData] = useState(null);
   const [filter, setFilter] = useState("all");
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      title: "New Lead Assigned",
-      message: "Enterprise client lead added to Sales Funnel.",
-      type: "info",
-      time: "2 mins ago",
-      read: false,
-    },
-    {
-      id: 2,
-      title: "AI Bot Conversation Started",
-      message: "A visitor is actively chatting with AI assistant.",
-      type: "info",
-      time: "10 mins ago",
-      read: false,
-    },
-    {
-      id: 3,
-      title: "Milestone Completed",
-      message: "CRM Phase 2 delivered successfully.",
-      type: "success",
-      time: "1 hour ago",
-      read: true,
-    },
-    {
-      id: 4,
-      title: "Payment Pending",
-      message: "Invoice #RTS-204 is overdue by 2 days.",
-      type: "alert",
-      time: "Yesterday",
-      read: false,
-    },
-    {
-      id: 5,
-      title: "New Client Testimonial",
-      message: "Client submitted a 5⭐ testimonial.",
-      type: "success",
-      time: "2 days ago",
-      read: true,
-    },
-    {
-      id: 6,
-      title: "Server Health Warning",
-      message: "High response time detected on API server.",
-      type: "alert",
-      time: "3 days ago",
-      read: true,
-    },
-  ]);
 
-  /* ================= FILTER LOGIC ================= */
-  const filteredNotifications = notifications.filter((n) => {
-    if (filter === "unread") return !n.read;
-    if (filter === "alert") return n.type === "alert";
-    return true;
-  });
+  const load = useCallback(() => getNotifications(50).then(setData).catch(() => setData({ items: [], unread: 0 })), []);
 
-  /* ================= MARK AS READ ================= */
-  const markAsRead = (id) => {
-    setNotifications((prev) =>
-      prev.map((n) =>
-        n.id === id ? { ...n, read: true } : n
-      )
-    );
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const markAll = async () => {
+    try {
+      await markNotificationsRead();
+      setData((d) => ({ ...d, unread: 0, items: d.items.map((i) => ({ ...i, read: true })) }));
+    } catch {
+      /* interceptor toasts */
+    }
   };
 
-  /* ================= ICON ================= */
-  const renderIcon = (type) => {
-    if (type === "success") return <CheckCircle size={20} />;
-    if (type === "alert") return <AlertCircle size={20} />;
-    return <Info size={20} />;
-  };
+  const items = (data?.items || []).filter((n) => filter === "all" || !n.read);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-
-      {/* HEADER */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-3 text-indigo-600 bg-indigo-100 rounded-xl">
-            <Bell />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold text-slate-800 dark:text-white">
-              Notifications
-            </h1>
-            <p className="text-sm text-slate-500">
-              System, sales & AI activity updates
-            </p>
-          </div>
+    <div className="max-w-3xl p-4 mx-auto space-y-5 md:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Notifications</h1>
+          <p className="text-sm text-slate-500">New leads created in your workspace</p>
         </div>
-
-        {/* FILTER */}
         <div className="flex items-center gap-2">
-          <Filter size={16} className="text-slate-400" />
-          {["all", "unread", "alert"].map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 text-xs rounded-lg transition
-                ${
-                  filter === f
-                    ? "bg-indigo-600 text-white"
-                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
-                }`}
-            >
-              {f.toUpperCase()}
+          <div className="flex p-1 text-xs rounded-xl bg-slate-100">
+            {["all", "unread"].map((f) => (
+              <button key={f} onClick={() => setFilter(f)}
+                className={`px-3 py-1.5 rounded-lg capitalize transition ${filter === f ? "bg-white shadow-sm text-slate-900" : "text-slate-500"}`}>
+                {f}{f === "unread" && data?.unread ? ` (${data.unread > 99 ? "99+" : data.unread})` : ""}
+              </button>
+            ))}
+          </div>
+          {data?.unread > 0 && (
+            <button onClick={markAll}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white rounded-xl bg-indigo-600 hover:bg-indigo-700">
+              <Check size={14} /> Mark all read
             </button>
-          ))}
+          )}
         </div>
       </div>
 
-      {/* LIST */}
-      <div className="space-y-3">
-        {filteredNotifications.length === 0 ? (
-          <div className="p-10 text-center bg-white rounded-xl dark:bg-slate-800">
-            <Bell className="mx-auto mb-3 text-slate-400" />
-            <p className="text-sm text-slate-500">
-              No notifications found
-            </p>
-          </div>
-        ) : (
-          filteredNotifications.map((n) => (
-            <div
-              key={n.id}
-              className={`flex items-start gap-4 p-4 rounded-xl border
-              transition hover:shadow-md
-              ${
-                n.read
-                  ? "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                  : "bg-indigo-50 dark:bg-slate-800 border-indigo-200 dark:border-indigo-700"
-              }`}
-            >
-              {/* ICON */}
-              <div
-                className={`p-2 rounded-lg
-                ${
-                  n.type === "success"
-                    ? "bg-green-100 text-green-600"
-                    : n.type === "alert"
-                    ? "bg-red-100 text-red-600"
-                    : "bg-indigo-100 text-indigo-600"
-                }`}
-              >
-                {renderIcon(n.type)}
-              </div>
-
-              {/* CONTENT */}
-              <div className="flex-1">
-                <p className="font-medium text-slate-800 dark:text-white">
-                  {n.title}
-                </p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  {n.message}
-                </p>
-                <p className="mt-1 text-xs text-slate-400">
-                  {n.time}
-                </p>
-              </div>
-
-              {/* ACTION */}
-              {!n.read && (
-                <button
-                  onClick={() => markAsRead(n.id)}
-                  className="flex items-center gap-1 px-3 py-1 text-xs text-indigo-600 transition bg-indigo-100 rounded-lg hover:bg-indigo-200"
-                >
-                  <Check size={14} /> Mark read
-                </button>
-              )}
-            </div>
-          ))
-        )}
-      </div>
+      {!data ? (
+        <div className="grid h-40 place-items-center text-slate-400"><Loader2 className="animate-spin" /></div>
+      ) : items.length === 0 ? (
+        <div className="p-10 text-center bg-white border rounded-2xl border-slate-200">
+          <Bell size={28} className="mx-auto mb-3 text-slate-400" />
+          <p className="text-sm text-slate-500">{filter === "unread" ? "You're all caught up." : "No notifications yet."}</p>
+        </div>
+      ) : (
+        <ul className="overflow-hidden bg-white border divide-y shadow-sm rounded-2xl border-slate-200 divide-slate-100">
+          {items.map((n) => (
+            <li key={n.id}>
+              <button onClick={() => navigate("/leads")}
+                className={`flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-slate-50 ${n.read ? "" : "bg-indigo-50/40"}`}>
+                <span className="grid w-10 h-10 rounded-full shrink-0 place-items-center bg-emerald-50 text-emerald-600">
+                  <UserPlus size={18} />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm text-slate-800">
+                    New lead: <span className="font-semibold">{n.name}</span>
+                  </span>
+                  <span className="block text-xs truncate text-slate-500">
+                    {[n.company, n.source].filter(Boolean).join(" · ") || "Lead"} · {new Date(n.createdAt).toLocaleString()}
+                  </span>
+                </span>
+                <span className="text-xs shrink-0 text-slate-400">{timeAgo(n.createdAt)}</span>
+                {!n.read && <span className="w-2 h-2 rounded-full shrink-0 bg-indigo-500" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

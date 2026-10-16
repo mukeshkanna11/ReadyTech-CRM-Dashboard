@@ -81,7 +81,7 @@ function ConnectionBanner({ ig, busy, onConnect, onCheck, onSubscribe, onDisconn
 
   const title = {
     ok: `Connected as @${ig.username}`,
-    unverified: "Instagram token present — not verified yet",
+    unverified: "Instagram token present — press Check status",
     expired: "Instagram token expired or revoked — reconnect",
     none: "No Instagram account connected to this workspace",
   }[state];
@@ -98,8 +98,12 @@ function ConnectionBanner({ ig, busy, onConnect, onCheck, onSubscribe, onDisconn
       <div className="flex-1 min-w-0 text-xs text-slate-600">
         <p className="text-sm font-semibold text-slate-900">{title}</p>
         <p className="truncate">
-          {ig.source === "platform" && "Using the platform Instagram token (this workspace only). "}
-          {ig.connected && (ig.webhookSubscribed ? "Webhook subscribed. " : "Webhook not subscribed. ")}
+          {ig.method === "facebook_page" && "Via your connected Facebook Page (Meta Integration). "}
+          {ig.method === "instagram_login" && ig.source === "platform" && "Using the platform Instagram token (this workspace only). "}
+          {ig.connected &&
+            (!ig.webhookVerifiable
+              ? "Webhook status can't be read without pages_manage_metadata. "
+              : ig.webhookSubscribed ? "Webhook subscribed. " : "Webhook not subscribed. ")}
           {ig.connected && (ig.lastInboundAt ? `Last DM ${new Date(ig.lastInboundAt).toLocaleString()}.` : "No DM received yet.")}
           {!ig.oauthConfigured && ` Server missing: ${ig.missingEnv.join(", ")}.`}
           {ig.lastError && state !== "ok" && ` ${ig.lastError}`}
@@ -111,11 +115,12 @@ function ConnectionBanner({ ig, busy, onConnect, onCheck, onSubscribe, onDisconn
             <RefreshCw size={13} className={busy === "check" ? "animate-spin" : ""} /> Check status
           </button>
         )}
-        {ig.connected && !ig.webhookSubscribed && (
+        {ig.connected && !ig.webhookSubscribed && ig.webhookVerifiable && (
           <button onClick={onSubscribe} disabled={!!busy} className={`${btn} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}>
             Subscribe webhook
           </button>
         )}
+        {ig.method !== "facebook_page" && (
         <button
           onClick={onConnect}
           disabled={!!busy || !ig.oauthConfigured}
@@ -124,6 +129,7 @@ function ConnectionBanner({ ig, busy, onConnect, onCheck, onSubscribe, onDisconn
         >
           <Link2 size={13} /> {ig.source ? "Reconnect" : "Connect Instagram"}
         </button>
+        )}
         {ig.tokenPresent && (
           <button onClick={onDisconnect} disabled={!!busy} className={`${btn} border-rose-200 bg-white text-rose-600 hover:bg-rose-50`}>
             <Unlink size={13} /> Disconnect

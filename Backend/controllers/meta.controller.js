@@ -110,21 +110,40 @@ const buildInstagramStatus = (safe) => {
   const il = safe.instagramLogin;
   const { configured, missing, redirectUri } = getInstagramConfig();
   const platform = usesPlatformCredentials() && !!process.env.INSTAGRAM_ACCESS_TOKEN;
-  const source = il.tokenPresent ? "workspace" : platform ? "platform" : null;
-  const expired = !!il.expiresAt && new Date(il.expiresAt) <= new Date();
+  const loginSource = il.tokenPresent ? "workspace" : platform ? "platform" : null;
+  const loginExpired = (!!il.expiresAt && new Date(il.expiresAt) <= new Date()) || il.tokenInvalid;
+  const loginConnected = !!loginSource && !!il.id && !loginExpired;
+
+  // Facebook-Login path: Page token + linked IG + instagram_manage_messages
+  const scopes = safe.scopes || [];
+  const viaPage =
+    safe.connected &&
+    safe.instagram.connected &&
+    safe.facebookPage.tokenPresent &&
+    (!scopes.length || scopes.includes("instagram_manage_messages"));
+  const method = viaPage ? "facebook_page" : loginConnected ? "instagram_login" : null;
 
   return {
     ...il,
-    source,
+    method,
+    source: viaPage ? "facebook_page" : loginSource,
+    username: viaPage ? safe.instagram.username : il.username,
+    id: viaPage ? safe.instagram.id : il.id,
+    profilePictureUrl: viaPage ? safe.instagram.profilePictureUrl : il.profilePictureUrl,
+    // Page webhook state cannot be read without pages_manage_metadata
+    webhookSubscribed: viaPage ? safe.facebookPage.webhookSubscribed : il.webhookSubscribed,
+    webhookVerifiable: viaPage ? scopes.includes("pages_manage_metadata") : true,
+    loginTokenError: il.lastError,
     oauthConfigured: configured,
     missingEnv: missing,
     redirectUri,
     requiredScopes: IG_SCOPES,
     // Facebook-Page login can also deliver/reply to Instagram DMs
-    viaFacebookPage: safe.instagram.connected && safe.facebookPage.tokenPresent,
-    verified: !!il.id && !il.tokenInvalid && !expired,
-    connected: !!source && !!il.id && !il.tokenInvalid && !expired,
-    expired: expired || il.tokenInvalid,
+    viaFacebookPage: viaPage,
+    connected: !!method,
+    // "expired" only when nothing usable remains
+    expired: !method && !!loginSource && loginExpired,
+    lastError: method ? null : il.lastError,
     lastInboundAt: safe.instagram.lastInboundAt,
     webhookUrl: redirectUri ? `${new URL(redirectUri).origin}/api/meta/webhook` : "/api/meta/webhook",
   };

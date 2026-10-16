@@ -2,7 +2,7 @@ import MetaConnection from "../../models/MetaConnection.js";
 import User from "../../models/User.js";
 import { usesPlatformCredentials } from "../../utils/workspaceContext.js";
 import { encryptToken, decryptToken } from "./tokenVault.js";
-import { getMetaConfig, explainMetaError } from "./meta.service.js";
+import { getMetaConfig, explainMetaError, subscribePageWebhook } from "./meta.service.js";
 
 /* =========================================================
    INSTAGRAM API WITH INSTAGRAM LOGIN (Instagram Inbox)
@@ -80,6 +80,32 @@ export const resolveInstagramLogin = async () => {
     return { connection, token: process.env.INSTAGRAM_ACCESS_TOKEN, source: "platform" };
   }
   return { connection, token: null, source: null };
+};
+
+/* Facebook-Login path: the workspace's connected Page token can read and
+   reply to its linked Instagram account (instagram_manage_messages).
+   This is Siva's working connection; preferred when present. */
+export const resolveInstagramPage = (connection) => {
+  if (connection?.status !== "connected") return null;
+  if (!connection.facebookPage?.encryptedToken || !connection.instagram?.id) return null;
+  if ((connection.scopes || []).length && !connection.scopes.includes("instagram_manage_messages")) return null;
+  return {
+    pageId: connection.facebookPage.id,
+    igId: connection.instagram.id,
+    token: decryptToken(connection.facebookPage.encryptedToken),
+  };
+};
+
+export const fbGet = async (path, token, params = {}) => {
+  const { apiVersion } = getMetaConfig();
+  const url = new URL(`https://graph.facebook.com/${apiVersion}/${path}`);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || data?.error) {
+    throw fail(explainMetaError(data?.error, `Meta request failed (${res.status})`), 400, data?.error?.code ?? null);
+  }
+  return data;
 };
 
 /* ================= OAUTH ================= */
@@ -182,7 +208,36 @@ export const completeInstagramConnection = async ({ code, userId }) => {
 
 /* ================= STATUS CHECK (real Graph call) ================= */
 export const refreshInstagramConnection = async () => {
-  const { connection, token, source } = await resolveInstagramLogin();
+  const resolved = await resolveInstagramLogin();
+  const page = resolveInstagramPage(resolved.connection);
+
+  if (page) {
+    // Real check of the Page → Instagram link with the Page token
+    const { connection } = resolved;
+    try {
+      const ig = await fbGet(page.igId, page.token, { fields: "username,name,profile_picture_url" });
+      connection.instagram.username = ig.username || connection.instagram.username;
+      connection.instagram.name = ig.name || connection.instagram.name;
+      connection.instagram.profilePictureUrl = ig.profile_picture_url || connection.instagram.profilePictureUrl;
+      connection.lastSyncedAt = new Date();
+      connection.lastError = null;
+    } catch (error) {
+      connection.lastError = error.message;
+      await connection.save();
+      throw error;
+    }
+    // A separate Instagram-Login token is optional here — check it, non-fatal
+    if (resolved.token) {
+      await refreshLoginToken(resolved).catch(() => {});
+    }
+    await connection.save();
+    return connection;
+  }
+
+  return refreshLoginToken(resolved);
+};
+
+const refreshLoginToken = async ({ connection, token, source }) => {
   if (!token) throw fail("Instagram is not connected for this workspace");
 
   const il = connection.instagramLogin;
@@ -230,6 +285,11 @@ export const refreshInstagramConnection = async () => {
 
 export const subscribeInstagramWebhook = async () => {
   const { connection, token } = await resolveInstagramLogin();
+  if (resolveInstagramPage(connection)) {
+    // Facebook-Login path: Page subscription (needs pages_manage_metadata)
+    await subscribePageWebhook();
+    return MetaConnection.getSingleton();
+  }
   if (!token) throw fail("Instagram is not connected for this workspace");
   connection.instagramLogin.webhookSubscribed = await subscribeWebhook(token);
   await connection.save();

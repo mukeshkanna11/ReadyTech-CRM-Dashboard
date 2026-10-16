@@ -21,6 +21,14 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    /* Self-service profile (My Profile). Avatar = small data URL,
+       resized client-side; validated in user.routes.js */
+    phone: { type: String, trim: true, default: "", maxlength: 20 },
+    avatar: { type: String, default: null },
+
+    /* Notifications newer than this are unread */
+    notificationsReadAt: { type: Date, default: null },
+
     passwordHash: {
       type: String,
       required: [true, "Password is required"],

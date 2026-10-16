@@ -333,3 +333,43 @@ test("Instagram-Login webhook entry routes by instagramLogin.id", async () => {
   assert.equal(await inbox.workspaceForMetaAsset(["instagram.id", "instagramLogin.id"], "IGL_SARA"), SARA);
   assert.deepEqual(q[0].$or, [{ "instagram.id": "IGL_SARA" }, { "instagramLogin.id": "IGL_SARA" }]);
 });
+
+test("Siva: working Facebook-Page IG link wins over a revoked Instagram-Login token", async () => {
+  const doc = {
+    key: "default", status: "connected", scopes: ["instagram_manage_messages"],
+    facebookPage: { id: "PAGE1", encryptedToken: encryptToken("PAGE_TOKEN") },
+    instagram: { id: "IG1" },
+    instagramLogin: { tokenInvalid: true },
+  };
+  process.env.INSTAGRAM_ACCESS_TOKEN = "DEAD_ENV_TOKEN";
+  stub(MetaConnection, "findOne", async () => doc);
+  stub(Msg, "create", async (d) => ({ ...d, save: async () => {} }));
+  const calls = [];
+  graphMock(calls, () => ({ message_id: "m" }));
+  await ctx.runWithWorkspace(SIVA, async () => {
+    await inbox.sendSocialMessage({ conversation: fakeConv({ channel: "instagram", phoneNumber: "ig:5", externalId: "5" }), text: "hi" });
+  });
+  assert.match(calls[0].url, /graph\.facebook\.com\/v[\d.]+\/PAGE1\/messages$/);
+  assert.equal(calls[0].opts.headers.Authorization, "Bearer PAGE_TOKEN");
+});
+
+test("Status: Page path reports connected; tenant without anything reports disconnected", async () => {
+  const metaCtl = await import("../controllers/meta.controller.js");
+  const { default: MC } = await import("../models/MetaConnection.js");
+  const siva = new MC({ key: "default", status: "connected", scopes: ["instagram_manage_messages"],
+    facebookPage: { id: "P", name: "RT", encryptedToken: "x" }, instagram: { id: "IG1", username: "readytechsolutions" },
+    instagramLogin: { tokenInvalid: true, lastError: "revoked" } });
+  stub(MetaConnection, "findOne", async () => siva);
+  let r = res();
+  await ctx.runWithWorkspace(SIVA, () => metaCtl.getMetaStatus({}, r));
+  assert.equal(r.body.data.instagramInbox.connected, true);
+  assert.equal(r.body.data.instagramInbox.method, "facebook_page");
+  assert.equal(r.body.data.instagramInbox.username, "readytechsolutions");
+  assert.equal(r.body.data.instagramInbox.expired, false);
+
+  stub(MetaConnection, "findOne", async () => new MC({ key: SARA }));
+  r = res();
+  await ctx.runWithWorkspace(SARA, () => metaCtl.getMetaStatus({}, r));
+  assert.equal(r.body.data.instagramInbox.connected, false);
+  assert.equal(r.body.data.instagramInbox.source, null, "never Siva's env token");
+});

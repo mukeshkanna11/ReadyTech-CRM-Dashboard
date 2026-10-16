@@ -11,8 +11,10 @@ import { getMetaConfig, explainMetaError } from "./meta.service.js";
 import { phoneMatcher } from "./whatsapp.service.js";
 import {
   resolveInstagramLogin,
+  resolveInstagramPage,
   sendInstagramLoginMessage,
   fetchInstagramProfile,
+  fbGet,
 } from "./instagramLogin.service.js";
 import { decryptToken } from "./tokenVault.js";
 
@@ -76,11 +78,14 @@ export const recordSocialInbound = async ({
     let profileName = `${channel === "instagram" ? "Instagram" : "Messenger"} user ${String(senderId).slice(-4)}`;
     if (channel === "instagram") {
       try {
-        const { token } = await resolveInstagramLogin();
-        if (token) {
-          const p = await fetchInstagramProfile(token, senderId);
-          profileName = p?.name || (p?.username ? `@${p.username}` : profileName);
-        }
+        const login = await resolveInstagramLogin();
+        const page = resolveInstagramPage(login.connection);
+        const p = page
+          ? await fbGet(senderId, page.token, { fields: "name,username" })
+          : login.token && !login.connection.instagramLogin?.tokenInvalid
+            ? await fetchInstagramProfile(login.token, senderId)
+            : null;
+        if (p) profileName = p.name || (p.username ? `@${p.username}` : profileName);
       } catch {
         /* profile is optional — keep the placeholder */
       }
@@ -159,9 +164,14 @@ export const sendSocialMessage = async ({ conversation, text, user }) => {
     throw error;
   }
 
-  // Instagram: prefer the Instagram Login token (Instagram Inbox)
+  // Instagram: the Facebook-Page connection (verified, Siva's) goes through
+  // the Page Send API below; otherwise use the Instagram-Login token.
   const igLogin = conversation.channel === "instagram" ? await resolveInstagramLogin() : null;
-  if (igLogin?.token && !igLogin.connection.instagramLogin?.tokenInvalid) {
+  if (
+    igLogin?.token &&
+    !igLogin.connection.instagramLogin?.tokenInvalid &&
+    !resolveInstagramPage(igLogin.connection)
+  ) {
     return sendViaInstagramLogin({ conversation, text: clean, user, token: igLogin.token });
   }
 

@@ -28,13 +28,20 @@ import {
   MessageSquare,
   TrendingUp,
   User,
-  KeyRound,
   SlidersHorizontal,
   ArrowLeftRight,
   Plug,
 } from "lucide-react";
 import { Cloud, AtSign } from "lucide-react";
 import ChatSupportWidget from "../components/ChatSupportWidget";
+import {
+  getMyProfile,
+  getNotifications,
+  markNotificationsRead,
+  PROFILE_EVENT,
+  initialsOf,
+  timeAgo,
+} from "../services/profileService";
 import { Zap } from "lucide-react";
 /* =========================================================
    DASHBOARD LAYOUT
@@ -292,10 +299,48 @@ function Topbar({ onMenu }) {
     return () => document.removeEventListener("mousedown", onClickAway);
   }, []);
 
+  const [me, setMe] = useState(null);
+  const [notif, setNotif] = useState({ items: [], unread: 0 });
+
+  /* Real profile (navbar name/email/photo) */
+  useEffect(() => {
+    getMyProfile().then(setMe).catch(() => {});
+    const onUpdate = (e) => setMe(e.detail);
+    window.addEventListener(PROFILE_EVENT, onUpdate);
+    return () => window.removeEventListener(PROFILE_EVENT, onUpdate);
+  }, []);
+
+  /* New-lead notifications — poll every 60s while the tab is visible */
+  useEffect(() => {
+    const load = () => getNotifications(8).then(setNotif).catch(() => {});
+    load();
+    const id = setInterval(() => document.visibilityState === "visible" && load(), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  const markAllRead = async () => {
+    try {
+      await markNotificationsRead();
+      setNotif((n) => ({ ...n, unread: 0, items: n.items.map((i) => ({ ...i, read: true })) }));
+    } catch {
+      /* interceptor toasts */
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem("token");
     navigate("/login");
   };
+
+  const roleLabel = me?.role ? me.role.charAt(0).toUpperCase() + me.role.slice(1) : "";
+  const avatar = (cls) =>
+    me?.avatar ? (
+      <img src={me.avatar} alt="" className={`object-cover rounded-full ${cls}`} />
+    ) : (
+      <div className={`flex items-center justify-center text-sm font-semibold text-white rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 ${cls}`}>
+        {initialsOf(me?.name)}
+      </div>
+    );
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/40 bg-white/60 shadow-sm shadow-slate-900/5 backdrop-blur-xl supports-[backdrop-filter]:bg-white/50">
@@ -335,18 +380,50 @@ function Topbar({ onMenu }) {
               className="relative p-2 transition rounded-xl hover:bg-slate-100/80 active:scale-95"
             >
               <Bell size={18} className="text-slate-700" />
-              <span className="absolute w-2 h-2 rounded-full bg-rose-500 top-1.5 right-1.5 ring-2 ring-white animate-pulse" />
+              {notif.unread > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full bg-rose-500 text-[10px] font-bold text-white ring-2 ring-white">
+                  {notif.unread > 99 ? "99+" : notif.unread}
+                </span>
+              )}
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 z-50 mt-3 overflow-hidden border shadow-xl w-72 rounded-2xl border-slate-200/70 bg-white/90 shadow-slate-900/10 backdrop-blur-xl">
+              <div className="absolute right-0 z-50 mt-3 overflow-hidden border shadow-xl w-80 rounded-2xl border-slate-200/70 bg-white/95 shadow-slate-900/10 backdrop-blur-xl">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-                  <p className="text-sm font-semibold text-slate-800">Notifications</p>
-                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600">New</span>
+                  <p className="text-sm font-semibold text-slate-800">
+                    Notifications
+                    {notif.unread > 0 && <span className="ml-2 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600">{notif.unread} new</span>}
+                  </p>
+                  {notif.unread > 0 && (
+                    <button onClick={markAllRead} className="text-xs font-medium text-indigo-600 hover:underline">Mark all read</button>
+                  )}
                 </div>
-                <div className="px-4 py-6 text-sm text-center text-slate-500">
-                  You’re all caught up.
-                </div>
+                {notif.items.length === 0 ? (
+                  <div className="px-4 py-6 text-sm text-center text-slate-500">No notifications yet.</div>
+                ) : (
+                  <ul className="overflow-y-auto max-h-80">
+                    {notif.items.map((n) => (
+                      <li key={n.id}>
+                        <button
+                          onClick={() => { setNotifOpen(false); navigate("/leads"); }}
+                          className={`flex w-full gap-3 px-4 py-3 text-left transition hover:bg-slate-50 ${n.read ? "" : "bg-indigo-50/40"}`}
+                        >
+                          <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.read ? "bg-transparent" : "bg-indigo-500"}`} />
+                          <span className="min-w-0">
+                            <span className="block text-sm text-slate-800">
+                              New lead: <span className="font-semibold">{n.name}</span>
+                            </span>
+                            <span className="block text-xs truncate text-slate-500">
+                              {[n.company, n.source].filter(Boolean).join(" · ")}
+                              {(n.company || n.source) && " · "}
+                              {timeAgo(n.createdAt)}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <button
                   onClick={() => { setNotifOpen(false); navigate("/notifications"); }}
                   className="w-full px-4 py-3 text-sm font-medium text-indigo-600 transition border-t border-slate-100 hover:bg-indigo-50/60"
@@ -363,12 +440,10 @@ function Topbar({ onMenu }) {
               onClick={() => { setProfileOpen((v) => !v); setNotifOpen(false); }}
               className="flex items-center gap-2 p-1 transition sm:pr-2 rounded-xl hover:bg-slate-100/80"
             >
-              <div className="flex items-center justify-center text-sm font-semibold text-white rounded-full shadow-md w-9 h-9 bg-gradient-to-br from-indigo-600 to-violet-600 ring-2 ring-white">
-                A
-              </div>
+              {avatar("w-9 h-9 shadow-md ring-2 ring-white")}
               <div className="hidden leading-tight text-left sm:block">
-                <p className="text-xs font-semibold text-slate-800">Admin</p>
-                <p className="text-[10px] text-slate-500">Administrator</p>
+                <p className="max-w-[140px] truncate text-xs font-semibold text-slate-800">{me?.name || "…"}</p>
+                <p className="text-[10px] text-slate-500">{roleLabel}</p>
               </div>
               <ChevronDown size={14} className={`hidden sm:block text-slate-500 transition-transform ${profileOpen ? "rotate-180" : ""}`} />
             </button>
@@ -376,18 +451,15 @@ function Topbar({ onMenu }) {
             {profileOpen && (
               <div className="absolute right-0 z-50 w-56 mt-3 overflow-hidden border shadow-xl rounded-2xl border-slate-200/70 bg-white/90 shadow-slate-900/10 backdrop-blur-xl">
                 <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100">
-                  <div className="flex items-center justify-center text-sm font-semibold text-white rounded-full w-9 h-9 bg-gradient-to-br from-indigo-600 to-violet-600">
-                    A
-                  </div>
-                  <div className="leading-tight">
-                    <p className="text-sm font-semibold text-slate-800">Admin</p>
-                    <p className="text-xs text-slate-500">admin@crm.com</p>
+                  {avatar("w-10 h-10")}
+                  <div className="min-w-0 leading-tight">
+                    <p className="text-sm font-semibold truncate text-slate-800">{me?.name || "…"}</p>
+                    <p className="text-xs truncate text-slate-500">{me?.email || ""}</p>
                   </div>
                 </div>
                 <div className="p-1.5">
                   <DropdownItem icon={User} label="My Profile" onClick={() => { setProfileOpen(false); navigate("/profile"); }} />
                   <DropdownItem icon={Settings} label="Settings" onClick={() => { setProfileOpen(false); navigate("/settings"); }} />
-                  <DropdownItem icon={KeyRound} label="Change Password" onClick={() => { setProfileOpen(false); navigate("/profile"); }} />
                   <div className="h-px my-1 bg-slate-100" />
                   <DropdownItem icon={LogOut} label="Logout" danger onClick={logout} />
                 </div>
