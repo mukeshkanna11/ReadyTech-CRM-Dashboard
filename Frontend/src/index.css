@@ -7,3 +7,28 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial;
 }
+
+
+/* =========================================================
+   DARK THEME — global layer for pages without `dark:` variants.
+   :where() keeps specificity at `.dark` so explicit dark: classes win.
+========================================================= */
+.dark body { @apply bg-slate-950 text-slate-100; }
+
+.dark :where(.bg-white, .bg-white\/95, .bg-white\/90, .bg-white\/80, .bg-white\/70, .bg-white\/60, .bg-white\/50) { background-color: rgb(15 23 42 / 0.92); }
+.dark :where(.bg-slate-50, .bg-gray-50, .bg-slate-50\/60, .bg-slate-50\/50) { background-color: rgb(2 6 23 / 0.55); }
+.dark :where(.bg-slate-100, .bg-gray-100) { background-color: rgb(30 41 59); }
+.dark :where(.bg-slate-200, .bg-gray-200) { background-color: rgb(51 65 85); }
+
+.dark :where(.text-slate-900, .text-slate-800, .text-gray-900, .text-gray-800) { color: rgb(241 245 249); }
+.dark :where(.text-slate-700, .text-gray-700) { color: rgb(226 232 240); }
+.dark :where(.text-slate-600, .text-gray-600) { color: rgb(203 213 225); }
+.dark :where(.text-slate-500, .text-gray-500) { color: rgb(148 163 184); }
+
+.dark :where(.border-slate-100, .border-slate-200, .border-slate-200\/70, .border-gray-200, .divide-slate-100 > * + *) { border-color: rgb(51 65 85); }
+.dark :where(.border-slate-300, .border-gray-300) { border-color: rgb(71 85 105); }
+
+.dark :where(.hover\:bg-slate-50:hover, .hover\:bg-slate-100:hover, .hover\:bg-gray-50:hover, .hover\:bg-gray-100:hover, .hover\:bg-slate-100\/80:hover) { background-color: rgb(30 41 59); }
+
+.dark :where(input, select, textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]) { color-scheme: dark; }
+.dark :where(input, select, textarea)::placeholder { color: rgb(100 116 139); }

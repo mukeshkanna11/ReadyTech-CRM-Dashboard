@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { SlidersHorizontal, Plus, Minus, Save, RefreshCcw } from "lucide-react";
 import API from "../../services/api";
@@ -13,6 +13,7 @@ export default function StockAdjustment() {
   const [warehouses, setWarehouses] = useState([]);
   const [summary, setSummary] = useState([]);
   const [loading, setLoading] = useState(false);
+  const inFlight = useRef(false); // blocks double-click before re-render
 
   const [product, setProduct] = useState("");
   const [warehouse, setWarehouse] = useState("");
@@ -48,6 +49,7 @@ export default function StockAdjustment() {
   }, [product, warehouse, summary]);
 
   const submit = async () => {
+    if (inFlight.current) return;
     const qty = Number(quantity);
     if (!product || !warehouse) return toast.error("Select product and warehouse");
     if (!Number.isFinite(qty) || qty <= 0) return toast.error("Enter a valid quantity");
@@ -58,6 +60,7 @@ export default function StockAdjustment() {
       return toast.error(`Cannot decrease more than available (${available})`);
 
     try {
+      inFlight.current = true;
       setLoading(true);
       await API.post("/inventory/adjust", { product, warehouse, delta, reason: reason.trim() });
       toast.success("Stock adjusted successfully");
@@ -67,6 +70,7 @@ export default function StockAdjustment() {
     } catch (err) {
       toast.error(err?.response?.data?.message || "Adjustment failed");
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   };

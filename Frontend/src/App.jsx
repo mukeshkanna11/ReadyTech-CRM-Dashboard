@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
+import { Toaster } from "react-hot-toast";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 /* ================== LAYOUT ================== */
@@ -102,6 +103,8 @@ const Loader = () => (
 export default function App() {
   return (
     <Router>
+      {/* Renders every react-hot-toast success/error message app-wide */}
+      <Toaster position="top-right" toastOptions={{ duration: 4000, style: { fontSize: "14px" } }} />
       <Suspense fallback={<Loader />}>
         <Routes>
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { ArrowLeftRight, Save, RefreshCcw, MoveRight } from "lucide-react";
 import API from "../../services/api";
@@ -13,6 +13,7 @@ export default function WarehouseTransfer() {
   const [warehouses, setWarehouses] = useState([]);
   const [summary, setSummary] = useState([]);
   const [loading, setLoading] = useState(false);
+  const inFlight = useRef(false); // blocks double-click before re-render
 
   const [product, setProduct] = useState("");
   const [fromWarehouse, setFromWarehouse] = useState("");
@@ -48,6 +49,7 @@ export default function WarehouseTransfer() {
   }, [product, fromWarehouse, summary]);
 
   const submit = async () => {
+    if (inFlight.current) return;
     const qty = Number(quantity);
     if (!product || !fromWarehouse || !toWarehouse) return toast.error("Select product and both warehouses");
     if (fromWarehouse === toWarehouse) return toast.error("Source and destination must differ");
@@ -55,6 +57,7 @@ export default function WarehouseTransfer() {
     if (available !== null && qty > available) return toast.error(`Cannot transfer more than available (${available})`);
 
     try {
+      inFlight.current = true;
       setLoading(true);
       await API.post("/inventory/transfer", {
         product,
@@ -70,6 +73,7 @@ export default function WarehouseTransfer() {
     } catch (err) {
       toast.error(err?.response?.data?.message || "Transfer failed");
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   };

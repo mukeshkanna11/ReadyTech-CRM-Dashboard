@@ -20,8 +20,14 @@ import {
   BadgeCheck
 } from "lucide-react";
 
+import { applyTheme, getTheme } from "../services/theme";
+
 export default function SettingsPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => getTheme() === "dark");
+  const toggleTheme = (on) => {
+    const value = typeof on === "function" ? on(darkMode) : on;
+    setDarkMode(applyTheme(value ? "dark" : "light") === "dark");
+  };
 
   return (
     <div className="p-6 mx-auto space-y-8 max-w-7xl">
@@ -149,7 +155,7 @@ export default function SettingsPage() {
         title="Dark Mode"
         desc="Reduce eye strain at night"
         toggleValue={darkMode}
-        setToggle={setDarkMode}
+        setToggle={toggleTheme}
         icon={<Moon size={18} />}
         iconOn={<Moon size={16} />}
         iconOff={<Sun size={16} />}
