@@ -103,7 +103,9 @@ export const sendLeadMessage = async (req, res) => {
     const reason = err.message || "Send failed";
     await logActivity("Failed", `Error: ${reason}`);
 
-    return res.status(err.status && err.status < 500 ? err.status : 502).json({
+    // Provider (Twilio/Resend) 401/403 must not reach the client as a session 401
+    const status = err.status && err.status < 500 && ![401, 403].includes(err.status) ? err.status : 502;
+    return res.status(status).json({
       success: false,
       message: `${CHANNELS[channel]} failed: ${reason}`,
       code: err.code,
