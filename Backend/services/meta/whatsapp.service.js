@@ -128,8 +128,8 @@ export const verifyWebhookToken = (mode, token) => {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 };
 
-export const verifyWebhookSignature = (rawBody, signatureHeader) => {
-  const { appSecret } = getWhatsAppConfig();
+export const verifyWebhookSignature = (rawBody, signatureHeader, secret) => {
+  const appSecret = secret || getWhatsAppConfig().appSecret;
 
   if (!appSecret || !rawBody || !signatureHeader) return false;
   if (!String(signatureHeader).startsWith("sha256=")) return false;

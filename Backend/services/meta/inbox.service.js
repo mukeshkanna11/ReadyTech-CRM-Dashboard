@@ -9,6 +9,11 @@ import {
 } from "../../utils/workspaceContext.js";
 import { getMetaConfig, explainMetaError } from "./meta.service.js";
 import { phoneMatcher } from "./whatsapp.service.js";
+import {
+  resolveInstagramLogin,
+  sendInstagramLoginMessage,
+  fetchInstagramProfile,
+} from "./instagramLogin.service.js";
 import { decryptToken } from "./tokenVault.js";
 
 /* =========================================================
@@ -27,7 +32,10 @@ export const workspaceForMetaAsset = async (field, assetId, { legacyDefault = fa
   const id = assetId ? String(assetId) : null;
   if (!id) return null;
 
-  const doc = await MetaConnection.findOne({ [field]: id }).select("key").lean();
+  const fields = [].concat(field);
+  const doc = await MetaConnection.findOne({ $or: fields.map((f) => ({ [f]: id })) })
+    .select("key")
+    .lean();
 
   if (!doc) {
     if (!legacyDefault) return null;
@@ -64,12 +72,26 @@ export const recordSocialInbound = async ({
   let conversation = await WhatsAppConversation.findOne({ phoneNumber: key });
 
   if (!conversation) {
+    // Real Instagram name/username when the workspace token allows it
+    let profileName = `${channel === "instagram" ? "Instagram" : "Messenger"} user ${String(senderId).slice(-4)}`;
+    if (channel === "instagram") {
+      try {
+        const { token } = await resolveInstagramLogin();
+        if (token) {
+          const p = await fetchInstagramProfile(token, senderId);
+          profileName = p?.name || (p?.username ? `@${p.username}` : profileName);
+        }
+      } catch {
+        /* profile is optional — keep the placeholder */
+      }
+    }
+
     try {
       conversation = await WhatsAppConversation.create({
         channel,
         phoneNumber: key,
         externalId: String(senderId),
-        profileName: `${channel === "instagram" ? "Instagram" : "Messenger"} user ${String(senderId).slice(-4)}`,
+        profileName,
         lead: leadId,
       });
     } catch (error) {
@@ -137,6 +159,12 @@ export const sendSocialMessage = async ({ conversation, text, user }) => {
     throw error;
   }
 
+  // Instagram: prefer the Instagram Login token (Instagram Inbox)
+  const igLogin = conversation.channel === "instagram" ? await resolveInstagramLogin() : null;
+  if (igLogin?.token && !igLogin.connection.instagramLogin?.tokenInvalid) {
+    return sendViaInstagramLogin({ conversation, text: clean, user, token: igLogin.token });
+  }
+
   const connection = await MetaConnection.getSingleton();
   const pageId = connection.facebookPage?.id;
   const pageToken = connection.facebookPage?.encryptedToken
@@ -144,7 +172,11 @@ export const sendSocialMessage = async ({ conversation, text, user }) => {
     : null;
 
   if (!pageId || !pageToken) {
-    const error = new Error("Connect Meta (Facebook Page) for this workspace to reply");
+    const error = new Error(
+      conversation.channel === "instagram"
+        ? "Connect this workspace's Instagram account (Instagram Inbox → Connect) to reply"
+        : "Connect Meta (Facebook Page) for this workspace to reply"
+    );
     error.status = 400;
     throw error;
   }
@@ -196,6 +228,49 @@ export const sendSocialMessage = async ({ conversation, text, user }) => {
   conversation.lastMessageDirection = "outbound";
   await conversation.save();
 
+  return record;
+};
+
+const touchOutbound = async (conversation, text) => {
+  const now = new Date();
+  conversation.lastOutboundAt = now;
+  conversation.lastMessageAt = now;
+  conversation.lastMessagePreview = text.slice(0, 300);
+  conversation.lastMessageDirection = "outbound";
+  await conversation.save();
+};
+
+const sendViaInstagramLogin = async ({ conversation, text, user, token }) => {
+  const record = await WhatsAppMessage.create({
+    conversation: conversation._id,
+    direction: "outbound",
+    to: conversation.externalId,
+    type: "text",
+    body: text,
+    timestamp: new Date(),
+    status: "pending",
+    sentBy: user?._id || null,
+  });
+
+  try {
+    const data = await sendInstagramLoginMessage(token, conversation.externalId, text);
+    record.messageId = data?.message_id || null;
+    record.status = "sent";
+    await record.save();
+  } catch (error) {
+    record.status = "failed";
+    record.error = { code: error.code ? String(error.code) : null, title: "Send failed", message: error.message };
+    await record.save();
+    if (Number(error.code) === 190) {
+      await MetaConnection.updateOne(
+        { key: metaKeyFor() },
+        { $set: { "instagramLogin.tokenInvalid": true, "instagramLogin.lastError": error.message } }
+      );
+    }
+    throw error;
+  }
+
+  await touchOutbound(conversation, text);
   return record;
 };
 

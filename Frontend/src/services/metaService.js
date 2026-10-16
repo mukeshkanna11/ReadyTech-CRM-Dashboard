@@ -30,3 +30,24 @@ export const subscribeMetaPage = async () => {
   const { data } = await API.post("/meta/subscribe-page");
   return data?.data;
 };
+
+/* ---------- Instagram Inbox (Instagram Login) ---------- */
+export const getInstagramOAuthUrl = async () => {
+  const { data } = await API.get("/meta/instagram/oauth/url");
+  return data?.data?.url;
+};
+
+export const refreshInstagram = async () => {
+  const { data } = await API.post("/meta/instagram/refresh");
+  return data?.data;
+};
+
+export const subscribeInstagram = async () => {
+  const { data } = await API.post("/meta/instagram/subscribe");
+  return data?.data;
+};
+
+export const disconnectInstagram = async () => {
+  const { data } = await API.post("/meta/instagram/disconnect");
+  return data?.data;
+};

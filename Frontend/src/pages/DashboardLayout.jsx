@@ -33,7 +33,7 @@ import {
   ArrowLeftRight,
   Plug,
 } from "lucide-react";
-import { Cloud } from "lucide-react";
+import { Cloud, AtSign } from "lucide-react";
 import ChatSupportWidget from "../components/ChatSupportWidget";
 import { Zap } from "lucide-react";
 /* =========================================================
@@ -108,7 +108,8 @@ const AI_LINKS = [
 /* Centralized integrations — one Meta connection for CRM, ERP & AI Content */
 const INTEGRATION_LINKS = [
   { to: "/integrations/meta", icon: Plug, label: "Meta Integration" },
-  { to: "/integrations/whatsapp", icon: MessageSquare, label: "Unified Inbox" },
+  { to: "/integrations/whatsapp", icon: MessageSquare, label: "WhatsApp Inbox" },
+  { to: "/integrations/instagram", icon: AtSign, label: "Instagram Inbox" },
 ];
 
 function Sidebar({ open }) {

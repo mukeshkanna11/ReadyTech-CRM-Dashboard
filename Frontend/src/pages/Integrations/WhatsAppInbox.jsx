@@ -48,6 +48,11 @@ const CHANNELS = {
   messenger: { label: "Messenger", icon: FaFacebookMessenger, dot: "bg-blue-500", chip: "bg-blue-50 text-blue-700" },
 };
 const STATUSES = ["Open", "Pending", "Closed"];
+const HEADER = {
+  "": { title: "Unified Inbox", sub: "WhatsApp, Instagram & Messenger in one place", bg: "from-emerald-500 via-sky-500 to-fuchsia-500" },
+  whatsapp: { title: "WhatsApp Inbox", sub: "WhatsApp Business conversations", bg: "from-emerald-500 to-teal-500" },
+  instagram: { title: "Instagram Inbox", sub: "Instagram Direct messages", bg: "from-fuchsia-500 via-pink-500 to-amber-400" },
+};
 
 const channelOf = (c) => CHANNELS[c?.channel] || CHANNELS.whatsapp;
 const displayName = (c) => c?.profileName || c?.phoneNumber || "Unknown";
@@ -74,14 +79,16 @@ const readFile = (file) =>
 /* =========================================================
    UNIFIED INBOX — WhatsApp + Instagram + Messenger
 ========================================================= */
-export default function WhatsAppInbox() {
+/* `channel` locks the inbox to one channel (WhatsApp / Instagram Inbox
+   pages); `banner` renders a connection strip under the header. */
+export default function WhatsAppInbox({ channel: lockedChannel = "", banner = null }) {
   const [conversations, setConversations] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const [channel, setChannel] = useState("");
+  const [channel, setChannel] = useState(lockedChannel);
   const [status, setStatus] = useState("Open");
 
   const [activeId, setActiveId] = useState(null);
@@ -271,12 +278,12 @@ export default function WhatsAppInbox() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="grid w-10 h-10 text-white shadow-sm place-items-center rounded-xl bg-gradient-to-br from-emerald-500 via-sky-500 to-fuchsia-500">
-            <Layers size={20} />
+          <div className={`grid w-10 h-10 text-white shadow-sm place-items-center rounded-xl bg-gradient-to-br ${HEADER[lockedChannel]?.bg || HEADER[""].bg}`}>
+            {(() => { const I = CHANNELS[lockedChannel]?.icon || Layers; return <I size={20} />; })()}
           </div>
           <div>
-            <h1 className="text-lg font-bold text-slate-900">Unified Inbox</h1>
-            <p className="text-xs text-slate-500">WhatsApp, Instagram & Messenger in one place</p>
+            <h1 className="text-lg font-bold text-slate-900">{(HEADER[lockedChannel] || HEADER[""]).title}</h1>
+            <p className="text-xs text-slate-500">{(HEADER[lockedChannel] || HEADER[""]).sub}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -295,6 +302,8 @@ export default function WhatsAppInbox() {
         </div>
       </div>
 
+      {banner}
+
       <div className="grid flex-1 min-h-0 gap-4 lg:grid-cols-[340px_minmax(0,1fr)_300px]">
         {/* ===== Conversation list ===== */}
         <aside className={`${activeId ? "hidden lg:flex" : "flex"} flex-col min-h-0 bg-white border shadow-sm rounded-2xl border-slate-200`}>
@@ -308,6 +317,7 @@ export default function WhatsAppInbox() {
                 className="w-full py-2 pr-3 text-sm border outline-none pl-9 rounded-xl border-slate-200 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
               />
             </div>
+            {!lockedChannel && (
             <div className="flex gap-1 p-1 rounded-xl bg-slate-100">
               {[["", "All", Layers], ...Object.entries(CHANNELS).map(([k, v]) => [k, v.label, v.icon])].map(
                 ([key, label, Icon]) => (
@@ -324,6 +334,7 @@ export default function WhatsAppInbox() {
                 )
               )}
             </div>
+            )}
             <div className="flex items-center gap-1.5 text-xs">
               {[...STATUSES, ""].map((s) => (
                 <button

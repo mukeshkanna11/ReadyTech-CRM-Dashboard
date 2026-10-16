@@ -128,7 +128,7 @@ test("env WhatsApp number is only usable by the default workspace", async () => 
 
 /* ---------------- Instagram webhook ---------------- */
 test("IG webhook drops unsigned entries for another workspace's account", async () => {
-  stub(MetaConnection, "findOne", (f) => chain(f["instagram.id"] === "SARA_IG" ? { key: SARA } : null));
+  stub(MetaConnection, "findOne", (f) => chain(JSON.stringify(f).includes("SARA_IG") ? { key: SARA } : null));
   const payload = {
     object: "instagram",
     entry: [{ id: "SARA_IG", messaging: [{ sender: { id: "1" }, message: { mid: "m", text: "hi" } }] }],

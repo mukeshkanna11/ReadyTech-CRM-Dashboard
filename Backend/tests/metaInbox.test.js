@@ -164,7 +164,7 @@ test("Expired 24h window blocks replies on every channel", async () => {
 const sign = (body) => "sha256=" + crypto.createHmac("sha256", process.env.META_APP_SECRET).update(body).digest("hex");
 
 test("Signed Messenger webhook lands in the Page owner's workspace", async () => {
-  stub(MetaConnection, "findOne", (f) => chain(f["facebookPage.id"] === "SARA_PAGE" ? { key: SARA } : null));
+  stub(MetaConnection, "findOne", (f) => chain(JSON.stringify(f).includes("SARA_PAGE") ? { key: SARA } : null));
   const health = [];
   stub(MetaConnection, "updateOne", async (f, u) => (health.push([f.key, Object.keys(u.$set)[0]]), {}));
   stub(Msg, "exists", async () => null);
@@ -269,4 +269,67 @@ test("Unsupported or oversized WhatsApp attachments are rejected before upload",
   await assert.rejects(wa.sendTextMessage({ conversationId: "x", media: { data: "AAAA", mimeType: "application/zip" } }), { code: "UNSUPPORTED_MEDIA" });
   const big = "A".repeat(Math.ceil((6 * 1024 * 1024 * 4) / 3));
   await assert.rejects(wa.sendTextMessage({ conversationId: "x", media: { data: big, mimeType: "image/png" } }), { code: "MEDIA_TOO_LARGE" });
+});
+
+/* -------- Instagram Inbox (Instagram Login) -------- */
+const igl = await import("../services/meta/instagramLogin.service.js");
+
+test("IG env token is offered to Siva only; tenants get only their own encrypted token", async () => {
+  process.env.INSTAGRAM_ACCESS_TOKEN = "SIVA_IG_TOKEN";
+  stub(MetaConnection, "findOne", async () => ({ key: SARA, instagramLogin: {} }));
+  await ctx.runWithWorkspace(SARA, async () => assert.equal((await igl.resolveInstagramLogin()).token, null));
+  stub(MetaConnection, "findOne", async () => ({ key: SARA, instagramLogin: { encryptedToken: encryptToken("SARA_IG") } }));
+  await ctx.runWithWorkspace(SARA, async () => assert.equal((await igl.resolveInstagramLogin()).token, "SARA_IG"));
+  stub(MetaConnection, "findOne", async () => ({ key: "default", instagramLogin: {} }));
+  await ctx.runWithWorkspace(SIVA, async () => {
+    const r = await igl.resolveInstagramLogin();
+    assert.equal(r.token, "SIVA_IG_TOKEN");
+    assert.equal(r.source, "platform");
+  });
+});
+
+test("Instagram reply uses graph.instagram.com with the workspace token", async () => {
+  stub(MetaConnection, "findOne", async () => ({ key: SARA, instagramLogin: { encryptedToken: encryptToken("SARA_IG") } }));
+  stub(Msg, "create", async (d) => ({ ...d, save: async () => {} }));
+  const calls = [];
+  graphMock(calls, () => ({ message_id: "ig.mid" }));
+  await ctx.runWithWorkspace(SARA, async () => {
+    const m = await inbox.sendSocialMessage({ conversation: fakeConv({ channel: "instagram", phoneNumber: "ig:7", externalId: "7" }), text: "hi" });
+    assert.equal(m.messageId, "ig.mid");
+  });
+  assert.match(calls[0].url, /^https:\/\/graph\.instagram\.com\/v[\d.]+\/me\/messages$/);
+  assert.equal(calls[0].opts.headers.Authorization, "Bearer SARA_IG");
+  assert.deepEqual(JSON.parse(calls[0].opts.body).recipient, { id: "7" });
+});
+
+test("Expired IG token on refresh is flagged, not reported as connected", async () => {
+  const doc = { key: SARA, instagramLogin: { encryptedToken: encryptToken("bad"), connectedAt: new Date() }, save: async () => doc };
+  stub(MetaConnection, "findOne", async () => doc);
+  globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: { code: 190, message: "Session invalidated" } }) });
+  await ctx.runWithWorkspace(SARA, async () => {
+    await assert.rejects(igl.refreshInstagramConnection(), /expired or revoked/);
+  });
+  assert.equal(doc.instagramLogin.tokenInvalid, true);
+});
+
+test("IG OAuth: rejects an account owned by another workspace, never saves", async () => {
+  process.env.INSTAGRAM_APP_ID = "ia"; process.env.INSTAGRAM_APP_SECRET = "is";
+  globalThis.fetch = async (u) => ({ ok: true, status: 200, json: async () =>
+    String(u).includes("api.instagram.com") ? { access_token: "s", user_id: "IG9", permissions: "instagram_business_basic" }
+    : String(u).includes("/access_token") ? { access_token: "L", expires_in: 5184000 }
+    : { user_id: "IG9", username: "sara" } });
+  stub(User, "findById", () => chain({ _id: SARA }));
+  let saved = false;
+  stub(MetaConnection, "findOne", (f) => typeof f.key === "string"
+    ? Promise.resolve({ key: f.key, save: async () => (saved = true) })
+    : chain({ _id: "siva" }));
+  await assert.rejects(igl.completeInstagramConnection({ code: "c#_", userId: SARA }), { status: 409 });
+  assert.equal(saved, false);
+});
+
+test("Instagram-Login webhook entry routes by instagramLogin.id", async () => {
+  const q = [];
+  stub(MetaConnection, "findOne", (f) => (q.push(f), chain(JSON.stringify(f).includes("IGL_SARA") ? { key: SARA } : null)));
+  assert.equal(await inbox.workspaceForMetaAsset(["instagram.id", "instagramLogin.id"], "IGL_SARA"), SARA);
+  assert.deepEqual(q[0].$or, [{ "instagram.id": "IGL_SARA" }, { "instagramLogin.id": "IGL_SARA" }]);
 });

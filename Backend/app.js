@@ -58,7 +58,7 @@ app.set("trust proxy", 1);
 ====================================================== */
 app.use(
   helmet({
-    crossOriginResourcePolicy: false, // allow images, fonts across origins
+    crossOriginResourcePolicy: false, // allow images, fonts across origins       
   })
 );
 const allowedOrigins = [

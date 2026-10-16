@@ -8,6 +8,11 @@ import {
   verifyInstagramWebhook,
   receiveInstagramWebhook,
   subscribeMetaPage,
+  getInstagramOAuthUrl,
+  handleInstagramOAuthCallback,
+  refreshInstagram,
+  subscribeInstagram,
+  disconnectInstagram,
 } from "../controllers/meta.controller.js";
 
 import auth from "../middlewares/auth.js";
@@ -17,6 +22,7 @@ const router = express.Router();
 
 /* Public — Meta redirects the browser here (guarded by signed state) */
 router.get("/oauth/callback", handleMetaOAuthCallback);
+router.get("/instagram/oauth/callback", handleInstagramOAuthCallback);
 
 /* Public — Meta Instagram webhook
    GET  = one-time verification (hub.challenge)
@@ -36,5 +42,11 @@ router.get("/oauth/url", auth, role("admin"), getMetaOAuthUrl);
 router.post("/refresh", auth, role("admin"), refreshMetaConnection);
 router.post("/disconnect", auth, role("admin"), disconnectMeta);
 router.post("/subscribe-page", auth, role("admin"), subscribeMetaPage);
+
+/* Instagram Inbox (Instagram API with Instagram Login) — admin only */
+router.get("/instagram/oauth/url", auth, role("admin"), getInstagramOAuthUrl);
+router.post("/instagram/refresh", auth, role("admin"), refreshInstagram);
+router.post("/instagram/subscribe", auth, role("admin"), subscribeInstagram);
+router.post("/instagram/disconnect", auth, role("admin"), disconnectInstagram);
 
 export default router;

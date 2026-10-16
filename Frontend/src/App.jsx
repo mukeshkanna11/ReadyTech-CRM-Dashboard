@@ -72,6 +72,7 @@ const HR = lazy(() => import("./pages/HR"));
 /* Integrations */
 const MetaIntegration = lazy(() => import("./pages/Integrations/MetaIntegration"));
 const WhatsAppInbox = lazy(() => import("./pages/Integrations/WhatsAppInbox"));
+const InstagramInbox = lazy(() => import("./pages/Integrations/InstagramInbox"));
 
 /* Public Legal Pages (no authentication required) */
 const PrivacyPolicy = lazy(() =>
@@ -226,7 +227,8 @@ export default function App() {
                           INTEGRATIONS MODULE
             ====================================================== */}
             <Route path="integrations/meta" element={<MetaIntegration />} />
-            <Route path="integrations/whatsapp" element={<WhatsAppInbox />} />
+            <Route path="integrations/whatsapp" element={<WhatsAppInbox channel="whatsapp" />} />
+            <Route path="integrations/instagram" element={<InstagramInbox />} />
 
             {/* ======================================================
                           SETTINGS & INFO

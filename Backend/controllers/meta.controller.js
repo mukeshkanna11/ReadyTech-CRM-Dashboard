@@ -11,13 +11,22 @@ import {
   subscribePageWebhook,
 } from "../services/meta/meta.service.js";
 import { verifyWebhookSignature } from "../services/meta/whatsapp.service.js";
+import {
+  getInstagramConfig,
+  buildInstagramAuthUrl,
+  completeInstagramConnection,
+  refreshInstagramConnection,
+  subscribeInstagramWebhook,
+  disconnectInstagramConnection,
+  IG_SCOPES,
+} from "../services/meta/instagramLogin.service.js";
 import { usesPlatformCredentials } from "../utils/workspaceContext.js";
 import { processWebhookPayload as processInstagramWebhook } from "../services/meta/instagram.service.js";
 
 /* =========================================================
    Frontend page that shows the connection result
 ========================================================= */
-const clientRedirect = (params) => {
+const clientRedirect = (params, page = "meta") => {
   const base = (process.env.CLIENT_URL || "http://localhost:5173").replace(
     /\/+$/,
     ""
@@ -25,7 +34,7 @@ const clientRedirect = (params) => {
 
   const query = new URLSearchParams(params).toString();
 
-  return `${base}/integrations/meta?${query}`;
+  return `${base}/integrations/${page}?${query}`;
 };
 
 /* =========================================================
@@ -95,6 +104,74 @@ const buildSetup = (safe, { configured, missing, redirectUri }, platformWhatsApp
   ];
 };
 
+/* Instagram Inbox status — stored state only; "connected" requires a
+   profile verified by Meta (POST /instagram/refresh) */
+const buildInstagramStatus = (safe) => {
+  const il = safe.instagramLogin;
+  const { configured, missing, redirectUri } = getInstagramConfig();
+  const platform = usesPlatformCredentials() && !!process.env.INSTAGRAM_ACCESS_TOKEN;
+  const source = il.tokenPresent ? "workspace" : platform ? "platform" : null;
+  const expired = !!il.expiresAt && new Date(il.expiresAt) <= new Date();
+
+  return {
+    ...il,
+    source,
+    oauthConfigured: configured,
+    missingEnv: missing,
+    redirectUri,
+    requiredScopes: IG_SCOPES,
+    // Facebook-Page login can also deliver/reply to Instagram DMs
+    viaFacebookPage: safe.instagram.connected && safe.facebookPage.tokenPresent,
+    verified: !!il.id && !il.tokenInvalid && !expired,
+    connected: !!source && !!il.id && !il.tokenInvalid && !expired,
+    expired: expired || il.tokenInvalid,
+    lastInboundAt: safe.instagram.lastInboundAt,
+    webhookUrl: redirectUri ? `${new URL(redirectUri).origin}/api/meta/webhook` : "/api/meta/webhook",
+  };
+};
+
+/* ================= INSTAGRAM INBOX — OAUTH / MANAGEMENT ================= */
+export const getInstagramOAuthUrl = async (req, res) => {
+  const { configured, missing } = getInstagramConfig();
+  if (!configured) {
+    return res.status(400).json({
+      success: false,
+      message: `Instagram Login is not configured on the server. Missing: ${missing.join(", ")}`,
+    });
+  }
+  res.json({ success: true, data: { url: buildInstagramAuthUrl(createOAuthState(req.user._id)) } });
+};
+
+export const handleInstagramOAuthCallback = async (req, res) => {
+  const { code, state, error_description: desc, error } = req.query;
+  if (error || !code) {
+    return res.redirect(clientRedirect({ connected: "0", message: desc || error || "Instagram authorization was cancelled" }, "instagram"));
+  }
+  try {
+    const { uid } = verifyOAuthState(state);
+    await completeInstagramConnection({ code, userId: uid });
+    return res.redirect(clientRedirect({ connected: "1" }, "instagram"));
+  } catch (err) {
+    console.error("Instagram OAuth callback error:", err.message);
+    return res.redirect(clientRedirect({ connected: "0", message: err.message || "Instagram connection failed" }, "instagram"));
+  }
+};
+
+const igAction = (fn, okMessage) => async (req, res) => {
+  try {
+    const connection = await fn();
+    const safe = connection.toSafeJSON();
+    res.json({ success: true, message: okMessage, data: buildInstagramStatus(safe) });
+  } catch (error) {
+    console.error(`Instagram ${okMessage} error:`, error.message);
+    res.status(error.status || 500).json({ success: false, code: error.code || null, message: error.message });
+  }
+};
+
+export const refreshInstagram = igAction(refreshInstagramConnection, "Instagram status verified");
+export const subscribeInstagram = igAction(subscribeInstagramWebhook, "Instagram webhook subscribed");
+export const disconnectInstagram = igAction(disconnectInstagramConnection, "Instagram disconnected");
+
 /* ================= GET CONNECTION STATUS ================= */
 export const getMetaStatus = async (req, res) => {
   try {
@@ -110,6 +187,7 @@ export const getMetaStatus = async (req, res) => {
       success: true,
       data: {
         ...safe,
+        instagramInbox: buildInstagramStatus(safe),
         platformWhatsApp,
         setup: buildSetup(safe, { configured, missing, redirectUri }, platformWhatsApp),
         config: {
@@ -232,10 +310,13 @@ export const receiveInstagramWebhook = async (req, res) => {
   }
 
   try {
-    const trusted = verifyWebhookSignature(
-      req.rawBody,
-      req.headers["x-hub-signature-256"]
-    );
+    // Facebook-Login webhooks are signed with the Meta app secret,
+    // Instagram-Login webhooks with the Instagram app secret
+    const signature = req.headers["x-hub-signature-256"];
+    const trusted =
+      verifyWebhookSignature(req.rawBody, signature) ||
+      (!!process.env.INSTAGRAM_APP_SECRET &&
+        verifyWebhookSignature(req.rawBody, signature, process.env.INSTAGRAM_APP_SECRET));
     const result = await processInstagramWebhook(payload, { trusted });
 
     console.log("[IG-WEBHOOK] processed", JSON.stringify(result));

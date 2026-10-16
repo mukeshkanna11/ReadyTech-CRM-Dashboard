@@ -236,7 +236,8 @@ export const processWebhookPayload = async (payload, { trusted = false } = {}) =
   }
 
   const channel = object === "instagram" ? "instagram" : "messenger";
-  const field = channel === "instagram" ? "instagram.id" : "facebookPage.id";
+  const field =
+    channel === "instagram" ? ["instagram.id", "instagramLogin.id"] : "facebookPage.id";
   const defaultId = getDefaultWorkspaceId();
 
   for (const entry of payload.entry) {

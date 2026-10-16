@@ -61,6 +61,23 @@ const metaConnectionSchema = new mongoose.Schema(
       lastInboundAt: { type: Date, default: null },
     },
 
+    /* 📥 Instagram API with Instagram Login (Instagram Inbox).
+       Independent of the Facebook Page login above. Token encrypted. */
+    instagramLogin: {
+      id: { type: String, default: null }, // IG professional account id (= webhook entry.id)
+      username: { type: String, default: null },
+      name: { type: String, default: null },
+      profilePictureUrl: { type: String, default: null },
+      encryptedToken: { type: String, default: null },
+      expiresAt: { type: Date, default: null },
+      scopes: { type: [String], default: [] },
+      tokenInvalid: { type: Boolean, default: false },
+      webhookSubscribed: { type: Boolean, default: false },
+      connectedAt: { type: Date, default: null },
+      lastSyncedAt: { type: Date, default: null },
+      lastError: { type: String, default: null },
+    },
+
     /* Page / Instagram ids this workspace disconnected. Their webhooks
        are dropped instead of falling into the default workspace. */
     releasedAssetIds: { type: [String], default: [] },
@@ -165,6 +182,21 @@ metaConnectionSchema.methods.toSafeJSON = function () {
       name: this.instagram?.name || null,
       profilePictureUrl: this.instagram?.profilePictureUrl || null,
       lastInboundAt: this.instagram?.lastInboundAt || null,
+    },
+
+    instagramLogin: {
+      id: this.instagramLogin?.id || null,
+      username: this.instagramLogin?.username || null,
+      name: this.instagramLogin?.name || null,
+      profilePictureUrl: this.instagramLogin?.profilePictureUrl || null,
+      tokenPresent: !!this.instagramLogin?.encryptedToken,
+      tokenInvalid: !!this.instagramLogin?.tokenInvalid,
+      expiresAt: this.instagramLogin?.expiresAt || null,
+      scopes: this.instagramLogin?.scopes || [],
+      webhookSubscribed: !!this.instagramLogin?.webhookSubscribed,
+      connectedAt: this.instagramLogin?.connectedAt || null,
+      lastSyncedAt: this.instagramLogin?.lastSyncedAt || null,
+      lastError: this.instagramLogin?.lastError || null,
     },
 
     whatsapp: {
