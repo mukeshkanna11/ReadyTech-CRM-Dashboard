@@ -6,11 +6,15 @@ import WhatsAppMessage from "../../models/WhatsAppMessage.js";
 import Lead from "../../models/Lead.js";
 import Client from "../../models/Client.js";
 import User from "../../models/User.js";
-import { activeUserScope } from "../../utils/workspaceContext.js";
+import {
+  activeUserScope,
+  getDefaultWorkspaceId,
+  runWithWorkspace,
+} from "../../utils/workspaceContext.js";
 
 // Reuse the existing Meta config (Graph version + app secret) — no duplication
-import { getMetaConfig } from "./meta.service.js";
-import { decryptToken } from "./tokenVault.js";
+import { getMetaConfig, explainMetaError } from "./meta.service.js";
+import { encryptToken, decryptToken } from "./tokenVault.js";
 import { metaKeyFor } from "../../models/MetaConnection.js";
 
 /* =========================================================
@@ -44,17 +48,30 @@ export const getWhatsAppConfig = () => {
   return { ...config, missing, configured: missing.length === 0 };
 };
 
-/* Access token: env System User token first, encrypted DB token as fallback */
+/* Active workspace's WhatsApp account. Default workspace: env first,
+   its own DB doc as fallback. Any other workspace: ONLY its own DB doc
+   (getWhatsAppConfig never returns env values there). */
+export const resolveWhatsAppAccount = async () => {
+  const config = getWhatsAppConfig();
+  const connection = await MetaConnection.getSingleton();
+  const wa = connection.whatsapp || {};
+
+  return {
+    connection,
+    phoneNumberId: config.phoneNumberId || wa.phoneNumberId || null,
+    wabaId: config.wabaId || wa.wabaId || null,
+    accessToken:
+      config.accessToken ||
+      (wa.encryptedToken ? decryptToken(wa.encryptedToken) : null),
+    source: config.accessToken ? "platform" : wa.encryptedToken ? "workspace" : null,
+  };
+};
+
 const resolveAccessToken = async () => {
-  const { accessToken } = getWhatsAppConfig();
+  const { accessToken } = await resolveWhatsAppAccount();
   if (accessToken) return accessToken;
 
-  const connection = await MetaConnection.getSingleton();
-  if (connection.whatsapp?.encryptedToken) {
-    return decryptToken(connection.whatsapp.encryptedToken);
-  }
-
-  const error = new Error("WhatsApp access token is not configured");
+  const error = new Error("WhatsApp is not connected for this workspace");
   error.status = 400;
   throw error;
 };
@@ -62,9 +79,9 @@ const resolveAccessToken = async () => {
 /* =========================================================
    GRAPH REQUEST (WhatsApp Cloud API)
 ========================================================= */
-const graphFetch = async (path, { method = "GET", body, params } = {}) => {
+const graphFetch = async (path, { method = "GET", body, params, token: override, form } = {}) => {
   const { apiVersion } = getWhatsAppConfig();
-  const token = await resolveAccessToken();
+  const token = override || (await resolveAccessToken());
 
   const url = new URL(
     `https://graph.facebook.com/${apiVersion}/${String(path).replace(/^\/+/, "")}`
@@ -78,9 +95,9 @@ const graphFetch = async (path, { method = "GET", body, params } = {}) => {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
+      ...(form ? {} : { "Content-Type": "application/json" }),
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: form || (body ? JSON.stringify(body) : undefined),
   });
 
   const data = await response.json().catch(() => null);
@@ -88,7 +105,7 @@ const graphFetch = async (path, { method = "GET", body, params } = {}) => {
   if (!response.ok || data?.error) {
     // Never surface the token in errors/logs
     const error = new Error(
-      data?.error?.message || `WhatsApp API request failed (${response.status})`
+      explainMetaError(data?.error, `WhatsApp API request failed (${response.status})`)
     );
     error.status = response.status >= 500 ? 502 : 400;
     error.metaCode = data?.error?.code || null;
@@ -140,7 +157,7 @@ export const normalizePhone = (value) => {
 
 /* Match existing CRM records on the last 10 digits, tolerating any
    separators used in stored values ("+91 98765 00003", "98765-00003"). */
-const phoneMatcher = (normalized) => {
+export const phoneMatcher = (normalized) => {
   const tail = String(normalized).replace(/\D/g, "").slice(-10);
   if (tail.length < 8) return null;
   return new RegExp(`${tail.split("").join("[^0-9]*")}$`);
@@ -219,13 +236,30 @@ const getOrCreateConversation = async ({ phoneNumber, waId, profileName }) => {
 
   const { lead, client } = await resolveCrmRecords({ phoneNumber, profileName });
 
-  conversation = await WhatsAppConversation.create({
-    phoneNumber,
-    waId: waId || null,
-    profileName: profileName || null,
-    lead,
-    client,
-  });
+  try {
+    conversation = await WhatsAppConversation.create({
+      channel: "whatsapp",
+      phoneNumber,
+      waId: waId || null,
+      profileName: profileName || null,
+      lead,
+      client,
+    });
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+
+    // Concurrent webhook created it in THIS workspace — reuse it
+    conversation = await WhatsAppConversation.findOne({ phoneNumber });
+    if (conversation) return conversation;
+
+    // Legacy global unique phoneNumber_1 index (pre-migration): the same
+    // customer has a thread in ANOTHER workspace. Never attach to it.
+    const e = new Error(
+      "Thread exists in another workspace — run scripts/migrateWhatsAppThreadIndex.js"
+    );
+    e.code = "CROSS_WORKSPACE_THREAD";
+    throw e;
+  }
 
   return conversation;
 };
@@ -245,9 +279,29 @@ const extractBody = (message) => {
         message.interactive?.list_reply?.title ||
         ""
       );
+    case "location": {
+      const l = message.location || {};
+      return [l.name, l.address, l.latitude != null ? `${l.latitude},${l.longitude}` : ""]
+        .filter(Boolean)
+        .join(" — ");
+    }
     default:
-      return "";
+      return message[message.type]?.caption || "";
   }
+};
+
+const MEDIA_TYPES = new Set(["image", "video", "audio", "document", "sticker"]);
+
+/* Media is fetched later through the authenticated proxy — Meta media
+   URLs expire and require the workspace token. */
+const extractMedia = (message) => {
+  if (!MEDIA_TYPES.has(message.type)) return null;
+  const m = message[message.type] || {};
+  return {
+    mediaId: m.id || null,
+    mimeType: m.mime_type || null,
+    filename: m.filename || null,
+  };
 };
 
 const processInboundMessage = async (message, contactProfile, metadata) => {
@@ -271,6 +325,7 @@ const processInboundMessage = async (message, contactProfile, metadata) => {
     : new Date();
 
   const isText = message.type === "text";
+  const media = extractMedia(message);
 
   try {
     await WhatsAppMessage.create({
@@ -283,7 +338,7 @@ const processInboundMessage = async (message, contactProfile, metadata) => {
       body: isText ? body : body || `[${message.type}]`,
       timestamp,
       status: "delivered",
-      meta: isText ? null : { type: message.type },
+      meta: isText ? null : { type: message.type, ...(media || {}) },
     });
   } catch (error) {
     // Unique index race on messageId — treat as duplicate, not an error
@@ -304,7 +359,7 @@ const processInboundMessage = async (message, contactProfile, metadata) => {
 
   // Reflect activity on the centralized Meta connection
   await MetaConnection.updateOne(
-    { key: "default" },
+    { key: metaKeyFor() },
     { $set: { "whatsapp.lastInboundAt": timestamp } }
   );
 
@@ -347,6 +402,27 @@ const processStatusEvent = async (status) => {
 };
 
 /* =========================================================
+   WEBHOOK → WORKSPACE ROUTING
+   The env number (and the default doc) belong to the default
+   workspace; any other number must be registered by its workspace.
+========================================================= */
+export const workspaceForPhoneNumberId = async (phoneNumberId) => {
+  const id = phoneNumberId ? String(phoneNumberId) : null;
+  if (!id) return null;
+
+  if (id === String(process.env.WHATSAPP_PHONE_NUMBER_ID || "")) {
+    return getDefaultWorkspaceId();
+  }
+
+  const doc = await MetaConnection.findOne({ "whatsapp.phoneNumberId": id })
+    .select("key")
+    .lean();
+
+  if (!doc) return null;
+  return doc.key === "default" ? getDefaultWorkspaceId() : doc.key;
+};
+
+/* =========================================================
    WEBHOOK ENTRY POINT
    Tolerant by design: unsupported events are ignored, never thrown.
 ========================================================= */
@@ -368,6 +444,17 @@ export const processWebhookPayload = async (payload) => {
       const value = change.value || {};
       const profile = value.contacts?.[0]?.profile || null;
 
+      // Route to the workspace that owns this phone number. Unknown
+      // numbers are dropped — never written into Siva's workspace.
+      const workspaceId = await workspaceForPhoneNumberId(
+        value.metadata?.phone_number_id
+      );
+      if (!workspaceId) {
+        result.ignored += 1;
+        continue;
+      }
+
+      await runWithWorkspace(workspaceId, async () => {
       for (const message of value.messages || []) {
         try {
           const r = await processInboundMessage(message, profile, value.metadata);
@@ -389,6 +476,7 @@ export const processWebhookPayload = async (payload) => {
           result.ignored += 1;
         }
       }
+      });
     }
   }
 
@@ -399,11 +487,62 @@ export const processWebhookPayload = async (payload) => {
    OUTBOUND TEXT MESSAGE
    Backend ENFORCES the 24-hour window — frontend cannot bypass.
 ========================================================= */
-export const sendTextMessage = async ({ conversationId, text, user }) => {
-  const clean = String(text || "").trim();
+/* WhatsApp Cloud API supported outbound media (official limits) */
+const MB = 1024 * 1024;
+const OUTBOUND_RULES = [
+  [/^image\/(jpeg|png)$/, "image", 5 * MB],
+  [/^video\/(mp4|3gpp)$/, "video", 16 * MB],
+  [/^audio\/(aac|amr|mpeg|mp4|ogg)$/, "audio", 16 * MB],
+  [/^(application\/pdf|text\/plain|application\/msword|application\/vnd\.ms-(excel|powerpoint)|application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation))$/, "document", 100 * MB],
+];
 
-  if (!clean) {
-    const error = new Error("Message text is required");
+const OUTBOUND_MEDIA = (mime) =>
+  OUTBOUND_RULES.find(([re]) => re.test(String(mime || "")))?.[1] || null;
+
+const assertSupportedMedia = (media) => {
+  const rule = OUTBOUND_RULES.find(([re]) => re.test(String(media.mimeType || "")));
+  if (!rule) {
+    const error = new Error(
+      `Unsupported attachment type "${media.mimeType || "unknown"}". WhatsApp accepts JPEG/PNG, MP4, AAC/MP3/OGG audio, PDF and Office documents.`
+    );
+    error.status = 400;
+    error.code = "UNSUPPORTED_MEDIA";
+    throw error;
+  }
+  const size = Math.floor((String(media.data || "").replace(/^data:[^,]+,/, "").length * 3) / 4);
+  if (size > rule[2]) {
+    const error = new Error(`Attachment exceeds WhatsApp's ${rule[2] / MB} MB limit for ${rule[1]}s`);
+    error.status = 400;
+    error.code = "MEDIA_TOO_LARGE";
+    throw error;
+  }
+};
+
+/* Uploads a base64 file to WhatsApp media storage (official /media edge) */
+const uploadMedia = async (phoneNumberId, { data, mimeType, filename }) => {
+  const buffer = Buffer.from(String(data || "").replace(/^data:[^,]+,/, ""), "base64");
+  if (!buffer.length) {
+    const error = new Error("Attachment is empty");
+    error.status = 400;
+    throw error;
+  }
+
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", mimeType);
+  form.append("file", new Blob([buffer], { type: mimeType }), filename || "file");
+
+  const res = await graphFetch(`${phoneNumberId}/media`, { method: "POST", form });
+  return res.id;
+};
+
+export const sendTextMessage = async ({ conversationId, text, media, user }) => {
+  const clean = String(text || "").trim();
+  if (media) assertSupportedMedia(media);
+  const mediaType = media ? OUTBOUND_MEDIA(media.mimeType) : null;
+
+  if (!clean && !mediaType) {
+    const error = new Error("Message text or attachment is required");
     error.status = 400;
     throw error;
   }
@@ -424,28 +563,48 @@ export const sendTextMessage = async ({ conversationId, text, user }) => {
     throw error;
   }
 
-  const { phoneNumberId } = getWhatsAppConfig();
+  const { phoneNumberId } = await resolveWhatsAppAccount();
+  if (!phoneNumberId) {
+    const error = new Error("WhatsApp is not connected for this workspace");
+    error.status = 400;
+    throw error;
+  }
 
   const record = await WhatsAppMessage.create({
     conversation: conversation._id,
     direction: "outbound",
     to: conversation.phoneNumber,
-    type: "text",
-    body: clean,
+    type: mediaType || "text",
+    body: clean || (mediaType ? `[${mediaType}]` : ""),
     timestamp: new Date(),
     status: "pending",
     sentBy: user?._id || null,
   });
 
   try {
+    let payload = { type: "text", text: { preview_url: false, body: clean } };
+
+    if (mediaType) {
+      const mediaId = await uploadMedia(phoneNumberId, media);
+      const item = { id: mediaId };
+      if (clean && mediaType !== "audio") item.caption = clean;
+      if (mediaType === "document") item.filename = media.filename || "file";
+      payload = { type: mediaType, [mediaType]: item };
+      record.meta = {
+        type: mediaType,
+        mediaId,
+        mimeType: media.mimeType,
+        filename: media.filename || null,
+      };
+    }
+
     const response = await graphFetch(`${phoneNumberId}/messages`, {
       method: "POST",
       body: {
         messaging_product: "whatsapp",
         recipient_type: "individual",
         to: conversation.phoneNumber,
-        type: "text",
-        text: { preview_url: false, body: clean },
+        ...payload,
       },
     });
 
@@ -466,7 +625,7 @@ export const sendTextMessage = async ({ conversationId, text, user }) => {
   const now = new Date();
   conversation.lastOutboundAt = now;
   conversation.lastMessageAt = now;
-  conversation.lastMessagePreview = clean.slice(0, 300);
+  conversation.lastMessagePreview = (clean || `[${mediaType}]`).slice(0, 300);
   conversation.lastMessageDirection = "outbound";
   await conversation.save();
 
@@ -481,15 +640,14 @@ export const sendTextMessage = async ({ conversationId, text, user }) => {
    needs to call the Graph API on refresh.
 ========================================================= */
 export const syncWhatsAppAccount = async () => {
-  const { configured, missing, phoneNumberId, wabaId } = getWhatsAppConfig();
+  const { connection, phoneNumberId, wabaId, accessToken } =
+    await resolveWhatsAppAccount();
 
-  if (!configured) {
-    const error = new Error(`WhatsApp is not configured. Missing: ${missing.join(", ")}`);
+  if (!phoneNumberId || !accessToken) {
+    const error = new Error("WhatsApp is not connected for this workspace");
     error.status = 400;
     throw error;
   }
-
-  const connection = await MetaConnection.getSingleton();
 
   try {
     const data = await graphFetch(phoneNumberId, {
@@ -525,10 +683,10 @@ export const syncWhatsAppAccount = async () => {
    Explicit admin action only; never runs automatically.
 ========================================================= */
 export const subscribeWabaToWebhook = async () => {
-  const { wabaId } = getWhatsAppConfig();
+  const { wabaId } = await resolveWhatsAppAccount();
 
   if (!wabaId) {
-    const error = new Error("WhatsApp is not configured. Missing: WHATSAPP_WABA_ID");
+    const error = new Error("WhatsApp Business Account ID is not set for this workspace");
     error.status = 400;
     throw error;
   }
@@ -551,6 +709,100 @@ export const markWebhookSubscribed = async () => {
     { $set: { "whatsapp.webhookSubscribed": true } },
     { upsert: false }
   );
+};
+
+/* =========================================================
+   WORKSPACE CONNECT / DISCONNECT (own number + System User token)
+   Token is validated against the Graph API, then stored encrypted
+   on this workspace's MetaConnection only.
+========================================================= */
+export const connectWhatsAppAccount = async ({ phoneNumberId, wabaId, accessToken }) => {
+  const id = String(phoneNumberId || "").trim();
+  const token = String(accessToken || "").trim();
+  const waba = String(wabaId || "").trim() || null;
+
+  if (!/^\d+$/.test(id) || !token) {
+    const error = new Error("Phone number ID (digits) and access token are required");
+    error.status = 400;
+    throw error;
+  }
+
+  const key = metaKeyFor();
+  const claimed = await MetaConnection.findOne({
+    "whatsapp.phoneNumberId": id,
+    key: { $ne: key },
+  }).select("_id").lean();
+
+  if (claimed || (key !== "default" && id === String(process.env.WHATSAPP_PHONE_NUMBER_ID || ""))) {
+    const error = new Error("This WhatsApp number is already connected to another workspace");
+    error.status = 409;
+    throw error;
+  }
+
+  // Throws on invalid token / number — nothing is stored then
+  const data = await graphFetch(id, {
+    token,
+    params: { fields: "display_phone_number,verified_name,quality_rating,id" },
+  });
+
+  const connection = await MetaConnection.getSingleton();
+  Object.assign(connection.whatsapp, {
+    connected: true,
+    phoneNumberId: data.id || id,
+    wabaId: waba,
+    displayPhoneNumber: data.display_phone_number || null,
+    verifiedName: data.verified_name || null,
+    qualityRating: data.quality_rating || null,
+    encryptedToken: encryptToken(token),
+    lastSyncedAt: new Date(),
+    lastError: null,
+  });
+
+  if (waba) {
+    try {
+      const sub = await graphFetch(`${waba}/subscribed_apps`, { method: "POST", token });
+      connection.whatsapp.webhookSubscribed = sub?.success === true;
+    } catch (error) {
+      connection.whatsapp.lastError = `Webhook subscribe failed: ${error.message}`;
+    }
+  }
+
+  await connection.save();
+  return connection;
+};
+
+export const disconnectWhatsAppAccount = async () => {
+  const connection = await MetaConnection.getSingleton();
+  Object.assign(connection.whatsapp, {
+    connected: false,
+    encryptedToken: null,
+    webhookSubscribed: false,
+    lastError: null,
+  });
+  // Keep phoneNumberId on the default doc (env number); clear elsewhere
+  if (connection.key !== "default") connection.whatsapp.phoneNumberId = null;
+  await connection.save();
+  return connection;
+};
+
+/* =========================================================
+   MEDIA PROXY — GET /{media-id} → short-lived URL → bytes
+========================================================= */
+export const fetchWhatsAppMedia = async (mediaId) => {
+  const token = await resolveAccessToken();
+  const info = await graphFetch(mediaId, { token });
+
+  const res = await fetch(info.url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const error = new Error(`Media download failed (${res.status})`);
+    error.status = 502;
+    throw error;
+  }
+
+  return {
+    buffer: Buffer.from(await res.arrayBuffer()),
+    mimeType: info.mime_type || res.headers.get("content-type") || "application/octet-stream",
+  };
 };
 
 export { WINDOW_MS };

@@ -7,6 +7,7 @@ import {
   disconnectMeta,
   verifyInstagramWebhook,
   receiveInstagramWebhook,
+  subscribeMetaPage,
 } from "../controllers/meta.controller.js";
 
 import auth from "../middlewares/auth.js";
@@ -23,6 +24,10 @@ router.get("/oauth/callback", handleMetaOAuthCallback);
 router.get("/instagram/webhook", verifyInstagramWebhook);
 router.post("/instagram/webhook", receiveInstagramWebhook);
 
+/* Public — shared Meta webhook (Page/Messenger + Instagram objects) */
+router.get("/webhook", verifyInstagramWebhook);
+router.post("/webhook", receiveInstagramWebhook);
+
 /* Read status — any authenticated user (CRM / ERP / AI Content) */
 router.get("/status", auth, getMetaStatus);
 
@@ -30,5 +35,6 @@ router.get("/status", auth, getMetaStatus);
 router.get("/oauth/url", auth, role("admin"), getMetaOAuthUrl);
 router.post("/refresh", auth, role("admin"), refreshMetaConnection);
 router.post("/disconnect", auth, role("admin"), disconnectMeta);
+router.post("/subscribe-page", auth, role("admin"), subscribeMetaPage);
 
 export default router;

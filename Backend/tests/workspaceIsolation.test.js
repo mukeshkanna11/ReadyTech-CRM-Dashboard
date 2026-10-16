@@ -92,7 +92,11 @@ test("OAuth callback saves into the connecting admin's workspace", async () => {
   mockGraph();
   const saved = [];
   stub(User, "findById", () => chain({ _id: SARA, workspace: null }));
-  stub(MetaConnection, "findOne", async ({ key }) => ({ key, save: async function () { saved.push(this.key); } }));
+  // String key = getSingleton lookup; { $ne } key = cross-workspace claim check
+  stub(MetaConnection, "findOne", ({ key }) =>
+    typeof key === "string"
+      ? Promise.resolve({ key, save: async function () { saved.push(this.key); } })
+      : chain(null));
   await meta.completeConnection({ code: "c", userId: SARA });
   assert.deepEqual(saved, [SARA]);
 });
@@ -123,8 +127,8 @@ test("env WhatsApp number is only usable by the default workspace", async () => 
 });
 
 /* ---------------- Instagram webhook ---------------- */
-test("IG webhook drops entries for another workspace's account", async () => {
-  stub(MetaConnection, "distinct", async () => ["SARA_IG"]);
+test("IG webhook drops unsigned entries for another workspace's account", async () => {
+  stub(MetaConnection, "findOne", (f) => chain(f["instagram.id"] === "SARA_IG" ? { key: SARA } : null));
   const payload = {
     object: "instagram",
     entry: [{ id: "SARA_IG", messaging: [{ sender: { id: "1" }, message: { mid: "m", text: "hi" } }] }],

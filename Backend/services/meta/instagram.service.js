@@ -1,7 +1,11 @@
 import Lead from "../../models/Lead.js";
 import User from "../../models/User.js";
-import { activeUserScope } from "../../utils/workspaceContext.js";
-import MetaConnection from "../../models/MetaConnection.js";
+import {
+  activeUserScope,
+  getDefaultWorkspaceId,
+  runWithWorkspace,
+} from "../../utils/workspaceContext.js";
+import { workspaceForMetaAsset, recordSocialInbound } from "./inbox.service.js";
 
 /* =========================================================
    INSTAGRAM DM -> CRM LEAD
@@ -203,48 +207,78 @@ export const upsertLeadFromInstagram = async ({ senderId, text, sentAt }) => {
   return { leadId: lead._id, created: true };
 };
 
-/* ================= ENTRY POINT ================= */
-export const processWebhookPayload = async (payload) => {
+/* ================= ENTRY POINT =================
+   Each entry is routed to the workspace that connected the Instagram
+   account (object "instagram") or Facebook Page (object "page" =
+   Messenger). `trusted` = valid X-Hub-Signature-256: unsigned payloads
+   keep the legacy default-workspace Instagram flow only.
+================================================= */
+const toInboxEvents = (messaging = []) =>
+  messaging
+    .filter((m) => m.sender?.id && m.message && !m.message.is_echo && !m.message.is_deleted)
+    .map((m) => ({
+      senderId: String(m.sender.id),
+      mid: m.message.mid || null,
+      text: m.message.text || "",
+      attachments: (m.message.attachments || [])
+        .map((a) => ({ type: a.type || "file", url: a.payload?.url || null }))
+        .filter((a) => a.url),
+      sentAt: m.timestamp ? new Date(Number(m.timestamp)) : null,
+    }));
+
+export const processWebhookPayload = async (payload, { trusted = false } = {}) => {
   const result = { messages: 0, created: 0, updated: 0, ignored: 0 };
+  const object = payload?.object;
 
-  // Webhooks write into the default workspace — drop entries for an
-  // Instagram account connected by another workspace.
-  const foreignIds = (
-    await MetaConnection.distinct("instagram.id", {
-      key: { $ne: "default" },
-      "instagram.id": { $ne: null },
-    })
-  ).map(String);
-
-  if (foreignIds.length && Array.isArray(payload?.entry)) {
-    payload = {
-      ...payload,
-      entry: payload.entry.filter((e) => !foreignIds.includes(String(e?.id))),
-    };
-  }
-
-  const events = extractMessagingEvents(payload);
-
-  if (!events.length) {
+  if ((object !== "instagram" && object !== "page") || !Array.isArray(payload?.entry)) {
     result.ignored += 1;
     return result;
   }
 
-  for (const event of events) {
-    try {
-      const outcome = await upsertLeadFromInstagram(event);
+  const channel = object === "instagram" ? "instagram" : "messenger";
+  const field = channel === "instagram" ? "instagram.id" : "facebookPage.id";
+  const defaultId = getDefaultWorkspaceId();
 
-      if (outcome.skipped) {
-        result.ignored += 1;
-        continue;
-      }
+  for (const entry of payload.entry) {
+    const workspaceId = await workspaceForMetaAsset(field, entry?.id, {
+      legacyDefault: channel === "instagram",
+    });
 
-      result.messages += 1;
-      outcome.created ? (result.created += 1) : (result.updated += 1);
-    } catch (error) {
-      console.error("Instagram inbound error:", error.message);
+    // Unknown account, or an unsigned payload for anything but the
+    // legacy default Instagram flow — never written anywhere.
+    if (!workspaceId || (!trusted && (channel !== "instagram" || workspaceId !== defaultId))) {
       result.ignored += 1;
+      continue;
     }
+
+    const events = toInboxEvents(entry.messaging);
+    if (!events.length) {
+      result.ignored += 1;
+      continue;
+    }
+
+    await runWithWorkspace(workspaceId, async () => {
+      for (const event of events) {
+        try {
+          let leadId = null;
+
+          if (channel === "instagram" && event.text) {
+            const outcome = await upsertLeadFromInstagram(event);
+            if (!outcome.skipped) {
+              leadId = outcome.leadId;
+              outcome.created ? (result.created += 1) : (result.updated += 1);
+            }
+          }
+
+          const r = await recordSocialInbound({ channel, ...event, leadId });
+          if (r.skipped && !leadId) result.ignored += 1;
+          else result.messages += 1;
+        } catch (error) {
+          console.error(`${channel} inbound error:`, error.message);
+          result.ignored += 1;
+        }
+      }
+    });
   }
 
   return result;

@@ -20,8 +20,13 @@ import {
   getMetaOAuthUrl,
   refreshMetaConnection,
   disconnectMeta,
+  subscribeMetaPage,
 } from "../../services/metaService";
-import { syncWhatsApp } from "../../services/whatsappService";
+import {
+  syncWhatsApp,
+  connectWhatsApp,
+  disconnectWhatsApp,
+} from "../../services/whatsappService";
 
 /* =========================================================
    META INTEGRATION
@@ -92,6 +97,21 @@ export default function MetaIntegration() {
       toast.success("WhatsApp account synced");
     } catch {
       loadStatus();
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const runAction = async (key, fn, success) => {
+    try {
+      setBusy(key);
+      await fn();
+      await loadStatus();
+      toast.success(success);
+      return true;
+    } catch {
+      loadStatus();
+      return false;
     } finally {
       setBusy("");
     }
@@ -234,7 +254,37 @@ const config = status?.config || { configured: true, missingEnv: [] };
         wa={status?.whatsapp}
         busy={busy}
         onSync={handleWhatsAppSync}
+        platform={!!status?.platformWhatsApp}
+        onConnect={(form) => runAction("wa-connect", () => connectWhatsApp(form), "WhatsApp connected")}
+        onDisconnect={() =>
+          window.confirm("Disconnect this workspace's WhatsApp number?") &&
+          runAction("wa-disconnect", disconnectWhatsApp, "WhatsApp disconnected")
+        }
       />
+
+      {/* ================= MESSENGER / INSTAGRAM DM WEBHOOK ================= */}
+      {status?.facebookPage?.connected && (
+        <div className="flex flex-wrap items-center justify-between gap-3 p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Messenger & Instagram DMs</p>
+            <p className="text-xs text-slate-500">
+              Subscribe {status.facebookPage.name} to this app&apos;s webhook so DMs reach the Unified Inbox.
+              Messenger replies need the <code>pages_messaging</code> permission.
+            </p>
+          </div>
+          <button
+            onClick={() => runAction("page-sub", subscribeMetaPage, "Page subscribed to webhook")}
+            disabled={!!busy}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium border rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={busy === "page-sub" ? "animate-spin" : ""} />
+            Subscribe Page
+          </button>
+        </div>
+      )}
+
+      {/* ================= SETUP CHECKLIST (server-verified) ================= */}
+      {status?.setup?.length > 0 && <SetupChecklist items={status.setup} />}
 
       {/* ================= CONNECTION DETAILS ================= */}
       <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
@@ -358,9 +408,19 @@ function AssetCard({ icon: Icon, tone, title, connected, primary, rows }) {
 }
 
 /* WhatsApp Business — reads the existing /api/meta/status payload */
-function WhatsAppCard({ wa, busy, onSync }) {
+function WhatsAppCard({ wa, busy, onSync, platform, onConnect, onDisconnect }) {
   const connected = !!wa?.connected;
   const configured = !!wa?.phoneNumberId;
+  const [form, setForm] = useState({ phoneNumberId: "", wabaId: "", accessToken: "" });
+  const [showForm, setShowForm] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (await onConnect(form)) {
+      setForm({ phoneNumberId: "", wabaId: "", accessToken: "" });
+      setShowForm(false);
+    }
+  };
 
   return (
     <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
@@ -401,15 +461,74 @@ function WhatsAppCard({ wa, busy, onSync }) {
             />
             Sync
           </button>
+
+          {!platform && (
+            connected && wa?.tokenPresent ? (
+              <button
+                onClick={onDisconnect}
+                disabled={!!busy}
+                className="px-3 py-1.5 text-xs font-medium border rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+              >
+                Disconnect
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowForm((v) => !v)}
+                className="px-3 py-1.5 text-xs font-medium text-white rounded-xl bg-emerald-600 hover:bg-emerald-700"
+              >
+                {showForm ? "Cancel" : "Connect number"}
+              </button>
+            )
+          )}
         </div>
       </div>
 
+      {!platform && showForm && (
+        <form onSubmit={submit} className="grid gap-3 p-4 mt-4 border rounded-xl border-emerald-100 bg-emerald-50/40 sm:grid-cols-3">
+          <p className="text-xs sm:col-span-3 text-slate-600">
+            Use this workspace&apos;s own WhatsApp Cloud API number: Phone Number ID and WABA ID from
+            Meta Business Manager → WhatsApp Manager, and a permanent System User token with{" "}
+            <code>whatsapp_business_messaging</code> + <code>whatsapp_business_management</code>.
+            The token is verified with Meta and stored encrypted for this workspace only.
+          </p>
+          {[
+            ["phoneNumberId", "Phone Number ID", "text"],
+            ["wabaId", "WABA ID (enables webhook)", "text"],
+            ["accessToken", "System User access token", "password"],
+          ].map(([key, label, type]) => (
+            <label key={key} className="text-xs text-slate-600">
+              {label}
+              <input
+                type={type}
+                required={key !== "wabaId"}
+                autoComplete="off"
+                value={form[key]}
+                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                className="w-full px-3 py-2 mt-1 text-sm bg-white border rounded-lg outline-none border-slate-200 focus:border-emerald-400"
+              />
+            </label>
+          ))}
+          <button
+            disabled={!!busy}
+            className="px-4 py-2 text-sm font-medium text-white sm:col-span-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {busy === "wa-connect" ? "Verifying with Meta…" : "Verify & connect"}
+          </button>
+        </form>
+      )}
+
       {!configured && !connected ? (
+        !platform ? (
+          <p className="p-3 mt-4 text-xs border rounded-xl border-slate-200 bg-slate-50 text-slate-600">
+            No WhatsApp number is connected to this workspace yet. Press <b>Connect number</b> to link your own.
+          </p>
+        ) : (
         <p className="p-3 mt-4 text-xs border rounded-xl border-slate-200 bg-slate-50 text-slate-600">
           Set <code>WHATSAPP_PHONE_NUMBER_ID</code>,{" "}
           <code>WHATSAPP_ACCESS_TOKEN</code>, <code>WHATSAPP_WABA_ID</code> and{" "}
           <code>WHATSAPP_VERIFY_TOKEN</code> on the server, then press Sync.
         </p>
+        )
       ) : (
         <dl className="grid gap-4 pt-4 mt-4 text-sm border-t border-slate-100 sm:grid-cols-2 lg:grid-cols-3">
           <Detail label="Business name" value={wa?.verifiedName || "—"} />
@@ -430,6 +549,36 @@ function WhatsAppCard({ wa, busy, onSync }) {
           {wa.lastError}
         </p>
       )}
+    </div>
+  );
+}
+
+/* Each row comes from /api/meta/status — "ok" only when Meta confirmed it */
+const SETUP_STYLE = {
+  ok: { Icon: CheckCircle2, cls: "text-emerald-600", badge: "bg-emerald-50 text-emerald-700", text: "Ready" },
+  warning: { Icon: AlertTriangle, cls: "text-amber-500", badge: "bg-amber-50 text-amber-700", text: "Waiting" },
+  missing: { Icon: XCircle, cls: "text-rose-500", badge: "bg-rose-50 text-rose-700", text: "Action needed" },
+};
+
+function SetupChecklist({ items }) {
+  return (
+    <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
+      <h2 className="mb-3 text-sm font-semibold text-slate-900">Setup status</h2>
+      <ul className="divide-y divide-slate-100">
+        {items.map((it) => {
+          const st = SETUP_STYLE[it.state] || SETUP_STYLE.missing;
+          return (
+            <li key={it.key} className="flex items-start gap-3 py-2.5">
+              <st.Icon size={16} className={`mt-0.5 shrink-0 ${st.cls}`} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-800">{it.label}</p>
+                <p className="text-xs break-words text-slate-500">{it.detail}</p>
+              </div>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${st.badge}`}>{st.text}</span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

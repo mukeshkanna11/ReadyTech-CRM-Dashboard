@@ -8,7 +8,10 @@ import {
   completeConnection,
   refreshConnection,
   disconnectConnection,
+  subscribePageWebhook,
 } from "../services/meta/meta.service.js";
+import { verifyWebhookSignature } from "../services/meta/whatsapp.service.js";
+import { usesPlatformCredentials } from "../utils/workspaceContext.js";
 import { processWebhookPayload as processInstagramWebhook } from "../services/meta/instagram.service.js";
 
 /* =========================================================
@@ -25,17 +28,90 @@ const clientRedirect = (params) => {
   return `${base}/integrations/meta?${query}`;
 };
 
+/* =========================================================
+   SETUP CHECKLIST — derived only from stored state (no Graph calls).
+   "ok" is reported only for things Meta actually confirmed.
+========================================================= */
+const buildSetup = (safe, { configured, missing, redirectUri }, platformWhatsApp) => {
+  let origin = null;
+  try {
+    origin = redirectUri ? new URL(redirectUri).origin : null;
+  } catch {
+    origin = null;
+  }
+  const url = (path) => (origin ? `${origin}${path}` : path);
+  const granted = safe.scopes || [];
+  const scopesKnown = granted.length > 0;
+  const scope = (p) => (scopesKnown ? granted.includes(p) : null);
+  const seen = (d) => (d ? `Last event ${new Date(d).toISOString()}` : "No webhook event received yet");
+  const item = (key, label, state, detail) => ({ key, label, state, detail });
+
+  const wa = safe.whatsapp;
+  const page = safe.facebookPage;
+  const ig = safe.instagram;
+  const metaOn = safe.connected;
+
+  return [
+    item("meta_app", "Meta app configuration", configured ? "ok" : "missing",
+      configured ? "App ID, secret and redirect URI set" : `Server missing: ${missing.join(", ")}`),
+
+    item("whatsapp_number", "WhatsApp number", wa.connected ? "ok" : "missing",
+      wa.connected
+        ? `${wa.displayPhoneNumber || wa.phoneNumberId} (${platformWhatsApp ? "platform .env" : "workspace credentials"})`
+        : wa.lastError || (platformWhatsApp ? "Press Sync to verify the platform number" : "Connect this workspace's own number")),
+
+    item("whatsapp_webhook", "WhatsApp webhook", wa.lastInboundAt ? "ok" : wa.webhookSubscribed ? "warning" : "missing",
+      wa.lastInboundAt
+        ? seen(wa.lastInboundAt)
+        : `${wa.webhookSubscribed ? "WABA subscribed, " : "WABA not subscribed (add WABA ID). "}${seen(null)}. Callback ${url("/api/whatsapp/webhook")}, field "messages".`),
+
+    item("facebook_page", "Facebook Page (Meta login)", metaOn && page.connected ? "ok" : "missing",
+      metaOn && page.connected ? page.name : "Connect with Meta to link a Page"),
+
+    item("instagram_dm", "Instagram DMs", !ig.connected ? "missing" : scope("instagram_manage_messages") === false ? "missing" : ig.lastInboundAt ? "ok" : "warning",
+      !ig.connected
+        ? "No Instagram Business account linked to the Page"
+        : scope("instagram_manage_messages") === false
+          ? "Permission instagram_manage_messages not granted — replies will fail"
+          : `${seen(ig.lastInboundAt)}. Callback ${url("/api/meta/webhook")}, Instagram object, field "messages".`),
+
+    item("messenger", "Messenger replies", !page.connected ? "missing" : scope("pages_messaging") ? "ok" : "missing",
+      !page.connected
+        ? "Connect a Facebook Page first"
+        : scope("pages_messaging") === null
+          ? "Permissions not verified — press Refresh"
+          : scope("pages_messaging")
+            ? "pages_messaging granted"
+            : "pages_messaging not granted — needs App Review and META_EXTRA_SCOPES"),
+
+    item("page_webhook", "Page webhook (Messenger / IG)", page.lastInboundAt ? "ok" : page.webhookSubscribed ? "warning" : "missing",
+      page.lastInboundAt
+        ? seen(page.lastInboundAt)
+        : page.webhookSubscribed
+          ? `Page subscribed. ${seen(null)}. Callback ${url("/api/meta/webhook")}, Page object, field "messages".`
+          : scope("pages_manage_metadata") === false
+            ? "pages_manage_metadata not granted — cannot subscribe the Page"
+            : "Page not subscribed — press Subscribe Page"),
+  ];
+};
+
 /* ================= GET CONNECTION STATUS ================= */
 export const getMetaStatus = async (req, res) => {
   try {
     const { configured, missing, portfolioId, apiVersion, redirectUri } =
       getMetaConfig();
     const connection = await MetaConnection.getSingleton();
+    const safe = connection.toSafeJSON();
+    // Only the default workspace may use the platform (.env) number
+    const platformWhatsApp =
+      usesPlatformCredentials() && !!process.env.WHATSAPP_PHONE_NUMBER_ID;
 
     res.json({
       success: true,
       data: {
-        ...connection.toSafeJSON(),
+        ...safe,
+        platformWhatsApp,
+        setup: buildSetup(safe, { configured, missing, redirectUri }, platformWhatsApp),
         config: {
           configured,
           missingEnv: missing,
@@ -156,11 +232,29 @@ export const receiveInstagramWebhook = async (req, res) => {
   }
 
   try {
-    const result = await processInstagramWebhook(payload);
+    const trusted = verifyWebhookSignature(
+      req.rawBody,
+      req.headers["x-hub-signature-256"]
+    );
+    const result = await processInstagramWebhook(payload, { trusted });
 
     console.log("[IG-WEBHOOK] processed", JSON.stringify(result));
   } catch (error) {
     console.error("Instagram webhook processing error:", error.message);
+  }
+};
+
+/* ================= SUBSCRIBE PAGE WEBHOOK ================= */
+export const subscribeMetaPage = async (req, res) => {
+  try {
+    const data = await subscribePageWebhook();
+    res.json({ success: true, message: "Page subscribed to webhook", data });
+  } catch (error) {
+    console.error("Meta page subscribe error:", error.message);
+    res.status(error.status || 500).json({
+      success: false,
+      message: error.message || "Failed to subscribe Page",
+    });
   }
 };
 

@@ -48,6 +48,8 @@ const metaConnectionSchema = new mongoose.Schema(
       id: { type: String, default: null },
       name: { type: String, default: null },
       encryptedToken: { type: String, default: null },
+      webhookSubscribed: { type: Boolean, default: false },
+      lastInboundAt: { type: Date, default: null },
     },
 
     /* 📸 Instagram Business account (@readytechsolutions) */
@@ -56,7 +58,12 @@ const metaConnectionSchema = new mongoose.Schema(
       username: { type: String, default: null },
       name: { type: String, default: null },
       profilePictureUrl: { type: String, default: null },
+      lastInboundAt: { type: Date, default: null },
     },
+
+    /* Page / Instagram ids this workspace disconnected. Their webhooks
+       are dropped instead of falling into the default workspace. */
+    releasedAssetIds: { type: [String], default: [] },
 
     /* 💬 WhatsApp Cloud API
        Authenticated with its own System User token (env), NOT the
@@ -147,6 +154,8 @@ metaConnectionSchema.methods.toSafeJSON = function () {
       id: this.facebookPage?.id || null,
       name: this.facebookPage?.name || null,
       tokenPresent: !!this.facebookPage?.encryptedToken,
+      webhookSubscribed: !!this.facebookPage?.webhookSubscribed,
+      lastInboundAt: this.facebookPage?.lastInboundAt || null,
     },
 
     instagram: {
@@ -155,6 +164,7 @@ metaConnectionSchema.methods.toSafeJSON = function () {
       username: this.instagram?.username || null,
       name: this.instagram?.name || null,
       profilePictureUrl: this.instagram?.profilePictureUrl || null,
+      lastInboundAt: this.instagram?.lastInboundAt || null,
     },
 
     whatsapp: {

@@ -8,6 +8,13 @@ import {
   markConversationRead,
   syncAccount,
   subscribeWaba,
+  updateConversation,
+  addNote,
+  convertToLead,
+  getMessageMedia,
+  listAssignees,
+  connectAccount,
+  disconnectAccount,
 } from "../controllers/whatsapp.controller.js";
 
 import auth from "../middlewares/auth.js";
@@ -26,6 +33,15 @@ router.get("/conversations", auth, listConversations);
 router.get("/conversations/:id/messages", auth, listMessages);
 router.post("/conversations/:id/messages", auth, sendMessage);
 router.patch("/conversations/:id/read", auth, markConversationRead);
+router.patch("/conversations/:id", auth, updateConversation);
+router.post("/conversations/:id/notes", auth, addNote);
+router.post("/conversations/:id/lead", auth, convertToLead);
+router.get("/conversations/:id/messages/:messageId/media", auth, getMessageMedia);
+router.get("/assignees", auth, listAssignees);
+
+/* Admin — connect / disconnect this workspace's own WhatsApp number */
+router.post("/connect", auth, role("admin"), connectAccount);
+router.post("/disconnect", auth, role("admin"), disconnectAccount);
 
 /* Admin — refresh WhatsApp account metadata from Meta */
 router.post("/sync", auth, role("admin"), syncAccount);

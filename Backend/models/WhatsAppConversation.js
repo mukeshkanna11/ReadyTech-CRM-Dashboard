@@ -9,11 +9,23 @@ const WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const whatsAppConversationSchema = new mongoose.Schema(
   {
-    // E.164, e.g. +919876543210
+    /* Unified inbox channel. Legacy rows have none = WhatsApp. */
+    channel: {
+      type: String,
+      enum: ["whatsapp", "instagram", "messenger"],
+      default: "whatsapp",
+    },
+
+    // Instagram-scoped (IGSID) / Page-scoped (PSID) sender id
+    externalId: { type: String, default: null, trim: true },
+
+    // Thread key. WhatsApp: E.164, e.g. +919876543210.
+    // Instagram / Messenger: "ig:<IGSID>" / "fb:<PSID>" — reuses the
+    // existing unique index instead of dropping it.
+    // Uniqueness is per workspace — see the index below.
     phoneNumber: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
 
@@ -59,11 +71,33 @@ const whatsAppConversationSchema = new mongoose.Schema(
       enum: ["Open", "Pending", "Closed"],
       default: "Open",
     },
+
+    /* Internal team notes — never sent to the customer */
+    notes: [
+      {
+        body: { type: String, required: true, maxlength: 2000 },
+        author: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+        authorName: { type: String, default: "" },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    /* Indexes are managed by scripts/migrateWhatsAppThreadIndex.js, never
+       by app startup: production still carries the legacy global
+       phoneNumber_1 unique index and must not be changed implicitly. */
+    autoIndex: false,
+  }
 );
 
 whatsAppConversationSchema.index({ lastMessageAt: -1 });
+
+/* Target uniqueness: one thread per customer key PER WORKSPACE */
+whatsAppConversationSchema.index(
+  { workspace: 1, phoneNumber: 1 },
+  { unique: true, name: "workspace_1_phoneNumber_1" }
+);
 
 /* =========================================================
    24-HOUR CUSTOMER SERVICE WINDOW
@@ -83,7 +117,10 @@ whatsAppConversationSchema.methods.toInboxJSON = function () {
 
   return {
     _id: this._id,
-    phoneNumber: this.phoneNumber,
+    channel: this.channel || "whatsapp",
+    externalId: this.externalId || null,
+    phoneNumber:
+      (this.channel || "whatsapp") === "whatsapp" ? this.phoneNumber : null,
     profileName: this.profileName,
     unreadCount: this.unreadCount,
     status: this.status,
@@ -98,6 +135,12 @@ whatsAppConversationSchema.methods.toInboxJSON = function () {
     lead: populated(this.lead),
     client: populated(this.client),
     assignedTo: populated(this.assignedTo),
+    notes: (this.notes || []).map((n) => ({
+      _id: n._id,
+      body: n.body,
+      authorName: n.authorName,
+      createdAt: n.createdAt,
+    })),
     createdAt: this.createdAt,
   };
 };

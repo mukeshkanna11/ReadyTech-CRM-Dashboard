@@ -115,7 +115,8 @@ app.use(
     // Preserve the original bytes ONLY for the WhatsApp webhook, which needs
     // them for the X-Hub-Signature-256 HMAC check. All other routes unchanged.
     verify: (req, res, buf) => {
-      if ((req.originalUrl || req.url || "").startsWith("/api/whatsapp/webhook")) {
+      const url = req.originalUrl || req.url || "";
+      if (url.startsWith("/api/whatsapp/webhook") || /^\/api\/meta\/(instagram\/)?webhook/.test(url)) {
         req.rawBody = buf;
       }
     },

@@ -25,3 +25,8 @@ export const disconnectMeta = async () => {
   const { data } = await API.post("/meta/disconnect");
   return data?.data;
 };
+
+export const subscribeMetaPage = async () => {
+  const { data } = await API.post("/meta/subscribe-page");
+  return data?.data;
+};

@@ -27,6 +27,19 @@ const OAUTH_SCOPES = [
   "instagram_manage_messages",
 ];
 
+/* Messenger replies need pages_messaging + pages_manage_metadata. They are
+   opt-in (META_EXTRA_SCOPES, comma separated) so the existing login keeps
+   working until the Meta app is approved for them. */
+const requestedScopes = () => [
+  ...new Set([
+    ...OAUTH_SCOPES,
+    ...String(process.env.META_EXTRA_SCOPES || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  ]),
+];
+
 const STATE_PURPOSE = "meta_oauth";
 const STATE_TTL = "10m";
 
@@ -120,7 +133,7 @@ export const buildOAuthUrl = (state) => {
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("state", state);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", OAUTH_SCOPES.join(","));
+  url.searchParams.set("scope", requestedScopes().join(","));
 
   return url.toString();
 };
@@ -166,7 +179,6 @@ const fetchLinkedAssets = async (userAccessToken) => {
       "id,name,access_token,instagram_business_account{id,username,name,profile_picture_url}",
     limit: 100,
   });
-  console.log("META DEBUG pages:", JSON.stringify(pages, null, 2));
 
   if (!pages.length) {
     const error = new Error(
@@ -234,6 +246,80 @@ const fetchLinkedAssets = async (userAccessToken) => {
 };
 
 /* =========================================================
+   GRANTED PERMISSIONS — what the admin actually approved, not what
+   was requested (unapproved/declined scopes are silently dropped by Meta)
+========================================================= */
+const fetchGrantedScopes = async (userAccessToken) => {
+  try {
+    const { data = [] } = await graphRequest("me/permissions", {
+      access_token: userAccessToken,
+    });
+    return data.filter((p) => p.status === "granted").map((p) => p.permission);
+  } catch (error) {
+    console.error("Meta permission lookup failed:", error.message);
+    return null; // unknown — status page says "not verified"
+  }
+};
+
+/* Keeps webhook health when the same Page / IG account is re-read */
+const applyAssets = (connection, assets) => {
+  const samePage = connection.facebookPage?.id === assets.facebookPage.id;
+  const sameIg = connection.instagram?.id === assets.instagram.id;
+
+  connection.businessPortfolioId = assets.businessPortfolioId;
+  connection.facebookPage = {
+    ...assets.facebookPage,
+    webhookSubscribed: samePage ? !!connection.facebookPage?.webhookSubscribed : false,
+    lastInboundAt: samePage ? connection.facebookPage?.lastInboundAt || null : null,
+  };
+  connection.instagram = {
+    ...assets.instagram,
+    lastInboundAt: sameIg ? connection.instagram?.lastInboundAt || null : null,
+  };
+  connection.releasedAssetIds = (connection.releasedAssetIds || []).filter(
+    (id) => id !== assets.facebookPage.id && id !== assets.instagram.id
+  );
+};
+
+/* A Page / IG account may belong to ONE workspace only — otherwise
+   webhook routing would be ambiguous across clients. */
+const assertAssetsUnclaimed = async (key, assets) => {
+  const ids = [assets.facebookPage.id, assets.instagram.id].filter(Boolean);
+  if (!ids.length) return;
+
+  const other = await MetaConnection.findOne({
+    key: { $ne: key },
+    $or: [{ "facebookPage.id": { $in: ids } }, { "instagram.id": { $in: ids } }],
+  })
+    .select("_id")
+    .lean();
+
+  if (other) {
+    const error = new Error(
+      "This Facebook Page / Instagram account is already connected to another workspace"
+    );
+    error.status = 409;
+    throw error;
+  }
+};
+
+/* Human-readable Graph errors (send / sync). Never fakes success. */
+export const explainMetaError = (err, fallback = "Meta request failed") => {
+  const code = Number(err?.code);
+  const base = err?.message || fallback;
+
+  if (code === 190) return `Meta access token expired or revoked — reconnect. (${base})`;
+  if (code === 10 || (code >= 200 && code < 300)) {
+    return `Meta permission missing or not approved for this app (App Review). (${base})`;
+  }
+  if (code === 131030) return `Recipient is not in this test number's allowed list. (${base})`;
+  if (code === 131047) return `24-hour window closed — an approved template is required. (${base})`;
+  if (code === 133010) return `Phone number is not registered with WhatsApp Cloud API. (${base})`;
+  if (code === 551) return `This person isn't available to receive messages right now. (${base})`;
+  return base;
+};
+
+/* =========================================================
    CONNECT (OAuth callback)
 ========================================================= */
 export const completeConnection = async ({ code, userId }) => {
@@ -252,15 +338,15 @@ export const completeConnection = async ({ code, userId }) => {
     owner.workspace || owner._id
   );
 
+  await assertAssetsUnclaimed(connection.key, assets);
+
   connection.status = "connected";
-  connection.scopes = OAUTH_SCOPES;
+  connection.scopes = (await fetchGrantedScopes(accessToken)) || [];
   connection.userToken = {
     encrypted: encryptToken(accessToken),
     expiresAt,
   };
-  connection.businessPortfolioId = assets.businessPortfolioId;
-  connection.facebookPage = assets.facebookPage;
-  connection.instagram = assets.instagram;
+  applyAssets(connection, assets);
   connection.lastSyncedAt = new Date();
   connection.lastError = null;
   connection.connectedBy = userId || null;
@@ -285,14 +371,14 @@ export const refreshConnection = async () => {
   }
 
   try {
-    const assets = await fetchLinkedAssets(
-      decryptToken(connection.userToken.encrypted)
-    );
+    const userToken = decryptToken(connection.userToken.encrypted);
+    const assets = await fetchLinkedAssets(userToken);
+    await assertAssetsUnclaimed(connection.key, assets);
 
     connection.status = "connected";
-    connection.businessPortfolioId = assets.businessPortfolioId;
-    connection.facebookPage = assets.facebookPage;
-    connection.instagram = assets.instagram;
+    const granted = await fetchGrantedScopes(userToken);
+    if (granted) connection.scopes = granted;
+    applyAssets(connection, assets);
     connection.lastSyncedAt = new Date();
     connection.lastError = null;
   } catch (error) {
@@ -312,6 +398,13 @@ export const refreshConnection = async () => {
 ========================================================= */
 export const disconnectConnection = async () => {
   const connection = await MetaConnection.getSingleton();
+
+  // Tenants: remember the ids so their webhooks are dropped, never
+  // routed to the default workspace
+  if (connection.key !== "default") {
+    const ids = [connection.facebookPage?.id, connection.instagram?.id].filter(Boolean);
+    connection.releasedAssetIds = [...new Set([...(connection.releasedAssetIds || []), ...ids])];
+  }
 
   connection.status = "disconnected";
   connection.scopes = [];
@@ -356,6 +449,46 @@ export const getMetaAccessContext = async () => {
       : null,
     instagramId: connection.instagram?.id || null,
   };
+};
+
+/* =========================================================
+   PAGE WEBHOOK SUBSCRIPTION (Messenger + Instagram DMs)
+   POST /{page-id}/subscribed_apps — needs pages_manage_metadata.
+========================================================= */
+export const subscribePageWebhook = async () => {
+  const connection = await MetaConnection.getSingleton();
+  const pageId = connection.facebookPage?.id;
+
+  if (!pageId || !connection.facebookPage?.encryptedToken) {
+    const error = new Error("Connect a Facebook Page first");
+    error.status = 400;
+    throw error;
+  }
+
+  const { apiVersion } = getMetaConfig();
+  const res = await fetch(
+    `https://graph.facebook.com/${apiVersion}/${pageId}/subscribed_apps`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${decryptToken(connection.facebookPage.encryptedToken)}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ subscribed_fields: "messages" }),
+    }
+  );
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok || data?.error) {
+    const error = new Error(explainMetaError(data?.error, `Page subscribe failed (${res.status})`));
+    error.status = 400;
+    throw error;
+  }
+
+  connection.facebookPage.webhookSubscribed = data?.success === true;
+  await connection.save();
+
+  return { pageId, success: data?.success === true };
 };
 
 export { OAUTH_SCOPES };

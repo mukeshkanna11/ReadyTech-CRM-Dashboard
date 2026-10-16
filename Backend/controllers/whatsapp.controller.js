@@ -10,7 +10,29 @@ import {
   syncWhatsAppAccount,
   markWebhookSubscribed,
   subscribeWabaToWebhook,
+  connectWhatsAppAccount,
+  disconnectWhatsAppAccount,
+  fetchWhatsAppMedia,
 } from "../services/meta/whatsapp.service.js";
+import {
+  sendSocialMessage,
+  convertConversationToLead,
+} from "../services/meta/inbox.service.js";
+import User from "../models/User.js";
+import { userWorkspaceFilter } from "../utils/workspaceContext.js";
+
+const POPULATE = [
+  ["lead", "name company status source owner"],
+  ["client", "companyName contactPerson status"],
+  ["assignedTo", "name email"],
+];
+const populateAll = (q) => POPULATE.reduce((acc, [p, f]) => acc.populate(p, f), q);
+const fail = (res, error, fallback) =>
+  res.status(error.status || 500).json({
+    success: false,
+    code: error.code || null,
+    message: error.message || fallback,
+  });
 
 /* =========================================================
    WEBHOOK — VERIFY (public, called once by Meta)
@@ -62,7 +84,7 @@ export const listConversations = async (req, res) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
-    const { search, unread } = req.query;
+    const { search, unread, channel, status } = req.query;
 
     const filter = {};
 
@@ -75,6 +97,12 @@ export const listConversations = async (req, res) => {
     }
 
     if (unread === "true") filter.unreadCount = { $gt: 0 };
+
+    // Legacy rows have no channel field = WhatsApp
+    if (channel === "whatsapp") filter.channel = { $in: ["whatsapp", null] };
+    else if (["instagram", "messenger"].includes(channel)) filter.channel = channel;
+
+    if (["Open", "Pending", "Closed"].includes(status)) filter.status = status;
 
     const [items, total] = await Promise.all([
       WhatsAppConversation.find(filter)
@@ -125,7 +153,6 @@ export const listMessages = async (req, res) => {
         .sort({ timestamp: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .select("-meta")
         .lean(),
       WhatsAppMessage.countDocuments({ conversation: conversation._id }),
     ]);
@@ -153,11 +180,20 @@ export const listMessages = async (req, res) => {
 ========================================================= */
 export const sendMessage = async (req, res) => {
   try {
-    const message = await sendTextMessage({
-      conversationId: req.params.id,
-      text: req.body?.text,
-      user: req.user,
-    });
+    const conversation = await WhatsAppConversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: "Conversation not found" });
+    }
+
+    const message =
+      (conversation.channel || "whatsapp") === "whatsapp"
+        ? await sendTextMessage({
+            conversationId: conversation._id,
+            text: req.body?.text,
+            media: req.body?.media || null,
+            user: req.user,
+          })
+        : await sendSocialMessage({ conversation, text: req.body?.text, user: req.user });
 
     res.status(201).json({
       success: true,
@@ -243,5 +279,165 @@ export const syncAccount = async (req, res) => {
       message: error.message || "Failed to sync WhatsApp account",
       missingEnv: getWhatsAppConfig().missing,
     });
+  }
+};
+
+
+/* =========================================================
+   PATCH /conversations/:id  — status + employee assignment
+========================================================= */
+export const updateConversation = async (req, res) => {
+  try {
+    const conversation = await WhatsAppConversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: "Conversation not found" });
+    }
+
+    const { status, assignedTo } = req.body || {};
+
+    if (status !== undefined) {
+      if (!["Open", "Pending", "Closed"].includes(status)) {
+        return res.status(400).json({ success: false, message: "Invalid status" });
+      }
+      conversation.status = status;
+    }
+
+    if (assignedTo !== undefined) {
+      if (assignedTo) {
+        // Assignee must belong to the caller's workspace
+        const user = await User.findOne({
+          ...userWorkspaceFilter(req.workspace),
+          _id: assignedTo,
+        }).select("_id");
+        if (!user) {
+          return res.status(400).json({ success: false, message: "Assignee not in this workspace" });
+        }
+      }
+      conversation.assignedTo = assignedTo || null;
+    }
+
+    await conversation.save();
+    const fresh = await populateAll(WhatsAppConversation.findById(conversation._id));
+    res.json({ success: true, data: fresh.toInboxJSON() });
+  } catch (error) {
+    console.error("Update conversation error:", error.message);
+    fail(res, error, "Failed to update conversation");
+  }
+};
+
+/* POST /conversations/:id/notes — internal note (never sent) */
+export const addNote = async (req, res) => {
+  try {
+    const body = String(req.body?.body || "").trim().slice(0, 2000);
+    if (!body) return res.status(400).json({ success: false, message: "Note is required" });
+
+    const conversation = await populateAll(
+      WhatsAppConversation.findByIdAndUpdate(
+        req.params.id,
+        {
+          $push: {
+            notes: { body, author: req.user?._id || null, authorName: req.user?.name || "" },
+          },
+        },
+        { new: true }
+      )
+    );
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: "Conversation not found" });
+    }
+
+    res.status(201).json({ success: true, data: conversation.toInboxJSON() });
+  } catch (error) {
+    console.error("Add note error:", error.message);
+    fail(res, error, "Failed to add note");
+  }
+};
+
+/* POST /conversations/:id/lead — one-click Convert to Lead */
+export const convertToLead = async (req, res) => {
+  try {
+    const conversation = await WhatsAppConversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: "Conversation not found" });
+    }
+
+    const { created } = await convertConversationToLead({
+      conversation,
+      user: req.user,
+      name: req.body?.name,
+    });
+    const fresh = await populateAll(WhatsAppConversation.findById(conversation._id));
+
+    res.status(created ? 201 : 200).json({
+      success: true,
+      message: created ? "Lead created" : "Linked to existing lead",
+      data: fresh.toInboxJSON(),
+    });
+  } catch (error) {
+    console.error("Convert to lead error:", error.message);
+    fail(res, error, "Failed to convert to lead");
+  }
+};
+
+/* GET /conversations/:id/messages/:messageId/media — authenticated
+   WhatsApp media proxy (token never reaches the browser) */
+export const getMessageMedia = async (req, res) => {
+  try {
+    const message = await WhatsAppMessage.findOne({
+      _id: req.params.messageId,
+      conversation: req.params.id,
+    }).lean();
+    const mediaId = message?.meta?.mediaId;
+
+    if (!mediaId) return res.status(404).json({ success: false, message: "Media not found" });
+
+    const { buffer, mimeType } = await fetchWhatsAppMedia(mediaId);
+    res.set("Content-Type", mimeType);
+    res.set("Cache-Control", "private, max-age=3600");
+    res.send(buffer);
+  } catch (error) {
+    console.error("WhatsApp media error:", error.message);
+    fail(res, error, "Failed to load media");
+  }
+};
+
+/* GET /assignees — users of the caller's workspace */
+export const listAssignees = async (req, res) => {
+  try {
+    const users = await User.find({
+      ...userWorkspaceFilter(req.workspace),
+      isActive: { $ne: false },
+    })
+      .select("name email role")
+      .sort({ name: 1 })
+      .lean();
+    res.json({ success: true, data: users });
+  } catch (error) {
+    fail(res, error, "Failed to load users");
+  }
+};
+
+/* POST /connect (admin) — this workspace's own WhatsApp number */
+export const connectAccount = async (req, res) => {
+  try {
+    const connection = await connectWhatsAppAccount(req.body || {});
+    res.json({
+      success: true,
+      message: "WhatsApp connected",
+      data: connection.toSafeJSON().whatsapp,
+    });
+  } catch (error) {
+    console.error("WhatsApp connect error:", error.message);
+    fail(res, error, "Failed to connect WhatsApp");
+  }
+};
+
+/* POST /disconnect (admin) */
+export const disconnectAccount = async (req, res) => {
+  try {
+    const connection = await disconnectWhatsAppAccount();
+    res.json({ success: true, message: "WhatsApp disconnected", data: connection.toSafeJSON().whatsapp });
+  } catch (error) {
+    fail(res, error, "Failed to disconnect WhatsApp");
   }
 };
