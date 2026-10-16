@@ -143,9 +143,10 @@ export const executeAction = async ({
         throw new Error("sendNotification requires message");
       }
 
+      // Stored on the execution log → surfaced by GET /api/user/me/notifications
       return {
         success: true,
-        message: "Notification action executed",
+        message: String(message).slice(0, 500),
       };
     }
 

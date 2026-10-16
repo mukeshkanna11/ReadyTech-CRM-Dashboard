@@ -3,6 +3,11 @@ import express from "express";
 import auth, { authorize } from "../middlewares/auth.js";
 import User from "../models/User.js";
 import Lead from "../models/Lead.js";
+import Opportunity from "../models/Opportunity.js";
+import Invoice from "../models/Invoice.js";
+import SalesOrder from "../models/SalesOrder.model.js";
+import PurchaseOrder from "../models/PurchaseOrder.model.js";
+import AutomationExecution from "../models/AutomationExecution.js";
 
 const router = express.Router();
 
@@ -178,35 +183,100 @@ router.patch("/me", async (req, res) => {
 });
 
 /* =========================================================
-   NOTIFICATIONS — real "new lead" events (workspace-scoped by the
-   scope plugin; same visibility as GET /api/leads). One entry per
-   lead id, so there are no duplicates.
+   NOTIFICATIONS — derived from real records (no separate store, so an
+   event can never be duplicated or re-processed). Every query is
+   workspace-scoped by the scope plugin. id = "<type>:<recordId>".
 ========================================================= */
+const money = (v) => (Number.isFinite(Number(v)) && Number(v) ? ` · ₹${Number(v).toLocaleString("en-IN")}` : "");
+
+const SOURCES = [
+  {
+    type: "lead", model: Lead, title: "New lead", link: "/leads",
+    select: "name company source createdAt",
+    detail: (d) => ({ name: d.name, meta: [d.company, d.source].filter(Boolean).join(" · ") }),
+  },
+  {
+    type: "opportunity", model: Opportunity, title: "New opportunity", link: "/salesforce/opportunities",
+    select: "title value stage createdAt",
+    detail: (d) => ({ name: d.title, meta: `${d.stage || ""}${money(d.value)}`.replace(/^ · /, "") }),
+  },
+  {
+    type: "invoice", model: Invoice, title: "Invoice created", link: "/invoices",
+    select: "invoiceNumber grandTotal total status createdAt",
+    detail: (d) => ({ name: d.invoiceNumber || "Invoice", meta: `${d.status || ""}${money(d.grandTotal ?? d.total)}`.replace(/^ · /, "") }),
+  },
+  {
+    type: "sales_order", model: SalesOrder, title: "Sales order created", link: "/stocks/sales-orders",
+    select: "soNumber totalAmount status createdAt",
+    detail: (d) => ({ name: d.soNumber || "Sales order", meta: `${d.status || ""}${money(d.totalAmount)}`.replace(/^ · /, "") }),
+  },
+  {
+    type: "purchase_order", model: PurchaseOrder, title: "Purchase order created", link: "/stocks/purchase-orders",
+    select: "poNumber status createdAt",
+    detail: (d) => ({ name: d.poNumber || "Purchase order", meta: d.status || "" }),
+  },
+];
+
+// Automation "sendNotification" steps that actually ran
+const AUTOMATION_MATCH = { actions: { $elemMatch: { type: "sendNotification", status: "success" } } };
+const GENERIC_ACTION_MSG = "Notification action executed"; // pre-fix log text
+
 router.get("/me/notifications", async (req, res) => {
   try {
     const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
     const me = await User.findById(req.user._id).select("notificationsReadAt").lean();
     const readAt = me?.notificationsReadAt || null;
+    const after = readAt ? { createdAt: { $gt: readAt } } : {};
 
-    const [leads, unread] = await Promise.all([
-      Lead.find().sort({ createdAt: -1 }).limit(limit).select("name company source createdAt").lean(),
-      Lead.countDocuments(readAt ? { createdAt: { $gt: readAt } } : {}),
+    const [lists, counts, runs, runCount] = await Promise.all([
+      Promise.all(SOURCES.map((s) => s.model.find().sort({ createdAt: -1 }).limit(limit).select(s.select).lean())),
+      Promise.all(SOURCES.map((s) => s.model.countDocuments(after))),
+      AutomationExecution.find(AUTOMATION_MATCH)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .select("automation actions createdAt")
+        .populate("automation", "name")
+        .lean(),
+      AutomationExecution.countDocuments({ ...AUTOMATION_MATCH, ...after }),
     ]);
+
+    const isRead = (d) => !!readAt && new Date(d) <= new Date(readAt);
+
+    const items = SOURCES.flatMap((s, i) =>
+      lists[i].map((d) => ({
+        id: `${s.type}:${d._id}`,
+        type: s.type,
+        title: s.title,
+        ...s.detail(d),
+        link: s.link,
+        createdAt: d.createdAt,
+        read: isRead(d.createdAt),
+      }))
+    );
+
+    runs.forEach((run) =>
+      run.actions.forEach((a, idx) => {
+        if (a.type !== "sendNotification" || a.status !== "success") return;
+        items.push({
+          id: `automation:${run._id}:${idx}`,
+          type: "automation",
+          title: run.automation?.name || "Automation",
+          name: a.message && a.message !== GENERIC_ACTION_MSG ? a.message : "Automation notification",
+          meta: "Automation",
+          link: "/automations",
+          createdAt: a.completedAt || run.createdAt,
+          read: isRead(a.completedAt || run.createdAt),
+        });
+      })
+    );
+
+    items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     res.json({
       success: true,
       data: {
-        items: leads.map((l) => ({
-          id: String(l._id),
-          leadId: l._id,
-          title: "New lead",
-          name: l.name,
-          company: l.company || "",
-          source: l.source || "",
-          createdAt: l.createdAt,
-          read: !!readAt && new Date(l.createdAt) <= new Date(readAt),
-        })),
-        unread,
+        items: items.slice(0, limit),
+        unread: counts.reduce((a, b) => a + b, 0) + runCount,
         readAt,
       },
     });

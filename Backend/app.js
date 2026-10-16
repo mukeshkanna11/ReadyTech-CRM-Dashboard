@@ -150,7 +150,7 @@ app.use("/api/employee/dashboard", auth, role("employee"), employeeDashboardRout
 
 // Client routes
 app.use("/api/client/dashboard", auth, role("client"), clientDashboardRoutes);
-
+    
 // CRM & ERP modules
 app.use("/api/products", auth, productsRoutes);
 app.use("/api/clients", auth, clientsRoutes);
