@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { Cloud, AtSign } from "lucide-react";
 import ChatSupportWidget from "../components/ChatSupportWidget";
+import RtsAssistantWidget from "../components/RtsAssistantWidget";
 import {
   getMyProfile,
   getNotifications,
@@ -495,5 +496,10 @@ function DropdownItem({ icon: Icon, label, onClick, danger }) {
    (it was previously a button with no handler).
 ========================================================= */
 function AIAssistant() {
-  return <ChatSupportWidget />;
+  return (
+    <>
+      <ChatSupportWidget />
+      <RtsAssistantWidget />
+    </>
+  );
 }

@@ -61,6 +61,30 @@ export const askClaude = async (prompt, options = {}) => {
 };
 
 /* =========================================================
+   LOW-LEVEL: multi-turn chat call
+   `messages` = [{ role: "user" | "assistant", content }]
+========================================================= */
+export const chatClaude = async ({
+  system,
+  messages,
+  model = DEFAULT_MODEL,
+  maxTokens = DEFAULT_MAX_TOKENS,
+}) => {
+  const response = await getClient().messages.create({
+    model,
+    max_tokens: maxTokens,
+    ...(system ? { system } : {}),
+    messages,
+  });
+
+  return (response.content || [])
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("")
+    .trim();
+};
+
+/* =========================================================
    LOW-LEVEL: single-shot call with a guaranteed JSON shape
 
    Uses structured outputs (output_config.format) so the reply is always

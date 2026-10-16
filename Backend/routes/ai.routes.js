@@ -5,6 +5,7 @@ import {
   clientInsight,
   inventoryInsight,
 } from "../controllers/ai.controller.js";
+import { rtsHelp } from "../controllers/rtsHelp.controller.js";
 
 const router = express.Router();
 
@@ -48,6 +49,10 @@ router.get("/health", (req, res) => {
 /* ==========================================
    GENERAL CHAT
 ========================================== */
+
+/* RTS AI help widget — assistance only, no DB writes
+   POST /api/ai/help  { product, messages: [{ role, text }] } */
+router.post("/help", rtsHelp);
 
 router.post("/chat", async (req, res) => {
   try {
