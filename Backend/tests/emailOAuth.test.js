@@ -240,3 +240,66 @@ test("ERP customer email: send failure is never reported as success and hides ra
   assert.equal(r.body.success, false);
   assert.doesNotMatch(r.body.message, /secret-detail/);
 });
+
+const connectGoogle = async (ws, email, tokens, scope = "openid email https://www.googleapis.com/auth/gmail.send") => {
+  User.findById = () => q({ _id: ADMIN_A, role: "admin", workspace: ws });
+  mockFetch({
+    "oauth2.googleapis.com/token": () => json(200, { access_token: tokens[0], refresh_token: tokens[1], expires_in: 3600, scope }),
+    "oauth2.googleapis.com/revoke": () => json(200, {}),
+    userinfo: () => json(200, { email }),
+  });
+  const url = new URL(svc.buildAuthUrl({ provider: "google", userId: ADMIN_A, workspaceId: ws }));
+  const r = res();
+  await handler("get", "/oauth/:provider/callback")({ params: { provider: "google" }, query: { code: "c", state: url.searchParams.get("state") } }, r);
+  return { r, url };
+};
+
+test("Google auth URL: account picker + consent, minimal scopes only", () => {
+  const url = new URL(svc.buildAuthUrl({ provider: "google", userId: ADMIN_A, workspaceId: WS_A }));
+  assert.equal(url.searchParams.get("prompt"), "select_account consent");
+  assert.equal(url.searchParams.get("access_type"), "offline");
+  assert.equal(url.searchParams.get("scope"), "openid email https://www.googleapis.com/auth/gmail.send");
+});
+
+test("unticked 'send email' permission is rejected, revoked, and nothing stored", async () => {
+  const err = console.error; console.error = () => {};
+  const { r } = await connectGoogle(WS_A, "a@gmail.com", ["AT", "RT"], "openid email");
+  console.error = err;
+  assert.match(r.redirectUrl, /connected=0/);
+  assert.match(new URL(r.redirectUrl).searchParams.get("message"), /Permission to send email was not granted/);
+  assert.equal(store.size, 0);
+  assert.ok(calls.some((c) => c.url.includes("/revoke") && String(c.opts.body).includes("token=RT")));
+});
+
+test("consent denied on Google's screen shows a friendly message", async () => {
+  const warn = console.warn; console.warn = () => {};
+  const r = res();
+  await handler("get", "/oauth/:provider/callback")({ params: { provider: "google" }, query: { error: "access_denied" } }, r);
+  console.warn = warn;
+  assert.match(new URL(r.redirectUrl).searchParams.get("message"), /cancelled or permission wasn't granted/);
+});
+
+test("two workspaces, two Gmail accounts: each sends only with its own token", async () => {
+  await connectGoogle(WS_A, "alice@gmail.com", ["AT_A", "RT_A"]);
+  await connectGoogle(WS_B, "bob@gmail.com", ["AT_B", "RT_B"]);
+  assert.equal(store.get(WS_A).email, "alice@gmail.com");
+  assert.equal(store.get(WS_B).email, "bob@gmail.com");
+  mockFetch({ "messages/send": () => json(200, { id: "x" }) });
+  assert.equal((await svc.sendViaConnectedAccount(WS_A, { to: "l@x.com", subject: "s", message: "m" })).from, "alice@gmail.com");
+  assert.equal(calls.at(-1).opts.headers.authorization, "Bearer AT_A");
+  assert.equal((await svc.sendViaConnectedAccount(WS_B, { to: "l@x.com", subject: "s", message: "m" })).from, "bob@gmail.com");
+  assert.equal(calls.at(-1).opts.headers.authorization, "Bearer AT_B");
+  const s = res();
+  await handler("get", "/status")({ workspace: WS_B, user: { role: "admin" } }, s);
+  assert.equal(s.body.data.connection.email, "bob@gmail.com");
+  assert.doesNotMatch(JSON.stringify(s.body), /AT_|RT_|alice/);
+});
+
+test("switching Google account revokes the old grant; reconnecting the same account does not", async () => {
+  await connectGoogle(WS_A, "old@gmail.com", ["AT1", "RT_OLD"]);
+  await connectGoogle(WS_A, "old@gmail.com", ["AT2", "RT_SAME"]);
+  assert.ok(!calls.some((c) => c.url.includes("/revoke")));
+  await connectGoogle(WS_A, "new@gmail.com", ["AT3", "RT_NEW"]);
+  assert.ok(calls.some((c) => c.url.includes("/revoke") && String(c.opts.body).includes("token=RT_SAME")));
+  assert.equal(store.get(WS_A).email, "new@gmail.com");
+});

@@ -16,7 +16,9 @@ export const PROVIDERS = {
     scope: "openid email https://www.googleapis.com/auth/gmail.send",
     authUrl: () => "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: () => "https://oauth2.googleapis.com/token",
-    extraAuthParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
+    // select_account: lets admins pick / switch the Google account; consent: guarantees a refresh token
+    extraAuthParams: { access_type: "offline", prompt: "select_account consent", include_granted_scopes: "true" },
+    sendScope: "https://www.googleapis.com/auth/gmail.send",
     revokeUrl: "https://myaccount.google.com/permissions",
     limitations:
       "Sends emails from your Gmail address (no inbox access). Gmail daily sending limits apply (~500/day personal, ~2,000/day Workspace).",
@@ -30,6 +32,7 @@ export const PROVIDERS = {
     authUrl: () => `https://login.microsoftonline.com/${msTenant()}/oauth2/v2.0/authorize`,
     tokenUrl: () => `https://login.microsoftonline.com/${msTenant()}/oauth2/v2.0/token`,
     extraAuthParams: { prompt: "select_account" },
+    sendScope: "Mail.Send",
     revokeUrl: "https://myapps.microsoft.com",
     limitations:
       "Sends emails from your Outlook / Microsoft 365 address (no inbox access). Some organisations require IT admin approval the first time.",
@@ -133,7 +136,14 @@ export const completeConnection = async ({ provider, code, workspaceId, userId }
   const t = await tokenRequest(provider, { grant_type: "authorization_code", code, redirect_uri: redirectUri(provider) });
   if (!t.access_token) throw new Error("Provider returned no access token");
   if (!t.refresh_token) throw new Error("Provider returned no refresh token — remove the app's access from your account and connect again");
+  // Google's consent screen lets users untick individual permissions
+  const granted = String(t.scope || "").toLowerCase().split(/\s+/);
+  if (t.scope && !granted.some((g) => g === PROVIDERS[provider].sendScope.toLowerCase() || g.endsWith(`/${PROVIDERS[provider].sendScope.toLowerCase()}`))) {
+    await revokeGoogle(provider, t.refresh_token);
+    throw new Error("Permission to send email was not granted — please connect again and allow ReadyTech to send email on your behalf");
+  }
   const email = await fetchAccountEmail(provider, t.access_token);
+  const previous = await loadWithTokens(workspaceId);
 
   await EmailConnection.findOneAndUpdate(
     { workspace: workspaceId },
@@ -147,8 +157,22 @@ export const completeConnection = async ({ provider, code, workspaceId, userId }
     },
     { upsert: true, setDefaultsOnInsert: true }
   );
+  // Switched to a different Google account: drop the old account's grant (same account keeps the new grant)
+  if (previous && previous.email?.toLowerCase() !== email.toLowerCase()) {
+    await revokeGoogle(previous.provider, decrypt(previous.refreshToken) || decrypt(previous.accessToken));
+  }
   return email;
 };
+
+/* Best-effort Google grant revoke (Microsoft has no token revoke endpoint) */
+async function revokeGoogle(provider, token) {
+  if (provider !== "google" || !token) return;
+  await fetch("https://oauth2.googleapis.com/revoke", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ token }),
+  }).catch(() => {});
+}
 
 const loadWithTokens = (workspaceId) =>
   EmailConnection.findOne({ workspace: workspaceId }).select("+accessToken +refreshToken");
@@ -204,15 +228,8 @@ export const verifyConnection = async (workspaceId) => {
 export const disconnect = async (workspaceId) => {
   const conn = await loadWithTokens(workspaceId);
   if (!conn) return false;
-  if (conn.provider === "google") {
-    // Best effort revoke; local tokens are deleted regardless
-    const token = decrypt(conn.refreshToken) || decrypt(conn.accessToken);
-    await fetch("https://oauth2.googleapis.com/revoke", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ token }),
-    }).catch(() => {});
-  }
+  // Best effort revoke; local tokens are deleted regardless
+  await revokeGoogle(conn.provider, decrypt(conn.refreshToken) || decrypt(conn.accessToken));
   await EmailConnection.deleteOne({ _id: conn._id, workspace: workspaceId });
   return { provider: conn.provider, email: conn.email };
 };

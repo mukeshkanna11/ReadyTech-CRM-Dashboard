@@ -37,6 +37,7 @@ import automationRoutes from "./routes/automationRoutes.js";
 // Meta Integration Module (centralized for CRM / ERP / AI Content)
 import metaRoutes from "./routes/meta.routes.js";
 import emailRoutes from "./routes/email.routes.js";
+import publicSiteRoutes from "./routes/publicSite.routes.js";
 import whatsappRoutes from "./routes/whatsapp.routes.js";
 // Twilio Voice (browser calling from the CRM Lead page)
 import voipRoutes from "./routes/voip.routes.js";
@@ -199,6 +200,8 @@ app.get("/api", (req, res) => {
     },
   });
 });
+/* Public homepage + privacy policy (HTML) for browsers; "/" stays JSON for API clients */
+app.use(publicSiteRoutes);
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,

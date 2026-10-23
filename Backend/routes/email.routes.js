@@ -31,7 +31,7 @@ const NOT_AVAILABLE = (name) => `${name} connection isn't available yet. ReadyTe
 /* Friendly callback errors (details are logged server-side) */
 const friendlyError = (err) => {
   if (err.name === "TokenExpiredError" || err.name === "JsonWebTokenError" || err.message === "Invalid OAuth state") return "The connection link expired — please click Connect again.";
-  if (/refresh token|Not allowed|no email address/.test(err.message)) return err.message;
+  if (/refresh token|Not allowed|no email address|Permission to send/.test(err.message)) return err.message;
   if (/admin|consent|AADSTS65001|AADSTS90094/i.test(err.message)) return "Your organisation requires an administrator to approve this app. Ask your IT admin to grant consent, then connect again.";
   return "We couldn't finish connecting your email account. Please try again.";
 };
