@@ -65,8 +65,9 @@ export default function EmailIntegration() {
   const disconnect = () => {
     if (!window.confirm(`Disconnect ${conn.email}? CRM emails will be sent via the default ReadyTech sender instead.`)) return;
     run("disconnect", async () => {
-      await API.post("/email/disconnect");
-      toast.success("Email account disconnected");
+      const res = await API.post("/email/disconnect");
+      const revokeUrl = res.data?.data?.revokeUrl;
+      toast.success(revokeUrl ? `Disconnected. To fully remove access, also revoke ReadyTech at ${revokeUrl}` : "Email account disconnected", { duration: 8000 });
       load();
     });
   };
@@ -108,63 +109,69 @@ export default function EmailIntegration() {
         </p>
       )}
 
-      {state === "ready" && conn && (
-        <div className="p-5 space-y-2 text-sm bg-white border shadow-sm rounded-2xl border-slate-200">
-          <div className="flex items-center gap-2 font-semibold text-slate-900">
-            <Mail size={18} /> {conn.email}
-          </div>
-          <p className="text-slate-500">
-            {conn.providerName} · connected {new Date(conn.connectedAt).toLocaleString()}
-            {conn.lastUsedAt ? ` · last used ${new Date(conn.lastUsedAt).toLocaleString()}` : ""}
-          </p>
-          {conn.status !== "connected" && <p className="text-red-600">{conn.lastError}</p>}
-          {admin && (
-            <div className="flex gap-4 pt-2">
-              {conn.status === "connected" && (
-                <button disabled={!!busy} onClick={test} className="font-semibold text-indigo-600 disabled:opacity-50">
-                  {busy === "test" ? "Sending…" : "Send test email"}
-                </button>
-              )}
-              {conn.status !== "connected" && (
-                <button disabled={!!busy} onClick={() => connect(conn.provider)} className="font-semibold text-indigo-600 disabled:opacity-50">
-                  Reconnect
-                </button>
-              )}
-              <button disabled={!!busy} onClick={disconnect} className="font-semibold text-red-600 disabled:opacity-50">
-                {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
       {state === "ready" && (
         <div className="grid gap-4 md:grid-cols-2">
-          {data.providers.map((p) => (
-            <div key={p.id} className="p-5 space-y-3 text-sm bg-white border shadow-sm rounded-2xl border-slate-200">
-              <h2 className="font-semibold text-slate-900">{p.name}</h2>
-              {p.configured ? (
-                admin ? (
+          {data.providers.map((p) => {
+            const mine = conn?.provider === p.id ? conn : null;
+            return (
+              <div key={p.id} className="p-5 space-y-3 text-sm bg-white border shadow-sm rounded-2xl border-slate-200">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-semibold text-slate-900">{p.name}</h2>
+                  {mine && (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${mine.status === "connected" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                      {mine.status === "connected" ? "Connected" : "Reconnect required"}
+                    </span>
+                  )}
+                </div>
+
+                {mine && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 font-semibold text-slate-900">
+                      <Mail size={16} /> {mine.email}
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Connected {new Date(mine.connectedAt).toLocaleString()}
+                      {mine.lastUsedAt ? ` · last used ${new Date(mine.lastUsedAt).toLocaleString()}` : ""}
+                    </p>
+                    {mine.status !== "connected" && <p className="text-red-600">{mine.lastError}</p>}
+                  </div>
+                )}
+
+                {!p.available ? (
+                  <p className="p-3 rounded-xl bg-slate-50 text-slate-600">
+                    Not available yet — ReadyTech is finishing a one-time setup.
+                    {admin && p.setupStatus && <span className="block mt-1 text-xs">Setup status: {p.setupStatus}</span>}
+                  </p>
+                ) : !admin ? (
+                  !mine && <p className="text-slate-500">Only workspace admins can connect an email account.</p>
+                ) : mine ? (
+                  <div className="flex flex-wrap gap-4 pt-1">
+                    {mine.status === "connected" ? (
+                      <button disabled={!!busy} onClick={test} className="font-semibold text-indigo-600 disabled:opacity-50">
+                        {busy === "test" ? "Sending…" : "Test Email"}
+                      </button>
+                    ) : (
+                      <button disabled={!!busy} onClick={() => connect(p.id)} className="font-semibold text-indigo-600 disabled:opacity-50">
+                        {busy === p.id ? "Redirecting…" : "Reconnect"}
+                      </button>
+                    )}
+                    <button disabled={!!busy} onClick={disconnect} className="font-semibold text-red-600 disabled:opacity-50">
+                      {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
+                    </button>
+                  </div>
+                ) : (
                   <button
                     disabled={!!busy}
                     onClick={() => connect(p.id)}
                     className="px-4 py-2 font-semibold text-white rounded-xl bg-indigo-600 disabled:opacity-50"
                   >
-                    {busy === p.id ? "Redirecting…" : conn ? `Connect instead of ${conn.email}` : "Connect"}
+                    {busy === p.id ? "Redirecting…" : conn ? `Connect (replaces ${conn.email})` : "Connect"}
                   </button>
-                ) : (
-                  <p className="text-slate-500">Only workspace admins can connect an email account.</p>
-                )
-              ) : (
-                <div className="p-3 rounded-xl bg-amber-50 text-amber-800">
-                  <p className="font-semibold">Setup required (server)</p>
-                  <p className="mt-1">Missing: {p.missingEnv.join(", ")}</p>
-                  <p className="mt-1">{p.setup}</p>
-                </div>
-              )}
-              <p className="text-xs text-slate-500">Limitations: {p.limitations}</p>
-            </div>
-          ))}
+                )}
+                <p className="text-xs text-slate-500">{p.limitations}</p>
+              </div>
+            );
+          })}
         </div>
       )}
 

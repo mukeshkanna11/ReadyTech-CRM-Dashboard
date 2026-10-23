@@ -13,16 +13,30 @@ const router = express.Router();
 const clientRedirect = (params) =>
   `${(process.env.CLIENT_URL || "http://localhost:5173").replace(/\/+$/, "")}/integrations/email?${new URLSearchParams(params)}`;
 
-const providerList = () =>
+/* Client-safe provider list — env var names / setup steps stay server-side */
+const providerList = (isAdmin) =>
   Object.entries(PROVIDERS).map(([id, p]) => {
-    const missing = missingConfig(id);
-    return { id, name: p.name, configured: missing.length === 0, missingEnv: missing, setup: p.setup, limitations: p.limitations };
+    const available = missingConfig(id).length === 0;
+    return {
+      id, name: p.name, available, limitations: p.limitations, revokeUrl: p.revokeUrl,
+      ...(isAdmin && { setupStatus: available ? "Ready" : "Awaiting one-time ReadyTech setup" }),
+    };
   });
+
+const NOT_AVAILABLE = (name) => `${name} connection isn't available yet. ReadyTech is finishing a one-time setup — please try again later or contact support.`;
+
+/* Friendly callback errors (details are logged server-side) */
+const friendlyError = (err) => {
+  if (err.name === "TokenExpiredError" || err.name === "JsonWebTokenError" || err.message === "Invalid OAuth state") return "The connection link expired — please click Connect again.";
+  if (/refresh token|Not allowed|no email address/.test(err.message)) return err.message;
+  if (/admin|consent|AADSTS65001|AADSTS90094/i.test(err.message)) return "Your organisation requires an administrator to approve this app. Ask your IT admin to grant consent, then connect again.";
+  return "We couldn't finish connecting your email account. Please try again.";
+};
 
 /* Status — any workspace member (no secrets) */
 router.get("/status", auth, async (req, res) => {
   try {
-    res.json({ success: true, data: { providers: providerList(), connection: await verifyConnection(req.workspace) } });
+    res.json({ success: true, data: { providers: providerList(req.user?.role === "admin"), connection: await verifyConnection(req.workspace) } });
   } catch (error) {
     console.error("Email integration status error:", error.message);
     res.status(500).json({ success: false, message: "Failed to load email integration status" });
@@ -36,12 +50,8 @@ router.get("/oauth/:provider/url", auth, role("admin"), (req, res) => {
 
   const missing = missingConfig(provider);
   if (missing.length) {
-    return res.status(400).json({
-      success: false,
-      code: "EMAIL_PROVIDER_NOT_CONFIGURED",
-      message: `${PROVIDERS[provider].name} is not configured on the server. Missing: ${missing.join(", ")}. ${PROVIDERS[provider].setup}`,
-      missingEnv: missing,
-    });
+    console.warn(`Email OAuth (${provider}) not configured — missing ${missing.join(", ")}`);
+    return res.status(400).json({ success: false, code: "EMAIL_PROVIDER_NOT_CONFIGURED", message: NOT_AVAILABLE(PROVIDERS[provider].name) });
   }
   res.json({ success: true, data: { url: buildAuthUrl({ provider, userId: req.user._id, workspaceId: req.workspace }) } });
 });
@@ -52,7 +62,9 @@ router.get("/oauth/:provider/callback", async (req, res) => {
   const { code, state, error, error_description: desc } = req.query;
   if (!PROVIDERS[provider]) return res.redirect(clientRedirect({ connected: "0", message: "Unknown provider" }));
   if (error || !code) {
-    return res.redirect(clientRedirect({ connected: "0", message: String(desc || error || "Authorization was cancelled").slice(0, 200) }));
+    if (error) console.warn(`Email OAuth (${provider}) provider error: ${error} ${desc || ""}`);
+    const message = error === "access_denied" ? "Sign-in was cancelled or permission wasn't granted." : friendlyError(new Error(String(desc || error || "")));
+    return res.redirect(clientRedirect({ connected: "0", message }));
   }
 
   try {
@@ -66,8 +78,7 @@ router.get("/oauth/:provider/callback", async (req, res) => {
     return res.redirect(clientRedirect({ connected: "1", email }));
   } catch (err) {
     console.error(`Email OAuth (${provider}) callback failed:`, err.message);
-    const message = err.name === "TokenExpiredError" || err.name === "JsonWebTokenError" ? "Connection link expired or invalid — try again" : err.message;
-    return res.redirect(clientRedirect({ connected: "0", message: String(message).slice(0, 200) }));
+    return res.redirect(clientRedirect({ connected: "0", message: friendlyError(err).slice(0, 200) }));
   }
 });
 
@@ -75,7 +86,7 @@ router.post("/disconnect", auth, role("admin"), async (req, res) => {
   try {
     const removed = await disconnect(req.workspace);
     if (!removed) return res.status(404).json({ success: false, message: "No email account is connected" });
-    res.json({ success: true, message: "Email account disconnected" });
+    res.json({ success: true, message: "Email account disconnected", data: { revokeUrl: PROVIDERS[removed.provider]?.revokeUrl } });
   } catch (error) {
     console.error("Email disconnect error:", error.message);
     res.status(500).json({ success: false, message: "Failed to disconnect email account" });

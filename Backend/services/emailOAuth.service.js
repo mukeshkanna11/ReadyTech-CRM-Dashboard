@@ -16,6 +16,7 @@ export const PROVIDERS = {
     authUrl: () => "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: () => "https://oauth2.googleapis.com/token",
     extraAuthParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
+    revokeUrl: "https://myaccount.google.com/permissions",
     limitations:
       "Sends only (gmail.send scope) — no inbox sync. Gmail daily sending limits apply (~500/day personal, ~2,000/day Workspace). Apps in Google 'Testing' mode expire refresh tokens after 7 days.",
     setup:
@@ -28,6 +29,7 @@ export const PROVIDERS = {
     authUrl: () => `https://login.microsoftonline.com/${msTenant()}/oauth2/v2.0/authorize`,
     tokenUrl: () => `https://login.microsoftonline.com/${msTenant()}/oauth2/v2.0/token`,
     extraAuthParams: { prompt: "select_account" },
+    revokeUrl: "https://myapps.microsoft.com",
     limitations:
       "Sends only (Mail.Send) — no inbox sync. Exchange Online limits apply (~10,000 recipients/day). Some organisations require admin consent for Mail.Send. Disconnecting removes tokens here; revoke app access in your Microsoft account to fully withdraw consent.",
     setup:
@@ -207,7 +209,7 @@ export const disconnect = async (workspaceId) => {
     }).catch(() => {});
   }
   await EmailConnection.deleteOne({ _id: conn._id, workspace: workspaceId });
-  return true;
+  return { provider: conn.provider, email: conn.email };
 };
 
 /* ---------------- Sending ---------------- */
