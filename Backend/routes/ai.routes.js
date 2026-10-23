@@ -6,8 +6,13 @@ import {
   inventoryInsight,
 } from "../controllers/ai.controller.js";
 import { rtsHelp } from "../controllers/rtsHelp.controller.js";
+import { requireClaudeAi, requireAiSuggestions } from "../utils/aiSettings.js";
 
 const router = express.Router();
+
+/* Admin Settings → AI Settings: every Claude route except /health
+   is blocked while Claude AI Assistant is OFF for the workspace */
+router.use((req, res, next) => (req.path === "/health" ? next() : requireClaudeAi(req, res, next)));
 
 /* ==========================================
    LEAD MANAGEMENT — AI INSIGHTS
@@ -15,7 +20,7 @@ const router = express.Router();
    Types: summary | recommendations | quality
           | followup | sentiment
 ========================================== */
-router.post("/lead-insight", leadInsight);
+router.post("/lead-insight", requireAiSuggestions("lead"), leadInsight);
 
 /* ==========================================
    CLIENT MANAGEMENT — AI INSIGHTS
@@ -23,14 +28,14 @@ router.post("/lead-insight", leadInsight);
    Types: summary | analytics | communication
           | followup | upsell
 ========================================== */
-router.post("/client-insight", clientInsight);
+router.post("/client-insight", requireAiSuggestions("client"), clientInsight);
 
 /* ==========================================
    INVENTORY — AI INSIGHTS
    POST /api/ai/inventory-insight  { type, inventory }
    Types: insights | lowstock | overstock | restock
 ========================================== */
-router.post("/inventory-insight", inventoryInsight);
+router.post("/inventory-insight", requireAiSuggestions("inventory"), inventoryInsight);
 
 /* ==========================================
    HEALTH CHECK
@@ -54,7 +59,11 @@ router.get("/health", (req, res) => {
    POST /api/ai/help  { product, messages: [{ role, text }] } */
 router.post("/help", rtsHelp);
 
-router.post("/chat", async (req, res) => {
+/* purpose "sales-recommendations" (AI Sales Recommendations page)
+   is gated by AI Suggestions */
+router.post("/chat", (req, res, next) =>
+  req.body?.purpose === "sales-recommendations" ? requireAiSuggestions(true)(req, res, next) : next(),
+async (req, res) => {
   try {
     const { prompt } = req.body;
 
@@ -106,7 +115,7 @@ router.post("/chat", async (req, res) => {
    CRM LEAD ANALYSIS
 ========================================== */
 
-router.post("/analyze-lead", async (req, res) => {
+router.post("/analyze-lead", requireAiSuggestions(true), async (req, res) => {
   try {
     const { lead } = req.body;
 

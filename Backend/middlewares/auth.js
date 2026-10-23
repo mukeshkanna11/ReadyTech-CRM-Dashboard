@@ -1,5 +1,6 @@
 // middlewares/auth.js
 import jwt from "jsonwebtoken";
+import crypto from "node:crypto";
 import User from "../models/User.js";
 import { runWithWorkspace } from "../utils/workspaceContext.js";
 
@@ -11,6 +12,11 @@ const auth = async (req, res, next) => {
   try {
     // ✅ Allow CORS preflight requests
     if (req.method === "OPTIONS") return res.sendStatus(200);
+
+    // 🔌 External API key (Admin Settings → Integrations → CRM API Access)
+    if (req.headers["x-api-key"] && !req.headers.authorization) {
+      return apiKeyAuth(req, res, next);
+    }
 
     // 🔑 Extract token
     const authHeader = req.headers.authorization || req.headers["x-auth-token"];
@@ -81,6 +87,37 @@ const auth = async (req, res, next) => {
       message: "Authentication middleware error",
     });
   }
+};
+
+/* =========================================================
+   🔌 WORKSPACE API KEY — read-only access to core CRM data.
+   Acts as the workspace owner, so every query stays scoped to
+   that workspace. Rejected while CRM API Access is OFF.
+========================================================= */
+export const hashApiKey = (key) => crypto.createHash("sha256").update(String(key)).digest("hex");
+
+const API_KEY_PATHS = ["/api/leads", "/api/clients", "/api/opportunities", "/api/products", "/api/invoices", "/api/activities"];
+
+const apiKeyAuth = async (req, res, next) => {
+  const owner = await User.findOne({ "integrationSettings.apiKeyHash": hashApiKey(req.headers["x-api-key"]) })
+    .select("-passwordHash -__v")
+    .lean();
+
+  if (!owner) return res.status(401).json({ success: false, message: "Invalid API key" });
+  if (owner.isActive === false) return res.status(403).json({ success: false, message: "Account is inactive" });
+  if (!owner.integrationSettings?.apiAccess) {
+    return res.status(403).json({ success: false, message: "CRM API access is disabled for this workspace" });
+  }
+
+  const path = req.originalUrl.split("?")[0];
+  if (req.method !== "GET" || !API_KEY_PATHS.some((p) => path === p || path.startsWith(`${p}/`))) {
+    return res.status(403).json({ success: false, message: "API keys allow read-only access to CRM data endpoints" });
+  }
+
+  req.user = owner;
+  req.apiKey = true;
+  req.workspace = owner.workspace || owner._id;
+  return runWithWorkspace(req.workspace, next);
 };
 
 /* =========================================================

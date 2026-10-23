@@ -23,6 +23,7 @@ import ChatConversation, {
   CHAT_PRIORITIES,
 } from "../models/ChatConversation.js";
 import { askClaudeStructured } from "./claudeService.js";
+import { getAiSettings } from "../utils/aiSettings.js";
 
 /* =========================================================
    MODEL / TOKEN CONFIGURATION
@@ -482,6 +483,9 @@ export const handleUserMessage = async ({ sessionId, message, visitor }) => {
 
   /* ---------- 3. One Claude call: reply + intent + priority + lead ---------- */
   try {
+    // Admin Settings → AI Settings: OFF → existing non-AI fallback below
+    if (!(await getAiSettings()).claude) throw new Error("Claude AI disabled for workspace");
+
     const { data, usage, model } = await askClaudeStructured(
       buildPrompt(conversation, text),
       REPLY_SCHEMA,

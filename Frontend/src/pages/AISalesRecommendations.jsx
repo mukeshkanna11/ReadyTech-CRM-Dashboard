@@ -36,7 +36,7 @@ export default function AISalesRecommendations() {
     setResult("");
     setCopied(false);
     try {
-      const res = await API.post("/ai/chat", { prompt: buildPrompt(type, ctx) });
+      const res = await API.post("/ai/chat", { prompt: buildPrompt(type, ctx), purpose: "sales-recommendations" });
       if (!res.data?.success) throw new Error(res.data?.message || "Request failed");
       setResult(res.data.answer || "");
     } catch (err) {

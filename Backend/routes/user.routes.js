@@ -9,7 +9,15 @@ import SalesOrder from "../models/SalesOrder.model.js";
 import PurchaseOrder from "../models/PurchaseOrder.model.js";
 import AutomationExecution from "../models/AutomationExecution.js";
 import AuditLog from "../models/AuditLog.js";
-import { getNotificationSettings } from "../utils/notificationSettings.js";
+import { getNotificationSettings, recordSecurityAlert } from "../utils/notificationSettings.js";
+import rateLimit from "express-rate-limit";
+import QRCode from "qrcode";
+import {
+  generateSecret, verifyTotp, otpauthUrl, encryptSecret, decryptSecret,
+  generateRecoveryCodes, hashRecoveryCode,
+} from "../utils/totp.js";
+import { verifySecondFactor } from "../utils/twoFactor.js";
+import { getSecuritySettings, passwordStatus } from "../utils/securitySettings.js";
 
 const router = express.Router();
 
@@ -292,6 +300,24 @@ router.get("/me/notifications", async (req, res) => {
       })
     );
 
+    /* Security → Password Change Reminder */
+    const pwd = passwordStatus(
+      await User.findById(req.user._id).select("passwordChangedAt createdAt").lean(),
+      (await getSecuritySettings(req.workspace)).passwordReminder
+    );
+    if (pwd.reminderDue) {
+      items.push({
+        id: `password:${req.user._id}:${new Date(pwd.changedAt).getTime()}`,
+        type: "password",
+        title: "Password change reminder",
+        name: `Your password is ${pwd.ageDays} days old — please change it`,
+        meta: `Policy: every ${pwd.maxAgeDays} days`,
+        link: req.user.role === "admin" ? "/users" : "/profile",
+        createdAt: new Date(),
+        read: false,
+      });
+    }
+
     alerts.forEach((a) =>
       items.push({
         id: `security:${a._id}`,
@@ -311,7 +337,7 @@ router.get("/me/notifications", async (req, res) => {
       success: true,
       data: {
         items: items.slice(0, limit),
-        unread: counts.reduce((a, b) => a + b, 0) + runCount + alertCount,
+        unread: counts.reduce((a, b) => a + b, 0) + runCount + alertCount + (pwd.reminderDue ? 1 : 0),
         readAt,
       },
     });
@@ -325,6 +351,147 @@ router.patch("/me/notifications/read", async (req, res) => {
   const readAt = new Date();
   await User.updateOne({ _id: req.user._id }, { $set: { notificationsReadAt: readAt } });
   res.json({ success: true, data: { readAt, unread: 0 } });
+});
+
+/* =========================================================
+   SECURITY STATUS + TWO-FACTOR AUTHENTICATION (own account)
+========================================================= */
+const twoFactorLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many attempts. Please try again later." },
+});
+
+const securityStatus = async (req) => {
+  const me = await User.findById(req.user._id)
+    .select("twoFactor.enabled twoFactor.enabledAt +twoFactor.recoveryCodes passwordChangedAt createdAt")
+    .lean();
+  return {
+    twoFactor: {
+      enabled: !!me?.twoFactor?.enabled,
+      enabledAt: me?.twoFactor?.enabledAt || null,
+      recoveryCodesRemaining: me?.twoFactor?.enabled ? me.twoFactor.recoveryCodes?.length || 0 : 0,
+    },
+    password: passwordStatus(me || {}, (await getSecuritySettings(req.workspace)).passwordReminder),
+  };
+};
+
+const checkPassword = async (req, password) => {
+  const me = await User.findById(req.user._id);
+  return !!password && !!me && (await me.comparePassword(String(password)));
+};
+
+router.get("/me/security", async (req, res) => {
+  res.json({ success: true, data: await securityStatus(req) });
+});
+
+/* Step 1: password re-check → pending secret + QR (not active yet) */
+router.post("/me/2fa/setup", twoFactorLimiter, async (req, res) => {
+  if (req.user.twoFactor?.enabled) {
+    return res.status(409).json({ success: false, message: "Two-factor authentication is already enabled" });
+  }
+  if (!(await checkPassword(req, req.body?.password))) {
+    return res.status(400).json({ success: false, message: "Current password is incorrect" });
+  }
+
+  const secret = generateSecret();
+  await User.updateOne({ _id: req.user._id }, { $set: { "twoFactor.pendingSecret": encryptSecret(secret) } });
+
+  const url = otpauthUrl(secret, req.user.email);
+  res.json({ success: true, data: { secret, otpauthUrl: url, qrCode: await QRCode.toDataURL(url) } });
+});
+
+/* Step 2: prove the authenticator works → enable + recovery codes (shown once) */
+router.post("/me/2fa/enable", twoFactorLimiter, async (req, res) => {
+  const me = await User.findById(req.user._id).select("+twoFactor.pendingSecret twoFactor.enabled").lean();
+  if (me?.twoFactor?.enabled) {
+    return res.status(409).json({ success: false, message: "Two-factor authentication is already enabled" });
+  }
+  if (!me?.twoFactor?.pendingSecret) {
+    return res.status(400).json({ success: false, message: "Start setup first" });
+  }
+
+  const secret = decryptSecret(me.twoFactor.pendingSecret);
+  const step = verifyTotp(secret, req.body?.code);
+  if (step === null) {
+    return res.status(400).json({ success: false, message: "Invalid authentication code" });
+  }
+
+  const recoveryCodes = generateRecoveryCodes();
+  await User.updateOne(
+    { _id: req.user._id },
+    {
+      $set: {
+        "twoFactor.enabled": true,
+        "twoFactor.secret": me.twoFactor.pendingSecret,
+        "twoFactor.pendingSecret": null,
+        "twoFactor.recoveryCodes": recoveryCodes.map(hashRecoveryCode),
+        "twoFactor.lastUsedStep": step,
+        "twoFactor.enabledAt": new Date(),
+      },
+    }
+  );
+
+  recordSecurityAlert({
+    workspaceId: req.workspace,
+    user: req.user._id,
+    action: "UPDATE",
+    description: `${req.user.name} (${req.user.email}) enabled two-factor authentication`,
+  });
+
+  res.json({ success: true, data: { ...(await securityStatus(req)), recoveryCodes } });
+});
+
+/* Disable: requires current password AND a valid 2FA / recovery code */
+router.post("/me/2fa/disable", twoFactorLimiter, async (req, res) => {
+  if (!req.user.twoFactor?.enabled) {
+    return res.status(400).json({ success: false, message: "Two-factor authentication is not enabled" });
+  }
+  if (!(await checkPassword(req, req.body?.password))) {
+    return res.status(400).json({ success: false, message: "Current password is incorrect" });
+  }
+  if (!(await verifySecondFactor(req.user._id, req.body || {}))) {
+    return res.status(400).json({ success: false, message: "Invalid or already used authentication code" });
+  }
+
+  await User.updateOne(
+    { _id: req.user._id },
+    {
+      $set: {
+        "twoFactor.enabled": false,
+        "twoFactor.secret": null,
+        "twoFactor.pendingSecret": null,
+        "twoFactor.recoveryCodes": [],
+        "twoFactor.lastUsedStep": null,
+        "twoFactor.enabledAt": null,
+      },
+    }
+  );
+
+  recordSecurityAlert({
+    workspaceId: req.workspace,
+    user: req.user._id,
+    action: "UPDATE",
+    description: `${req.user.name} (${req.user.email}) disabled two-factor authentication`,
+  });
+
+  res.json({ success: true, data: await securityStatus(req) });
+});
+
+/* New recovery codes (old ones invalidated) — requires a valid 2FA code */
+router.post("/me/2fa/recovery-codes", twoFactorLimiter, async (req, res) => {
+  if (!req.user.twoFactor?.enabled) {
+    return res.status(400).json({ success: false, message: "Two-factor authentication is not enabled" });
+  }
+  if (!(await verifySecondFactor(req.user._id, { code: req.body?.code }))) {
+    return res.status(400).json({ success: false, message: "Invalid or already used authentication code" });
+  }
+
+  const recoveryCodes = generateRecoveryCodes();
+  await User.updateOne({ _id: req.user._id }, { $set: { "twoFactor.recoveryCodes": recoveryCodes.map(hashRecoveryCode) } });
+  res.json({ success: true, data: { ...(await securityStatus(req)), recoveryCodes } });
 });
 
 export default router;

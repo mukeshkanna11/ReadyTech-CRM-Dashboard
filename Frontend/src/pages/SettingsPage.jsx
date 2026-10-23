@@ -66,6 +66,196 @@ export default function SettingsPage() {
     }
   };
 
+  /* Integrations — workspace API access + third-party apps */
+  const [integ, setInteg] = useState(null);
+  const [integStatus, setIntegStatus] = useState("loading"); // loading | ready | error | forbidden
+  const [integBusy, setIntegBusy] = useState(false);
+  const [newApiKey, setNewApiKey] = useState(null);
+
+  const loadInteg = () => {
+    setIntegStatus("loading");
+    API.get("/admin/settings/integrations")
+      .then((res) => {
+        setInteg(res.data?.data);
+        setIntegStatus("ready");
+      })
+      .catch((err) => setIntegStatus(err.response?.status === 403 ? "forbidden" : "error"));
+  };
+
+  useEffect(loadInteg, []);
+
+  const integRequest = async (request, successMsg) => {
+    if (integBusy) return;
+    setIntegBusy(true);
+    try {
+      const res = await request();
+      setInteg(res.data?.data);
+      if (res.data?.data?.key) setNewApiKey(res.data.data.key);
+      toast.success(successMsg);
+    } catch {
+      /* interceptor shows the error toast; state stays as last saved */
+    } finally {
+      setIntegBusy(false);
+    }
+  };
+
+  const integToggle = (key, label) => ({
+    toggleValue: !!integ?.[key],
+    setToggle: (v) =>
+      integRequest(() => API.put("/admin/settings/integrations", { [key]: v }), `${label} ${v ? "enabled" : "disabled"}`),
+    disabled: integStatus !== "ready" || integBusy,
+  });
+
+  /* AI Settings — enforced by the backend for this workspace */
+  const [ai, setAi] = useState(null);
+  const [aiStatus, setAiStatus] = useState("loading"); // loading | ready | error | forbidden
+  const [aiSaving, setAiSaving] = useState(false);
+
+  const loadAi = () => {
+    setAiStatus("loading");
+    API.get("/admin/settings/ai")
+      .then((res) => {
+        setAi(res.data?.data);
+        setAiStatus("ready");
+      })
+      .catch((err) => setAiStatus(err.response?.status === 403 ? "forbidden" : "error"));
+  };
+
+  useEffect(loadAi, []);
+
+  const aiToggle = (key, label) => ({
+    toggleValue: !!ai?.[key],
+    setToggle: async (v) => {
+      if (aiSaving) return;
+      const previous = ai;
+      setAiSaving(true);
+      setAi({ ...ai, [key]: v });
+      try {
+        const res = await API.put("/admin/settings/ai", { [key]: v });
+        setAi(res.data?.data);
+        toast.success(`${label} ${v ? "enabled" : "disabled"}`);
+      } catch {
+        setAi(previous); // interceptor shows the error toast
+      } finally {
+        setAiSaving(false);
+      }
+    },
+    disabled: aiStatus !== "ready" || aiSaving,
+  });
+
+  /* Security — 2FA is per user, password reminder is a workspace policy */
+  const [sec, setSec] = useState(null); // GET /user/me/security
+  const [secPolicy, setSecPolicy] = useState(null); // admin-only
+  const [secStatus, setSecStatus] = useState("loading");
+  const [secBusy, setSecBusy] = useState(false);
+  const [tfa, setTfa] = useState({ step: null, password: "", code: "", setup: null, recoveryCodes: null });
+
+  const loadSec = () => {
+    setSecStatus("loading");
+    API.get("/user/me/security")
+      .then((res) => {
+        setSec(res.data?.data);
+        setSecStatus("ready");
+      })
+      .catch(() => setSecStatus("error"));
+    API.get("/admin/settings/security")
+      .then((res) => setSecPolicy(res.data?.data))
+      .catch((err) => setSecPolicy(err.response?.status === 403 ? "forbidden" : null));
+  };
+
+  useEffect(loadSec, []);
+
+  const secCall = async (fn, onOk) => {
+    if (secBusy) return;
+    setSecBusy(true);
+    try {
+      await onOk(await fn());
+    } catch {
+      /* interceptor shows the error toast */
+    } finally {
+      setSecBusy(false);
+    }
+  };
+
+  const tfaSubmit = (e) => {
+    e.preventDefault();
+    if (tfa.step === "password") {
+      secCall(() => API.post("/user/me/2fa/setup", { password: tfa.password }), (res) =>
+        setTfa({ ...tfa, step: "verify", password: "", setup: res.data?.data }));
+    } else if (tfa.step === "verify") {
+      secCall(() => API.post("/user/me/2fa/enable", { code: tfa.code }), (res) => {
+        setSec(res.data?.data);
+        setTfa({ step: "codes", password: "", code: "", setup: null, recoveryCodes: res.data?.data?.recoveryCodes });
+        toast.success("Two-factor authentication enabled");
+      });
+    } else if (tfa.step === "disable") {
+      const code = tfa.code.trim();
+      secCall(
+        () => API.post("/user/me/2fa/disable", { password: tfa.password, ...(/^\d{6}$/.test(code) ? { code } : { recoveryCode: code }) }),
+        (res) => {
+          setSec(res.data?.data);
+          setTfa({ step: null, password: "", code: "", setup: null, recoveryCodes: null });
+          toast.success("Two-factor authentication disabled");
+        }
+      );
+    }
+  };
+
+  /* Backup & Recovery */
+  const [bk, setBk] = useState(null);
+  const [bkStatus, setBkStatus] = useState("loading");
+  const [bkBusy, setBkBusy] = useState(false);
+
+  const loadBk = () => {
+    setBkStatus("loading");
+    API.get("/admin/settings/backup")
+      .then((res) => {
+        setBk(res.data?.data);
+        setBkStatus("ready");
+      })
+      .catch((err) => setBkStatus(err.response?.status === 403 ? "forbidden" : "error"));
+  };
+
+  useEffect(loadBk, []);
+
+  const bkCall = async (fn, msg) => {
+    if (bkBusy) return;
+    setBkBusy(true);
+    try {
+      const res = await fn();
+      setBk(res.data?.data);
+      toast.success(res.data?.message || msg);
+    } catch {
+      /* interceptor shows the error toast */
+    } finally {
+      setBkBusy(false);
+    }
+  };
+
+  const restorePoint = async (p) => {
+    if (bkBusy) return;
+    try {
+      const { data } = await API.post(`/admin/backup/restore-points/${p.id}/validate`);
+      const v = data?.data;
+      if (!v?.valid) {
+        toast.error(`Restore point is not valid: ${v?.problems?.join("; ")}`);
+        return;
+      }
+      const typed = window.prompt(
+        `Restore ${v.totalDocs} records from ${new Date(v.createdAt).toLocaleString()}?\n\n` +
+          "This REPLACES this workspace's current CRM data (users and settings are not affected). " +
+          "Current data is saved as a new restore point first.\n\nType RESTORE to confirm."
+      );
+      if (typed !== "RESTORE") {
+        toast("Restore cancelled");
+        return;
+      }
+      bkCall(() => API.post(`/admin/backup/restore-points/${p.id}/restore`, { confirm: "RESTORE" }), "Restore completed");
+    } catch {
+      /* interceptor shows the error toast */
+    }
+  };
+
   const notifToggle = (key) => ({
     toggleValue: !!notif?.[key],
     setToggle: (v) => saveNotif(key, v),
@@ -224,55 +414,270 @@ export default function SettingsPage() {
     </CardSection>
 
     <CardSection title="Security">
+      {secStatus === "loading" && <p className="text-sm text-slate-500">Loading security settings…</p>}
+      {secStatus === "error" && (
+        <p className="text-sm text-red-600">
+          Couldn't load security settings.{" "}
+          <button onClick={loadSec} className="font-semibold underline">Retry</button>
+        </p>
+      )}
+
       <SettingToggle
         title="Two-Factor Authentication"
         desc="Extra layer of account security"
         icon={<ShieldCheck size={18} />}
+        toggleValue={!!sec?.twoFactor?.enabled}
+        setToggle={(v) => setTfa({ step: v ? "password" : "disable", password: "", code: "", setup: null, recoveryCodes: null })}
+        disabled={secStatus !== "ready" || secBusy || !!tfa.step}
       />
+
+      {tfa.step && (
+        <form onSubmit={tfaSubmit} className="p-4 space-y-3 text-sm border rounded-2xl border-slate-200 dark:border-slate-700">
+          {tfa.step === "codes" ? (
+            <>
+              <p className="font-semibold text-amber-700">
+                Save these recovery codes now — each works once and they won't be shown again:
+              </p>
+              <pre className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800">{tfa.recoveryCodes?.join("\n")}</pre>
+              <button type="button" onClick={() => setTfa({ step: null })} className="font-semibold text-indigo-600">Done</button>
+            </>
+          ) : (
+            <>
+              {tfa.step === "verify" && (
+                <>
+                  <p>Scan with an authenticator app (Google Authenticator, Authy, 1Password…), then enter the 6-digit code.</p>
+                  <img src={tfa.setup?.qrCode} alt="2FA QR code" className="w-40 h-40" />
+                  <p className="break-all">Manual key: <code>{tfa.setup?.secret}</code></p>
+                </>
+              )}
+              {(tfa.step === "password" || tfa.step === "disable") && (
+                <input type="password" autoComplete="current-password" placeholder="Current password" value={tfa.password}
+                  onChange={(e) => setTfa({ ...tfa, password: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl bg-slate-50 dark:bg-slate-800" />
+              )}
+              {(tfa.step === "verify" || tfa.step === "disable") && (
+                <input inputMode="text" autoComplete="one-time-code"
+                  placeholder={tfa.step === "disable" ? "Authenticator code or recovery code" : "6-digit code"}
+                  value={tfa.code} onChange={(e) => setTfa({ ...tfa, code: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl bg-slate-50 dark:bg-slate-800" />
+              )}
+              <div className="flex gap-3">
+                <button type="submit" disabled={secBusy} className="font-semibold text-indigo-600 disabled:opacity-50">
+                  {secBusy ? "Please wait…" : tfa.step === "password" ? "Continue" : tfa.step === "verify" ? "Enable 2FA" : "Disable 2FA"}
+                </button>
+                <button type="button" onClick={() => setTfa({ step: null })} className="text-slate-500">Cancel</button>
+              </div>
+            </>
+          )}
+        </form>
+      )}
+      {sec?.twoFactor?.enabled && !tfa.step && (
+        <p className="text-sm text-slate-500">Recovery codes remaining: {sec.twoFactor.recoveryCodesRemaining}</p>
+      )}
 
       <SettingToggle
         title="Password Change Reminder"
         desc="Receive reminders to update password"
         icon={<ShieldCheck size={18} />}
+        toggleValue={!!secPolicy?.passwordReminder}
+        setToggle={(v) =>
+          secCall(() => API.put("/admin/settings/security", { passwordReminder: v }), async (res) => {
+            setSecPolicy(res.data?.data);
+            const me = await API.get("/user/me/security");
+            setSec(me.data?.data);
+            toast.success(`Password change reminder ${v ? "enabled" : "disabled"}`);
+          })
+        }
+        disabled={!secPolicy || secPolicy === "forbidden" || secBusy}
       />
+      {secPolicy === "forbidden" && (
+        <p className="text-sm text-amber-600">Only workspace admins can change the password reminder policy.</p>
+      )}
+      {sec?.password && (
+        <p className={`text-sm ${sec.password.reminderDue ? "text-red-600 font-semibold" : "text-slate-500"}`}>
+          Your password is {sec.password.ageDays ?? "?"} days old
+          {sec.password.reminderEnabled ? ` (policy: change every ${sec.password.maxAgeDays} days)` : ""}.
+          {sec.password.reminderDue ? " Please change it now." : ""}
+        </p>
+      )}
     </CardSection>
 
     <CardSection title="Integrations">
+      {integStatus === "loading" && (
+        <p className="text-sm text-slate-500">Loading integration settings…</p>
+      )}
+      {integStatus === "forbidden" && (
+        <p className="text-sm text-amber-600">Only workspace admins can manage integrations.</p>
+      )}
+      {integStatus === "error" && (
+        <p className="text-sm text-red-600">
+          Couldn't load integration settings.{" "}
+          <button onClick={loadInteg} className="font-semibold underline">Retry</button>
+        </p>
+      )}
+
       <SettingToggle
         title="CRM API Access"
         desc="Enable API for external integrations"
         icon={<Link size={18} />}
+        {...integToggle("apiAccess", "CRM API access")}
       />
+
+      {integStatus === "ready" && (
+        <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+          <p>
+            API key:{" "}
+            {integ?.apiKey ? <code>{integ.apiKey.prefix}…</code> : "none"} · read-only (GET) access to
+            leads, clients, opportunities, products, invoices and activities via the <code>X-API-Key</code> header.
+          </p>
+          {newApiKey && (
+            <p className="p-2 break-all rounded-lg bg-amber-50 text-amber-800">
+              Copy this key now — it won't be shown again: <code>{newApiKey}</code>
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              disabled={integBusy}
+              onClick={() => integRequest(() => API.post("/admin/settings/integrations/api-key"), "API key generated")}
+              className="font-semibold text-indigo-600 disabled:opacity-50"
+            >
+              {integ?.apiKey ? "Regenerate key" : "Generate key"}
+            </button>
+            {integ?.apiKey && (
+              <button
+                disabled={integBusy}
+                onClick={() => {
+                  setNewApiKey(null);
+                  integRequest(() => API.delete("/admin/settings/integrations/api-key"), "API key revoked");
+                }}
+                className="font-semibold text-red-600 disabled:opacity-50"
+              >
+                Revoke key
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <SettingToggle
         title="Third Party Apps"
         desc="Slack, Google Workspace, Teams"
         icon={<Link size={18} />}
+        {...integToggle("thirdPartyApps", "Third party apps")}
       />
+
+      {integStatus === "ready" && (
+        <ul className="space-y-1 text-sm">
+          {integ?.providers?.map((p) => (
+            <li key={p.id} className="text-slate-500">
+              {p.name}: <span className="font-semibold text-amber-600">Not available</span> — {p.reason}
+            </li>
+          ))}
+        </ul>
+      )}
     </CardSection>
 
     <CardSection title="AI Settings">
+      {aiStatus === "loading" && (
+        <p className="text-sm text-slate-500">Loading AI settings…</p>
+      )}
+      {aiStatus === "forbidden" && (
+        <p className="text-sm text-amber-600">Only workspace admins can manage AI settings.</p>
+      )}
+      {aiStatus === "error" && (
+        <p className="text-sm text-red-600">
+          Couldn't load AI settings.{" "}
+          <button onClick={loadAi} className="font-semibold underline">Retry</button>
+        </p>
+      )}
+      {aiStatus === "ready" && !ai?.configured && (
+        <p className="text-sm text-red-600">
+          Claude API key is not configured on the server — AI features will return an error until it is set.
+        </p>
+      )}
+
       <SettingToggle
         title="Claude AI Assistant"
         desc="Enable AI across CRM modules"
+        {...aiToggle("claude", "Claude AI Assistant")}
       />
 
       <SettingToggle
         title="AI Suggestions"
         desc="Display intelligent recommendations"
+        {...aiToggle("suggestions", "AI Suggestions")}
       />
     </CardSection>
 
     <CardSection title="Backup & Recovery">
+      {bkStatus === "loading" && <p className="text-sm text-slate-500">Loading backup settings…</p>}
+      {bkStatus === "forbidden" && (
+        <p className="text-sm text-amber-600">Only workspace admins can manage backups.</p>
+      )}
+      {bkStatus === "error" && (
+        <p className="text-sm text-red-600">
+          Couldn't load backup settings.{" "}
+          <button onClick={loadBk} className="font-semibold underline">Retry</button>
+        </p>
+      )}
+
       <SettingToggle
         title="Automatic Backup"
         desc="Daily secure cloud backup"
+        toggleValue={!!bk?.autoBackup}
+        setToggle={(v) => bkCall(() => API.put("/admin/settings/backup", { autoBackup: v }), "Saved")}
+        disabled={bkStatus !== "ready" || bkBusy || !bk?.autoBackupAvailable}
       />
+      {bkStatus === "ready" && !bk?.autoBackupAvailable && (
+        <p className="text-sm text-amber-600">Unavailable: {bk?.autoBackupReason}</p>
+      )}
 
       <SettingToggle
         title="Restore Points"
         desc="Maintain recovery checkpoints"
+        toggleValue={!!bk?.restorePoints}
+        setToggle={(v) => bkCall(() => API.put("/admin/settings/backup", { restorePoints: v }), `Restore points ${v ? "enabled" : "disabled"}`)}
+        disabled={bkStatus !== "ready" || bkBusy}
       />
+
+      {bkStatus === "ready" && (
+        <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+          <p>
+            Daily checkpoints of this workspace's CRM data, stored in the same database (keeps the latest {bk?.retention}).
+            {bk?.scheduler?.lastRunAt ? ` Last scheduler run: ${new Date(bk.scheduler.lastRunAt).toLocaleString()}.` : ""}
+          </p>
+          {bk?.scheduler?.lastError && <p className="text-red-600">Last scheduler error: {bk.scheduler.lastError}</p>}
+          {bk?.restorePoints && (
+            <button
+              disabled={bkBusy}
+              onClick={() => bkCall(() => API.post("/admin/backup/restore-points"), "Restore point created")}
+              className="font-semibold text-indigo-600 disabled:opacity-50"
+            >
+              {bkBusy ? "Working…" : "Create restore point now"}
+            </button>
+          )}
+          {bk?.points?.length ? (
+            <ul className="space-y-1">
+              {bk.points.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-2">
+                  <span>
+                    {new Date(p.createdAt).toLocaleString()} · {p.trigger} ·{" "}
+                    <span className={p.status === "completed" ? "text-green-600" : "text-red-600"}>{p.status}</span>
+                    {p.status === "completed" ? ` · ${p.totalDocs} records` : p.error ? ` · ${p.error}` : ""}
+                  </span>
+                  {p.status === "completed" && (
+                    <button disabled={bkBusy} onClick={() => restorePoint(p)} className="font-semibold text-red-600 disabled:opacity-50">
+                      Restore
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-slate-500">No restore points yet.</p>
+          )}
+        </div>
+      )}
     </CardSection>
 
   </div>

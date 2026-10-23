@@ -2,7 +2,9 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import User from "../models/User.js";
+import rateLimit from "express-rate-limit";
 import { recordSecurityAlert } from "../utils/notificationSettings.js";
+import { createChallenge, readChallenge, verifySecondFactor } from "../utils/twoFactor.js";
 
 const router = express.Router();
 
@@ -62,6 +64,11 @@ router.post("/login", async (req, res) => {
         success: false,
         message: "Invalid credentials",
       });
+    }
+
+    // 🔐 2FA: password OK → second step required, no session yet
+    if (user.twoFactor?.enabled) {
+      return res.status(200).json({ success: true, twoFactorRequired: true, challengeToken: createChallenge(user, "admin") });
     }
 
     const token = generateToken(user);
@@ -140,6 +147,11 @@ router.post("/user-login", async (req, res) => {
       });
     }
 
+    // 🔐 2FA: password OK → second step required, no session yet
+    if (user.twoFactor?.enabled) {
+      return res.status(200).json({ success: true, twoFactorRequired: true, challengeToken: createChallenge(user, "user") });
+    }
+
     user.lastLogin = new Date();
     await user.save();
 
@@ -165,6 +177,60 @@ router.post("/user-login", async (req, res) => {
       success: false,
       message: "Server error",
     });
+  }
+});
+
+/* =========================================================
+   2FA LOGIN STEP
+   POST /api/auth/2fa/verify  { challengeToken, code | recoveryCode }
+========================================================= */
+const twoFactorLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many verification attempts. Please try again later." },
+});
+
+router.post("/2fa/verify", twoFactorLimiter, async (req, res) => {
+  try {
+    const { challengeToken, code, recoveryCode } = req.body || {};
+    const challenge = readChallenge(challengeToken);
+    if (!challenge) {
+      return res.status(401).json({ success: false, message: "Verification expired. Please sign in again." });
+    }
+
+    const user = await User.findById(challenge.sub);
+    if (!user || !user.twoFactor?.enabled) {
+      return res.status(401).json({ success: false, message: "Verification expired. Please sign in again." });
+    }
+    if (challenge.panel === "user" && (user.role === "admin" || !user.isActive)) {
+      return res.status(403).json({ success: false, message: "Account cannot sign in here" });
+    }
+
+    const method = await verifySecondFactor(user._id, { code, recoveryCode });
+    if (!method) {
+      return res.status(401).json({ success: false, message: "Invalid or already used authentication code" });
+    }
+
+    if (challenge.panel === "user") {
+      user.lastLogin = new Date();
+      await user.save();
+    }
+
+    const token = generateToken(user);
+
+    recordSecurityAlert({
+      workspaceId: user.workspace || user._id,
+      user: user._id,
+      action: "LOGIN",
+      description: `${user.name} (${user.email}, ${user.role}) signed in with 2FA (${method === "recovery" ? "recovery code" : "authenticator"}) at ${new Date().toISOString()} from ${req.ip || "unknown IP"}`,
+    });
+
+    return res.status(200).json({ success: true, message: "Login successful", token, user });
+  } catch (error) {
+    console.error("2FA VERIFY ERROR:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 });
 

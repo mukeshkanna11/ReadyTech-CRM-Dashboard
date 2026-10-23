@@ -79,7 +79,8 @@ API.interceptors.response.use(
         break;
 
       case 403:
-        toast.error("Access denied.");
+        // AI Settings gates return a specific, user-facing reason
+        toast.error(/^AI_/.test(data?.code || "") ? data.message : "Access denied.");
         break;
 
       case 404:

@@ -22,6 +22,9 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [challenge, setChallenge] = useState(null); // 2FA step
+  const [otp, setOtp] = useState("");
+  const [useRecovery, setUseRecovery] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -60,6 +63,13 @@ export default function Login() {
         password,
       });
 
+      // 🔐 2FA enabled → second step before any session is issued
+      if (data.twoFactorRequired) {
+        setChallenge(data.challengeToken);
+        setOtp("");
+        return;
+      }
+
       if (rememberMe) {
         localStorage.setItem("rememberPassword", password);
       } else {
@@ -74,6 +84,40 @@ export default function Login() {
       setError(
         err?.response?.data?.message || "Login failed"
       );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    if (!otp.trim()) {
+      setError(useRecovery ? "Recovery code is required" : "Authentication code is required");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const { data } = await API.post("/auth/2fa/verify", {
+        challengeToken: challenge,
+        ...(useRecovery ? { recoveryCode: otp.trim() } : { code: otp.trim() }),
+      });
+
+      if (rememberMe) {
+        localStorage.setItem("rememberPassword", password);
+      } else {
+        localStorage.removeItem("rememberPassword");
+      }
+
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+
+      navigate("/dashboard");
+    } catch (err) {
+      if (err?.response?.data?.message?.includes("expired")) setChallenge(null);
+      setError(err?.response?.data?.message || "Verification failed");
     } finally {
       setLoading(false);
     }
@@ -194,6 +238,41 @@ export default function Login() {
                 </div>
               )}
 
+              {challenge ? (
+              <form onSubmit={handleVerify} className="space-y-5">
+                <div>
+                  <label className="block mb-2 text-sm font-medium text-slate-700">
+                    {useRecovery ? "Recovery code" : "Authentication code"}
+                  </label>
+                  <input
+                    autoFocus
+                    inputMode={useRecovery ? "text" : "numeric"}
+                    autoComplete="one-time-code"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    placeholder={useRecovery ? "xxxxx-xxxxx" : "6-digit code from your authenticator app"}
+                    className="w-full px-4 py-3 font-medium border rounded-xl bg-slate-100 text-slate-700"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex items-center justify-center w-full gap-2 py-3 font-semibold text-white transition-all shadow-lg rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:scale-[1.01]"
+                >
+                  {loading ? "Verifying..." : "Verify"}
+                </button>
+
+                <div className="flex justify-between text-sm">
+                  <button type="button" onClick={() => { setUseRecovery(!useRecovery); setOtp(""); setError(""); }} className="text-indigo-600">
+                    {useRecovery ? "Use authenticator code" : "Use a recovery code"}
+                  </button>
+                  <button type="button" onClick={() => { setChallenge(null); setError(""); }} className="text-slate-500">
+                    Back to login
+                  </button>
+                </div>
+              </form>
+              ) : (
               <form
                 onSubmit={handleLogin}
                 className="space-y-5"
@@ -308,6 +387,7 @@ export default function Login() {
                 </button>
 
               </form>
+              )}
 
               <div className="pt-6 mt-8 border-t">
 

@@ -37,6 +37,9 @@ const server = app.listen(PORT, "0.0.0.0", () => {
     await connectDB();
     console.log("✅ MongoDB Connected");
 
+    /* Daily restore points + password reminders (Admin Settings) */
+    (await import("./services/scheduler.js")).startScheduler();
+
     /* ==========================
        Claude API Test
     ========================== */

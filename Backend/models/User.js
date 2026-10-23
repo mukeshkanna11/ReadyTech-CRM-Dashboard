@@ -37,6 +37,47 @@ const userSchema = new mongoose.Schema(
       securityAlerts: { type: Boolean, default: true },
     },
 
+    /* Two-factor authentication (TOTP). Secrets AES-GCM encrypted,
+       recovery codes sha256-hashed; see utils/totp.js */
+    twoFactor: {
+      enabled: { type: Boolean, default: false },
+      secret: { type: String, default: null, select: false },
+      pendingSecret: { type: String, default: null, select: false },
+      recoveryCodes: { type: [String], default: [], select: false },
+      lastUsedStep: { type: Number, default: null, select: false },
+      enabledAt: { type: Date, default: null },
+    },
+
+    /* Password age tracking (Security → Password Change Reminder) */
+    passwordChangedAt: { type: Date, default: null },
+    passwordReminderSentAt: { type: Date, default: null },
+
+    /* Workspace security + backup preferences (stored on the owner) */
+    securitySettings: {
+      passwordReminder: { type: Boolean, default: false },
+    },
+    backupSettings: {
+      autoBackup: { type: Boolean, default: false },
+      restorePoints: { type: Boolean, default: false },
+    },
+
+    /* Workspace AI preferences (Admin Settings → AI Settings).
+       Read from the workspace owner; see utils/aiSettings.js */
+    aiSettings: {
+      claude: { type: Boolean, default: true },
+      suggestions: { type: Boolean, default: true },
+    },
+
+    /* Workspace integrations (Admin Settings → Integrations).
+       apiKeyHash = sha256 of the workspace API key (plain key shown once) */
+    integrationSettings: {
+      apiAccess: { type: Boolean, default: false },
+      thirdPartyApps: { type: Boolean, default: false },
+      apiKeyHash: { type: String, default: null, select: false },
+      apiKeyPrefix: { type: String, default: null },
+      apiKeyCreatedAt: { type: Date, default: null },
+    },
+
     passwordHash: {
       type: String,
       required: [true, "Password is required"],
@@ -285,6 +326,8 @@ const userSchema = new mongoose.Schema(
 userSchema.pre("save", async function () {
   if (!this.isModified("passwordHash")) return;
 
+  this.passwordChangedAt = new Date();
+
   const salt = await bcrypt.genSalt(10);
 
   this.passwordHash = await bcrypt.hash(
@@ -310,6 +353,10 @@ userSchema.methods.toJSON = function () {
   const obj = this.toObject();
 
   delete obj.passwordHash;
+
+  // Never expose 2FA material, even when explicitly selected
+  if (obj.twoFactor) obj.twoFactor = { enabled: !!obj.twoFactor.enabled, enabledAt: obj.twoFactor.enabledAt || null };
+  if (obj.integrationSettings) delete obj.integrationSettings.apiKeyHash;
 
   return obj;
 };
