@@ -118,6 +118,7 @@ const INTEGRATION_LINKS = [
   { to: "/integrations/meta", icon: Plug, label: "Meta Integration" },
   { to: "/integrations/whatsapp", icon: MessageSquare, label: "WhatsApp Inbox" },
   { to: "/integrations/instagram", icon: AtSign, label: "Instagram Inbox" },
+  { to: "/integrations/email", icon: Mail, label: "Email Integration" },
 ];
 
 function Sidebar({ open }) {

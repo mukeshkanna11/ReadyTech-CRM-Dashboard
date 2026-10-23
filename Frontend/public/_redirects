@@ -1,1 +1,6 @@
+# Missing build assets must 404, never fall back to index.html
+# (existing files are served first; this only matches missing ones)
+/assets/*  /404.html  404
+
+# SPA fallback for app routes
 /* /index.html 200

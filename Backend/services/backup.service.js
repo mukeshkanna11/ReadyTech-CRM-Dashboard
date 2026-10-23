@@ -22,7 +22,8 @@ const scopedModels = () => {
   const byCollection = new Map();
   for (const name of mongoose.modelNames()) {
     const M = mongoose.model(name);
-    if (EXCLUDED_MODELS.has(name) || name === "RestorePoint" || !M.schema.path("workspace")) continue;
+    // EmailConnection holds OAuth tokens → never copied into snapshots
+    if (EXCLUDED_MODELS.has(name) || ["RestorePoint", "EmailConnection"].includes(name) || !M.schema.path("workspace")) continue;
     if (!byCollection.has(M.collection.collectionName)) byCollection.set(M.collection.collectionName, M);
   }
   return byCollection;

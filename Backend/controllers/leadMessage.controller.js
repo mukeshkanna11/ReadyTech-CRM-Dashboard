@@ -3,6 +3,7 @@ import Lead from "../models/Lead.js";
 
 import { sendTwilioMessage } from "../services/voip/twilio.service.js";
 import { sendLeadEmail } from "../services/email.service.js";
+import { sendViaConnectedAccount } from "../services/emailOAuth.service.js";
 
 const CHANNELS = {
   email: "Email",
@@ -81,9 +82,16 @@ export const sendLeadMessage = async (req, res) => {
     let result;
 
     if (channel === "email") {
-      const { id } = await sendLeadEmail({ to: lead.email, subject, message });
-      result = { to: lead.email, id, status: "sent" };
-      await logActivity("Sent", `Email to ${lead.email} via Resend${id ? ` | ID: ${id}` : ""}`);
+      // Workspace's connected Gmail / Microsoft 365 mailbox first; Resend otherwise
+      const viaAccount = await sendViaConnectedAccount(req.workspace, { to: lead.email, subject, message });
+      if (viaAccount) {
+        result = { to: lead.email, id: viaAccount.id, from: viaAccount.from, provider: viaAccount.provider, status: "sent" };
+        await logActivity("Sent", `Email to ${lead.email} from ${viaAccount.from} via ${viaAccount.provider === "google" ? "Gmail" : "Microsoft 365"}${viaAccount.id ? ` | ID: ${viaAccount.id}` : ""}`);
+      } else {
+        const { id } = await sendLeadEmail({ to: lead.email, subject, message });
+        result = { to: lead.email, id, provider: "resend", status: "sent" };
+        await logActivity("Sent", `Email to ${lead.email} via Resend${id ? ` | ID: ${id}` : ""}`);
+      }
     } else {
       result = await sendTwilioMessage({ channel, to: lead.phone, body: message });
       await logActivity(
