@@ -1,6 +1,7 @@
 // services/email.service.js
 
 import { Resend } from "resend";
+import { getNotificationSettings } from "../utils/notificationSettings.js";
 
 /* =========================================================
    RESEND CONFIGURATION
@@ -24,6 +25,14 @@ if (!COMPANY_EMAIL) {
 
 const resend = new Resend(RESEND_API_KEY);
 
+/* Admin Settings → Notifications → Email Notifications.
+   Gates the internal notification emails of the current workspace. */
+const emailNotificationsEnabled = async () => {
+  const { email } = await getNotificationSettings();
+  if (!email) console.log("ℹ️ Email notifications disabled for workspace — email skipped");
+  return email;
+};
+
 
 /* =========================================================
    HELPER
@@ -46,6 +55,8 @@ const escapeHtml = (value = "") => {
 
 export const sendChatEnquiry = async (chat) => {
   try {
+    if (!(await emailNotificationsEnabled())) return { skipped: true };
+
     const response = await resend.emails.send({
       from: RESEND_FROM_EMAIL,
 
@@ -368,6 +379,8 @@ export const sendAutoReply = async (chat) => {
 
 export const sendLeadNotification = async (lead) => {
   try {
+    if (!(await emailNotificationsEnabled())) return { skipped: true };
+
     const response = await resend.emails.send({
       from: RESEND_FROM_EMAIL,
 

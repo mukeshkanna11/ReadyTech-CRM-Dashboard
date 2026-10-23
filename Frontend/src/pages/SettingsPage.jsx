@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "react-hot-toast";
 import {
   Sun,
   Moon,
@@ -21,6 +22,9 @@ import {
 } from "lucide-react";
 
 import { applyTheme, getTheme } from "../services/theme";
+import API from "../services/api";
+
+const NOTIF_LABELS = { email: "Email notifications", push: "Push notifications", securityAlerts: "Security alerts" };
 
 export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState(() => getTheme() === "dark");
@@ -28,6 +32,45 @@ export default function SettingsPage() {
     const value = typeof on === "function" ? on(darkMode) : on;
     setDarkMode(applyTheme(value ? "dark" : "light") === "dark");
   };
+
+  /* Notifications — workspace preferences persisted on the backend */
+  const [notif, setNotif] = useState(null);
+  const [notifStatus, setNotifStatus] = useState("loading"); // loading | ready | error | forbidden
+  const [savingKey, setSavingKey] = useState(null);
+
+  const loadNotif = () => {
+    setNotifStatus("loading");
+    API.get("/admin/settings/notifications")
+      .then((res) => {
+        setNotif(res.data?.data);
+        setNotifStatus("ready");
+      })
+      .catch((err) => setNotifStatus(err.response?.status === 403 ? "forbidden" : "error"));
+  };
+
+  useEffect(loadNotif, []);
+
+  const saveNotif = async (key, value) => {
+    if (savingKey) return;
+    const previous = notif;
+    setSavingKey(key);
+    setNotif({ ...notif, [key]: value });
+    try {
+      const res = await API.put("/admin/settings/notifications", { [key]: value });
+      setNotif(res.data?.data);
+      toast.success(`${NOTIF_LABELS[key]} ${value ? "enabled" : "disabled"}`);
+    } catch {
+      setNotif(previous); // interceptor shows the error toast
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const notifToggle = (key) => ({
+    toggleValue: !!notif?.[key],
+    setToggle: (v) => saveNotif(key, v),
+    disabled: notifStatus !== "ready" || !!savingKey,
+  });
 
   return (
     <div className="p-6 mx-auto space-y-8 max-w-7xl">
@@ -106,7 +149,9 @@ export default function SettingsPage() {
     <div className="p-6 bg-white border shadow-sm rounded-3xl border-slate-200">
       <p className="text-sm text-slate-500">Notifications</p>
       <h3 className="mt-2 text-2xl font-bold text-indigo-600">
-        Enabled
+        {notifStatus !== "ready"
+          ? "—"
+          : Object.values(notif || {}).some(Boolean) ? "Enabled" : "Disabled"}
       </h3>
     </div>
 
@@ -131,22 +176,38 @@ export default function SettingsPage() {
   <div className="grid gap-6 lg:grid-cols-2">
 
     <CardSection title="Notifications">
+      {notifStatus === "loading" && (
+        <p className="text-sm text-slate-500">Loading notification settings…</p>
+      )}
+      {notifStatus === "forbidden" && (
+        <p className="text-sm text-amber-600">Only workspace admins can manage notification settings.</p>
+      )}
+      {notifStatus === "error" && (
+        <p className="text-sm text-red-600">
+          Couldn't load notification settings.{" "}
+          <button onClick={loadNotif} className="font-semibold underline">Retry</button>
+        </p>
+      )}
+
       <SettingToggle
         title="Email Notifications"
         desc="Receive updates via email"
         icon={<Mail size={18} />}
+        {...notifToggle("email")}
       />
 
       <SettingToggle
         title="Push Notifications"
         desc="Receive alerts in real-time"
         icon={<Bell size={18} />}
+        {...notifToggle("push")}
       />
 
       <SettingToggle
         title="Security Alerts"
         desc="Notify login and permission changes"
         icon={<ShieldCheck size={18} />}
+        {...notifToggle("securityAlerts")}
       />
     </CardSection>
 
@@ -229,6 +290,7 @@ function SettingToggle({
   iconOn,
   iconOff,
   badge = "Enabled",
+  disabled = false,
 }) {
   const isControlled =
     toggleValue !== undefined && setToggle !== undefined;
@@ -288,7 +350,9 @@ function SettingToggle({
 
       <button
         onClick={handleToggle}
-        className={`relative h-8 w-16 rounded-full transition-all duration-300 ${
+        disabled={disabled}
+        aria-pressed={!!active}
+        className={`relative h-8 w-16 rounded-full transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-60 ${
           active
             ? "bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg shadow-indigo-300/40"
             : "bg-slate-300 dark:bg-slate-700"

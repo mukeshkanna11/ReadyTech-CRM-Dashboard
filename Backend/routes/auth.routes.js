@@ -2,6 +2,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import User from "../models/User.js";
+import { recordSecurityAlert } from "../utils/notificationSettings.js";
 
 const router = express.Router();
 
@@ -64,6 +65,13 @@ router.post("/login", async (req, res) => {
     }
 
     const token = generateToken(user);
+
+    recordSecurityAlert({
+      workspaceId: user.workspace || user._id,
+      user: user._id,
+      action: "LOGIN",
+      description: `${user.name} (${user.email}, ${user.role}) signed in at ${new Date().toISOString()} from ${req.ip || "unknown IP"}`,
+    });
 
     return res.status(200).json({
       success: true,
@@ -136,6 +144,13 @@ router.post("/user-login", async (req, res) => {
     await user.save();
 
     const token = generateToken(user);
+
+    recordSecurityAlert({
+      workspaceId: user.workspace || user._id,
+      user: user._id,
+      action: "LOGIN",
+      description: `${user.name} (${user.email}, ${user.role}) signed in at ${new Date().toISOString()} from ${req.ip || "unknown IP"}`,
+    });
 
     return res.status(200).json({
       success: true,

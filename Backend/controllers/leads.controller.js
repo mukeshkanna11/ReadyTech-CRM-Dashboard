@@ -288,9 +288,9 @@ priority: "Medium",
     ===================================================== */
 
     try {
-      await sendLeadNotification(populatedLead);
+      const notified = await sendLeadNotification(populatedLead);
 
-      console.log(
+      if (!notified?.skipped) console.log(
         `✅ Public lead notification sent: ${lead._id}`
       );
     } catch (emailError) {

@@ -143,7 +143,7 @@ export const executeAction = async ({
         throw new Error("sendNotification requires message");
       }
 
-      // Stored on the execution log → surfaced by GET /api/user/me/notifications
+        // Stored on the execution log → surfaced by GET /api/user/me/notifications
       return {
         success: true,
         message: String(message).slice(0, 500),

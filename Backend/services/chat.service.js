@@ -377,9 +377,9 @@ export const createChat = async (chatData) => {
 
     try {
 
-      await sendLeadNotification(lead);
+      const notified = await sendLeadNotification(lead);
 
-      console.log(
+      if (!notified?.skipped) console.log(
         `✅ Lead notification sent to company email`
       );
 

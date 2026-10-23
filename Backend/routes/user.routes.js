@@ -8,6 +8,8 @@ import Invoice from "../models/Invoice.js";
 import SalesOrder from "../models/SalesOrder.model.js";
 import PurchaseOrder from "../models/PurchaseOrder.model.js";
 import AutomationExecution from "../models/AutomationExecution.js";
+import AuditLog from "../models/AuditLog.js";
+import { getNotificationSettings } from "../utils/notificationSettings.js";
 
 const router = express.Router();
 
@@ -228,7 +230,23 @@ router.get("/me/notifications", async (req, res) => {
     const readAt = me?.notificationsReadAt || null;
     const after = readAt ? { createdAt: { $gt: readAt } } : {};
 
-    const [lists, counts, runs, runCount] = await Promise.all([
+    /* Admin Settings → Notifications: Push off = no alerts delivered */
+    const prefs = await getNotificationSettings(req.workspace);
+    if (!prefs.push) {
+      return res.json({ success: true, data: { items: [], unread: 0, readAt, disabled: true } });
+    }
+
+    /* Security alerts (AuditLog is not scope-plugged → filter by workspace).
+       Admins see the whole workspace; others only alerts about themselves. */
+    const securityMatch = prefs.securityAlerts
+      ? {
+          entity: "Security",
+          "meta.workspace": String(req.workspace),
+          ...(req.user.role === "admin" ? {} : { user: req.user._id }),
+        }
+      : null;
+
+    const [lists, counts, runs, runCount, alerts, alertCount] = await Promise.all([
       Promise.all(SOURCES.map((s) => s.model.find().sort({ createdAt: -1 }).limit(limit).select(s.select).lean())),
       Promise.all(SOURCES.map((s) => s.model.countDocuments(after))),
       AutomationExecution.find(AUTOMATION_MATCH)
@@ -238,6 +256,10 @@ router.get("/me/notifications", async (req, res) => {
         .populate("automation", "name")
         .lean(),
       AutomationExecution.countDocuments({ ...AUTOMATION_MATCH, ...after }),
+      securityMatch
+        ? AuditLog.find(securityMatch).sort({ createdAt: -1 }).limit(limit).select("action description createdAt").lean()
+        : [],
+      securityMatch ? AuditLog.countDocuments({ ...securityMatch, ...after }) : 0,
     ]);
 
     const isRead = (d) => !!readAt && new Date(d) <= new Date(readAt);
@@ -270,13 +292,26 @@ router.get("/me/notifications", async (req, res) => {
       })
     );
 
+    alerts.forEach((a) =>
+      items.push({
+        id: `security:${a._id}`,
+        type: "security",
+        title: "Security alert",
+        name: a.description,
+        meta: a.action === "LOGIN" ? "Login" : "Access change",
+        link: req.user.role === "admin" ? "/auditlogs" : "/notifications",
+        createdAt: a.createdAt,
+        read: isRead(a.createdAt),
+      })
+    );
+
     items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     res.json({
       success: true,
       data: {
         items: items.slice(0, limit),
-        unread: counts.reduce((a, b) => a + b, 0) + runCount,
+        unread: counts.reduce((a, b) => a + b, 0) + runCount + alertCount,
         readAt,
       },
     });

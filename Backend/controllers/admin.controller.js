@@ -7,6 +7,7 @@ import {
   userWorkspaceFilter,
   getDefaultWorkspaceId,
 } from "../utils/workspaceContext.js";
+import { recordSecurityAlert } from "../utils/notificationSettings.js";
 
 /* =========================================================
    DASHBOARD SUMMARY
@@ -433,7 +434,22 @@ export const updateUser = async (req, res) => {
        Using save() ensures schema validation + middleware.
     ===================================================== */
 
+    const accessChanges = [
+      existingUser.isModified("role") && `role changed to "${existingUser.role}"`,
+      existingUser.isModified("isActive") &&
+        `account ${existingUser.isActive ? "activated" : "deactivated"}`,
+    ].filter(Boolean);
+
     await existingUser.save();
+
+    if (accessChanges.length) {
+      recordSecurityAlert({
+        workspaceId: req.workspace,
+        user: existingUser._id,
+        action: "UPDATE",
+        description: `${existingUser.name} (${existingUser.email}): ${accessChanges.join(", ")} by ${req.user?.name || "an admin"}`,
+      });
+    }
 
     /* =====================================================
        RETURN FRESH USER

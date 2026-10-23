@@ -29,6 +29,14 @@ const userSchema = new mongoose.Schema(
     /* Notifications newer than this are unread */
     notificationsReadAt: { type: Date, default: null },
 
+    /* Workspace notification preferences (Admin Settings → Notifications).
+       Read from the workspace owner; see utils/notificationSettings.js */
+    notificationSettings: {
+      email: { type: Boolean, default: true },
+      push: { type: Boolean, default: true },
+      securityAlerts: { type: Boolean, default: true },
+    },
+
     passwordHash: {
       type: String,
       required: [true, "Password is required"],
