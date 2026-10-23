@@ -8,11 +8,16 @@ process.env.GOOGLE_CLIENT_ID = "gid";
 process.env.GOOGLE_CLIENT_SECRET = "gsecret";
 process.env.GOOGLE_OAUTH_REDIRECT_URI = "http://api/email/oauth/google/callback";
 delete process.env.MICROSOFT_CLIENT_ID;
+process.env.RESEND_API_KEY ||= "re_test";
+process.env.RESEND_FROM_EMAIL ||= "ReadyTech <noreply@test.dev>";
+process.env.COMPANY_EMAIL ||= "support@test.dev";
 
 const svc = await import("../services/emailOAuth.service.js");
 const { default: EmailConnection } = await import("../models/EmailConnection.js");
 const { default: User } = await import("../models/User.js");
 const { default: router } = await import("../routes/email.routes.js");
+const { default: Client } = await import("../models/Client.js");
+const CUST_A = "64b0000000000000000000d4";
 
 const WS_A = "64b0000000000000000000a1";
 const WS_B = "64b0000000000000000000b2";
@@ -206,4 +211,32 @@ test("detectProvider maps consumer domains and rejects junk", async () => {
   assert.equal(await svc.detectProvider("a@Outlook.com"), "microsoft");
   assert.equal(await svc.detectProvider("a@hotmail.com"), "microsoft");
   assert.equal(await svc.detectProvider("not-an-email"), null);
+});
+
+test("ERP customer email: connected mailbox for own workspace; other workspace's customer not found", async () => {
+  await connectA();
+  Client.findOne = (f) => q(String(f._id) === CUST_A && String(f.workspace) === WS_A ? { companyName: "Acme", email: "buyer@acme.com" } : null);
+  mockFetch({ "gmail/v1/users/me/messages/send": () => json(200, { id: "m9" }) });
+  const ok = res();
+  await handler("post", "/customers/:id")({ params: { id: CUST_A }, body: { subject: "Quote", message: "Hi" }, workspace: WS_A }, ok);
+  assert.equal(ok.body.success, true);
+  assert.equal(ok.body.data.from, "Owner@A.com");
+  assert.equal(ok.body.data.provider, "google");
+
+  const other = res();
+  await handler("post", "/customers/:id")({ params: { id: CUST_A }, body: { subject: "s", message: "m" }, workspace: WS_B }, other);
+  assert.equal(other.body.success, false);
+  assert.match(other.body.message, /not found/);
+});
+
+test("ERP customer email: send failure is never reported as success and hides raw errors", async () => {
+  await connectA();
+  Client.findOne = () => q({ companyName: "Acme", email: "buyer@acme.com" });
+  const err = console.error; console.error = () => {};
+  mockFetch({ "messages/send": () => json(500, { error: { message: "backend secret-detail" } }) });
+  const r = res();
+  await handler("post", "/customers/:id")({ params: { id: CUST_A }, body: { subject: "s", message: "m" }, workspace: WS_A }, r);
+  console.error = err;
+  assert.equal(r.body.success, false);
+  assert.doesNotMatch(r.body.message, /secret-detail/);
 });

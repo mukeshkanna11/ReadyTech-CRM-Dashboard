@@ -19,7 +19,7 @@ export const PROVIDERS = {
     extraAuthParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
     revokeUrl: "https://myaccount.google.com/permissions",
     limitations:
-      "Sends CRM emails from your Gmail address (no inbox access). Gmail daily sending limits apply (~500/day personal, ~2,000/day Workspace).",
+      "Sends emails from your Gmail address (no inbox access). Gmail daily sending limits apply (~500/day personal, ~2,000/day Workspace).",
     setup:
       "Google Cloud Console → APIs & Services: enable the Gmail API, configure the OAuth consent screen (scope gmail.send), create an OAuth client (Web application) and add GOOGLE_OAUTH_REDIRECT_URI as an Authorized redirect URI.",
   },
@@ -32,7 +32,7 @@ export const PROVIDERS = {
     extraAuthParams: { prompt: "select_account" },
     revokeUrl: "https://myapps.microsoft.com",
     limitations:
-      "Sends CRM emails from your Outlook / Microsoft 365 address (no inbox access). Some organisations require IT admin approval the first time.",
+      "Sends emails from your Outlook / Microsoft 365 address (no inbox access). Some organisations require IT admin approval the first time.",
     setup:
       "Azure Portal → App registrations: register a Web app, add MICROSOFT_OAUTH_REDIRECT_URI as a redirect URI, add delegated Microsoft Graph permissions Mail.Send, User.Read, offline_access, and create a client secret. Optional MICROSOFT_TENANT_ID (default: common).",
   },

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import API from "../services/api";
+import EmailCustomerButton from "../components/EmailCustomerButton";
 import toast from "react-hot-toast";
 import {
   Search,
@@ -1631,6 +1632,10 @@ icon={Mail}
 label="Email"
 value={activeClient.email}
 />
+
+<div className="flex items-center sm:col-span-2">
+<EmailCustomerButton customer={activeClient} />
+</div>
 
 
 <Detail

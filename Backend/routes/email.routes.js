@@ -2,7 +2,10 @@
 import express from "express";
 import auth from "../middlewares/auth.js";
 import role from "../middlewares/role.js";
+import mongoose from "mongoose";
 import User from "../models/User.js";
+import Client from "../models/Client.js";
+import { sendLeadEmail } from "../services/email.service.js";
 import {
   PROVIDERS, missingConfig, buildAuthUrl, verifyState, completeConnection,
   verifyConnection, disconnect, sendViaConnectedAccount, detectProvider,
@@ -117,6 +120,30 @@ router.post("/test", auth, role("admin"), async (req, res) => {
   } catch (error) {
     console.error("Email test send error:", error.message);
     res.status(error.status ? 409 : 500).json({ success: false, message: error.status ? error.message : "We couldn't send the test email. Please try again." });
+  }
+});
+
+/* Email an ERP customer (Client) of this workspace: connected mailbox
+   first, default ReadyTech sender (Resend) otherwise — same as Leads → Email */
+router.post("/customers/:id", auth, async (req, res) => {
+  const subject = String(req.body?.subject || "").trim();
+  const message = String(req.body?.message || "").trim();
+  if (!subject || !message) return res.status(422).json({ success: false, message: "Subject and message are required" });
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(422).json({ success: false, message: "Customer not found" });
+
+  try {
+    const customer = await Client.findOne({ _id: req.params.id, workspace: req.workspace }).select("companyName contactPerson email").lean();
+    if (!customer) return res.status(422).json({ success: false, message: "Customer not found" });
+    if (!customer.email) return res.status(422).json({ success: false, message: "This customer has no email address" });
+
+    const viaAccount = await sendViaConnectedAccount(req.workspace, { to: customer.email, subject, message });
+    const data = viaAccount
+      ? { to: customer.email, id: viaAccount.id, from: viaAccount.from, provider: viaAccount.provider }
+      : { to: customer.email, ...(await sendLeadEmail({ to: customer.email, subject, message })), provider: "resend" };
+    res.json({ success: true, message: `Email sent to ${customer.contactPerson || customer.companyName || customer.email}`, data });
+  } catch (error) {
+    console.error("Customer email error:", error.message);
+    res.status(409).json({ success: false, message: error.status ? error.message : "The email couldn't be sent. Please try again or contact support." });
   }
 });
 

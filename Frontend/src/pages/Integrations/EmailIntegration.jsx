@@ -79,7 +79,7 @@ export default function EmailIntegration() {
     const connected = searchParams.get("connected");
     if (!connected) return;
     if (connected === "1") {
-      const text = `${searchParams.get("email") || "Your email account"} is connected. CRM emails will now be sent from it.`;
+      const text = `${searchParams.get("email") || "Your email account"} is connected. Emails to your leads and customers will now be sent from it.`;
       toast.success("Email account connected");
       setBanner({ type: "success", text });
     } else {
@@ -91,10 +91,12 @@ export default function EmailIntegration() {
   const run = async (key, fn) => {
     if (busy) return;
     setBusy(key);
+    setBanner(null);
     try {
       await fn();
-    } catch {
-      /* interceptor shows the error toast */
+    } catch (err) {
+      // Keep the reason on screen (the toast disappears)
+      setBanner({ type: "error", text: err.response?.data?.message || "Something went wrong. Please try again." });
     } finally {
       setBusy(null);
     }
@@ -111,7 +113,6 @@ export default function EmailIntegration() {
     e.preventDefault();
     const value = email.trim();
     if (!EMAIL_RE.test(value)) return setBanner({ type: "error", text: "Please enter a valid email address." });
-    setBanner(null);
     run("detect", async () => {
       const res = await API.get("/email/detect", { params: { email: value } });
       const { provider, available } = res.data?.data || {};
@@ -121,11 +122,11 @@ export default function EmailIntegration() {
   };
 
   const disconnect = () => {
-    if (!window.confirm(`Disconnect ${conn.email}? CRM emails will be sent from the default ReadyTech sender instead.`)) return;
+    if (!window.confirm(`Disconnect ${conn.email}? Emails will be sent from the default ReadyTech sender instead.`)) return;
     run("disconnect", async () => {
       await API.post("/email/disconnect");
       toast.success("Email account disconnected");
-      setBanner(null);
+      setBanner({ type: "success", text: "Email account disconnected. Emails now use the default ReadyTech sender." });
       load();
     });
   };
@@ -133,7 +134,9 @@ export default function EmailIntegration() {
   const test = () =>
     run("test", async () => {
       const res = await API.post("/email/test");
-      toast.success(res.data?.message || "Test email sent");
+      const text = res.data?.message || "Test email sent";
+      toast.success("Test email sent");
+      setBanner({ type: "success", text: `${text}. Check that inbox to confirm it arrived.` });
       load();
     });
 
@@ -152,7 +155,7 @@ export default function EmailIntegration() {
           <div className="flex-1">
             <h1 className="text-xl font-bold text-slate-900">Email Integration</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Connect your workspace's Gmail or Outlook mailbox so emails to leads are sent from your own address.
+              Connect your workspace's Gmail or Outlook mailbox so emails to CRM leads and ERP customers are sent from your own address.
             </p>
             <p className="flex items-center gap-1.5 mt-2 text-xs text-slate-500">
               <ShieldCheck size={14} className="text-emerald-600" />
@@ -190,7 +193,7 @@ export default function EmailIntegration() {
         <form onSubmit={continueWithEmail} className="p-6 space-y-3 bg-white border shadow-sm rounded-2xl border-slate-200">
           <div>
             <h2 className="font-semibold text-slate-900">Connect your mailbox</h2>
-            <p className="text-sm text-slate-500">Enter the email address you want CRM emails sent from.</p>
+            <p className="text-sm text-slate-500">Enter the email address you want lead and customer emails sent from.</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <input
@@ -342,7 +345,7 @@ export default function EmailIntegration() {
 
       {state === "ready" && !conn && (
         <p className="text-sm text-slate-500">
-          Until a mailbox is connected, CRM emails are sent from the default ReadyTech sender.
+          Until a mailbox is connected, emails to leads and customers are sent from the default ReadyTech sender.
         </p>
       )}
     </div>
