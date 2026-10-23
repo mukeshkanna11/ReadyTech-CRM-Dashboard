@@ -5,7 +5,7 @@ import role from "../middlewares/role.js";
 import User from "../models/User.js";
 import {
   PROVIDERS, missingConfig, buildAuthUrl, verifyState, completeConnection,
-  verifyConnection, disconnect, sendViaConnectedAccount,
+  verifyConnection, disconnect, sendViaConnectedAccount, detectProvider,
 } from "../services/emailOAuth.service.js";
 
 const router = express.Router();
@@ -43,6 +43,14 @@ router.get("/status", auth, async (req, res) => {
   }
 });
 
+/* Which provider hosts this address (so the UI can go straight to its sign-in) */
+router.get("/detect", auth, role("admin"), async (req, res) => {
+  const provider = await detectProvider(req.query.email);
+  res.json({ success: true, data: { provider, available: provider ? missingConfig(provider).length === 0 : null } });
+});
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /* Start OAuth — admin only; state binds user + workspace */
 router.get("/oauth/:provider/url", auth, role("admin"), (req, res) => {
   const { provider } = req.params;
@@ -50,10 +58,13 @@ router.get("/oauth/:provider/url", auth, role("admin"), (req, res) => {
 
   const missing = missingConfig(provider);
   if (missing.length) {
-    console.warn(`Email OAuth (${provider}) not configured — missing ${missing.join(", ")}`);
+    console.warn(`Email OAuth (${provider}) not configured — ReadyTech admin: set ${missing.join(", ")}. ${PROVIDERS[provider].setup}`);
     return res.status(400).json({ success: false, code: "EMAIL_PROVIDER_NOT_CONFIGURED", message: NOT_AVAILABLE(PROVIDERS[provider].name) });
   }
-  res.json({ success: true, data: { url: buildAuthUrl({ provider, userId: req.user._id, workspaceId: req.workspace }) } });
+  res.json({ success: true, data: { url: buildAuthUrl({
+    provider, userId: req.user._id, workspaceId: req.workspace,
+    loginHint: EMAIL_RE.test(String(req.query.email || "")) ? String(req.query.email).trim() : undefined,
+  }) } });
 });
 
 /* OAuth callback — public (called by the provider), protected by signed state */
@@ -85,7 +96,7 @@ router.get("/oauth/:provider/callback", async (req, res) => {
 router.post("/disconnect", auth, role("admin"), async (req, res) => {
   try {
     const removed = await disconnect(req.workspace);
-    if (!removed) return res.status(404).json({ success: false, message: "No email account is connected" });
+    if (!removed) return res.status(409).json({ success: false, message: "No email account is connected" });
     res.json({ success: true, message: "Email account disconnected", data: { revokeUrl: PROVIDERS[removed.provider]?.revokeUrl } });
   } catch (error) {
     console.error("Email disconnect error:", error.message);
@@ -101,11 +112,11 @@ router.post("/test", auth, role("admin"), async (req, res) => {
       subject: "ReadyTech CRM — email integration test",
       message: "This test email was sent through your connected email account from ReadyTech CRM.",
     });
-    if (!sent) return res.status(404).json({ success: false, message: "No email account is connected" });
+    if (!sent) return res.status(409).json({ success: false, message: "No email account is connected" });
     res.json({ success: true, message: `Test email sent from ${sent.from} to ${req.user.email}` });
   } catch (error) {
     console.error("Email test send error:", error.message);
-    res.status(error.status && error.status !== 401 ? error.status : 502).json({ success: false, message: error.message });
+    res.status(error.status ? 409 : 500).json({ success: false, message: error.status ? error.message : "We couldn't send the test email. Please try again." });
   }
 });
 

@@ -2,6 +2,7 @@
 // OAuth (authorization code flow), token refresh and sending.
 // Uses fetch only (no SDKs). Tokens never leave this module unencrypted.
 import crypto from "node:crypto";
+import dns from "node:dns/promises";
 import jwt from "jsonwebtoken";
 import EmailConnection from "../models/EmailConnection.js";
 
@@ -18,7 +19,7 @@ export const PROVIDERS = {
     extraAuthParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
     revokeUrl: "https://myaccount.google.com/permissions",
     limitations:
-      "Sends only (gmail.send scope) — no inbox sync. Gmail daily sending limits apply (~500/day personal, ~2,000/day Workspace). Apps in Google 'Testing' mode expire refresh tokens after 7 days.",
+      "Sends CRM emails from your Gmail address (no inbox access). Gmail daily sending limits apply (~500/day personal, ~2,000/day Workspace).",
     setup:
       "Google Cloud Console → APIs & Services: enable the Gmail API, configure the OAuth consent screen (scope gmail.send), create an OAuth client (Web application) and add GOOGLE_OAUTH_REDIRECT_URI as an Authorized redirect URI.",
   },
@@ -31,7 +32,7 @@ export const PROVIDERS = {
     extraAuthParams: { prompt: "select_account" },
     revokeUrl: "https://myapps.microsoft.com",
     limitations:
-      "Sends only (Mail.Send) — no inbox sync. Exchange Online limits apply (~10,000 recipients/day). Some organisations require admin consent for Mail.Send. Disconnecting removes tokens here; revoke app access in your Microsoft account to fully withdraw consent.",
+      "Sends CRM emails from your Outlook / Microsoft 365 address (no inbox access). Some organisations require IT admin approval the first time.",
     setup:
       "Azure Portal → App registrations: register a Web app, add MICROSOFT_OAUTH_REDIRECT_URI as a redirect URI, add delegated Microsoft Graph permissions Mail.Send, User.Read, offline_access, and create a client secret. Optional MICROSOFT_TENANT_ID (default: common).",
   },
@@ -66,7 +67,7 @@ const decrypt = (blob) => {
 /* ---------------- OAuth state (CSRF + workspace binding) ---------------- */
 const STATE_PURPOSE = "email-oauth";
 
-export const buildAuthUrl = ({ provider, userId, workspaceId }) => {
+export const buildAuthUrl = ({ provider, userId, workspaceId, loginHint }) => {
   const p = PROVIDERS[provider];
   const state = jwt.sign(
     { purpose: STATE_PURPOSE, provider, uid: String(userId), ws: String(workspaceId), nonce: crypto.randomBytes(12).toString("hex") },
@@ -81,6 +82,7 @@ export const buildAuthUrl = ({ provider, userId, workspaceId }) => {
     scope: p.scope,
     state,
     ...p.extraAuthParams,
+    ...(loginHint && { login_hint: loginHint }),
   }).forEach(([k, v]) => url.searchParams.set(k, v));
   return url.toString();
 };
@@ -168,8 +170,11 @@ export const getAccessToken = async (workspaceId) => {
     await conn.save();
     return { conn, token: t.access_token };
   } catch (err) {
+    console.error(`Email OAuth (${conn.provider}) refresh failed:`, err.message);
     conn.status = "error";
-    conn.lastError = err.invalidGrant ? "Access was revoked or expired — reconnect the account" : err.message;
+    conn.lastError = err.invalidGrant
+      ? "Access was revoked or expired — please reconnect the account"
+      : "We couldn't refresh access to this mailbox — please reconnect the account";
     await conn.save();
     err.message = `Email account ${conn.email}: ${conn.lastError}`;
     err.status = 409;
@@ -254,7 +259,12 @@ export const sendViaConnectedAccount = async (workspaceId, { to, subject, messag
 
   if (!res.ok) {
     const err = await providerError(res, `${PROVIDERS[conn.provider].name} send`);
-    if (res.status === 401 || res.status === 403) {
+    console.error(`Email send via ${conn.provider} failed:`, err.message);
+    const authFailed = res.status === 401 || res.status === 403;
+    err.message = authFailed
+      ? `${conn.email} no longer allows sending from ReadyTech CRM — please reconnect the account`
+      : `${conn.email} couldn't send this email right now — please try again shortly`;
+    if (authFailed) {
       await EmailConnection.updateOne({ _id: conn._id, workspace: workspaceId }, { $set: { status: "error", lastError: err.message } });
     }
     err.status = 502;
@@ -264,4 +274,28 @@ export const sendViaConnectedAccount = async (workspaceId, { to, subject, messag
   const body = res.status === 202 ? {} : await res.json().catch(() => ({}));
   await EmailConnection.updateOne({ _id: conn._id, workspace: workspaceId }, { $set: { lastUsedAt: new Date() } });
   return { id: body.id || null, from: conn.email, provider: conn.provider };
+};
+
+/* ---------------- Provider detection (email → google | microsoft | null) ---------------- */
+const GOOGLE_DOMAINS = new Set(["gmail.com", "googlemail.com"]);
+const MS_DOMAINS = new Set(["outlook.com", "hotmail.com", "live.com", "msn.com", "outlook.in", "hotmail.co.uk", "live.in"]);
+
+export const detectProvider = async (email) => {
+  const domain = String(email || "").trim().toLowerCase().split("@")[1];
+  if (!domain || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return null;
+  if (GOOGLE_DOMAINS.has(domain)) return "google";
+  if (MS_DOMAINS.has(domain)) return "microsoft";
+  // Custom domains: look at who hosts the mailbox (best effort, 3s cap)
+  try {
+    const mx = await Promise.race([
+      dns.resolveMx(domain),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 3000)),
+    ]);
+    const hosts = mx.map((m) => m.exchange.toLowerCase()).join(" ");
+    if (/google\.com|googlemail\.com/.test(hosts)) return "google";
+    if (/outlook\.com|office365|microsoft/.test(hosts)) return "microsoft";
+  } catch {
+    /* unknown — user picks */
+  }
+  return null;
 };

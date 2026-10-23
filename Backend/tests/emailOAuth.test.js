@@ -143,3 +143,67 @@ test("connect URL for an unconfigured provider returns a friendly message", asyn
   assert.equal(r.statusCode, 400);
   assert.doesNotMatch(r.body.message, /MICROSOFT_|CLIENT_ID/);
 });
+
+const withMicrosoft = async (fn) => {
+  Object.assign(process.env, { MICROSOFT_CLIENT_ID: "mid", MICROSOFT_CLIENT_SECRET: "msecret", MICROSOFT_OAUTH_REDIRECT_URI: "http://api/email/oauth/microsoft/callback" });
+  try { await fn(); } finally { ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "MICROSOFT_OAUTH_REDIRECT_URI"].forEach((k) => delete process.env[k]); }
+};
+
+test("Microsoft: callback, rotated refresh token and Graph send for workspace B only", () =>
+  withMicrosoft(async () => {
+    User.findById = () => q({ _id: ADMIN_A, role: "admin", workspace: WS_B });
+    mockFetch({
+      "login.microsoftonline.com/common/oauth2/v2.0/token": () => json(200, { access_token: "MAT", refresh_token: "MRT", expires_in: 3600 }),
+      "graph.microsoft.com/v1.0/me?": () => json(200, { mail: "sales@b.com" }),
+    });
+    const url = new URL(svc.buildAuthUrl({ provider: "microsoft", userId: ADMIN_A, workspaceId: WS_B, loginHint: "sales@b.com" }));
+    assert.equal(url.searchParams.get("login_hint"), "sales@b.com");
+    const r = res();
+    await handler("get", "/oauth/:provider/callback")({ params: { provider: "microsoft" }, query: { code: "c", state: url.searchParams.get("state") } }, r);
+    assert.match(r.redirectUrl, /connected=1/);
+    assert.equal(store.has(WS_A), false);
+
+    store.get(WS_B).expiresAt = new Date(0);
+    mockFetch({
+      "oauth2/v2.0/token": (o) => (assert.match(String(o.body), /refresh_token=MRT/), json(200, { access_token: "MAT2", refresh_token: "MRT2", expires_in: 3600 })),
+      "me/sendMail": () => ({ ok: true, status: 202, json: async () => ({}) }),
+    });
+    const sent = await svc.sendViaConnectedAccount(WS_B, { to: "lead@x.com", subject: "Hi", message: "Body" });
+    assert.deepEqual(sent, { id: null, from: "sales@b.com", provider: "microsoft" });
+    assert.equal(calls.at(-1).opts.headers.authorization, "Bearer MAT2");
+    assert.equal(await svc.sendViaConnectedAccount(WS_A, { to: "x@y.z", subject: "s", message: "m" }), null);
+  }));
+
+test("Microsoft unavailable: friendly message, setup steps only in server log", async () => {
+  const warn = console.warn; let logged = "";
+  console.warn = (m) => (logged += m);
+  const r = res();
+  handler("get", "/oauth/:provider/url")({ params: { provider: "microsoft" }, query: {}, user: { _id: ADMIN_A }, workspace: WS_A }, r);
+  console.warn = warn;
+  assert.match(r.body.message, /isn't available yet/);
+  assert.match(logged, /MICROSOFT_CLIENT_ID.*Azure Portal/);
+});
+
+test("send/refresh failures never expose raw provider errors", async () => {
+  await connectA();
+  const err = console.error; console.error = () => {};
+  mockFetch({ "messages/send": () => json(403, { error: { message: "Request had insufficient authentication scopes. secret-detail" } }) });
+  const r = res();
+  await handler("post", "/test")({ workspace: WS_A, user: { email: "a@a.com" } }, r);
+  assert.equal(r.statusCode, 409);
+  assert.doesNotMatch(r.body.message, /secret-detail|scopes/);
+  assert.match(r.body.message, /reconnect/);
+  assert.doesNotMatch(store.get(WS_A).lastError, /secret-detail/);
+
+  store.get(WS_A).expiresAt = new Date(0);
+  mockFetch({ "oauth2.googleapis.com/token": () => json(500, { error_description: "internal secret-detail" }) });
+  await assert.rejects(svc.getAccessToken(WS_A), (e) => !/secret-detail/.test(e.message));
+  console.error = err;
+});
+
+test("detectProvider maps consumer domains and rejects junk", async () => {
+  assert.equal(await svc.detectProvider("a@gmail.com"), "google");
+  assert.equal(await svc.detectProvider("a@Outlook.com"), "microsoft");
+  assert.equal(await svc.detectProvider("a@hotmail.com"), "microsoft");
+  assert.equal(await svc.detectProvider("not-an-email"), null);
+});
