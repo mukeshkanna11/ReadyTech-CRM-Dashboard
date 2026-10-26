@@ -1,5 +1,5 @@
 // routes/publicSite.routes.js — public, login-free homepage and privacy
-// policy served as static HTML on the API domain (crmreadytechsolutions.in),
+// policy and terms served as static HTML on the API domain (crmreadytechsolutions.in),
 // which is the domain of the Google OAuth redirect URI. Required for Google
 // OAuth branding verification. Non-HTML requests to "/" keep the JSON
 // status response (monitors / API clients are unaffected).
@@ -11,7 +11,7 @@ const COMPANY = "Ready Tech Solutions";
 const PRODUCT = "ReadyTech CRM + ERP";
 const OWNER = "SIVASHANKAR";
 const SUPPORT_EMAIL = "quries.readytechsolutions@gmail.com";
-const LAST_UPDATED = "23 October 2026";
+const LAST_UPDATED = "26 October 2026";
 const appUrl = () => (process.env.CLIENT_URL || "https://readytech-crm-site.netlify.app").replace(/\/+$/, "");
 
 const page = (title, description, body) => `<!doctype html>
@@ -39,12 +39,12 @@ const page = (title, description, body) => `<!doctype html>
 <body>
 <header><div class="wrap bar">
   <a class="brand" href="/">${PRODUCT}</a>
-  <nav><a href="/">Home</a><a href="/privacy-policy">Privacy Policy</a><a href="${appUrl()}/login">Sign in</a></nav>
+  <nav><a href="/">Home</a><a href="/privacy-policy">Privacy Policy</a><a href="/terms">Terms</a><a href="${appUrl()}/login">Sign in</a></nav>
 </div></header>
 ${body}
 <footer><div class="wrap foot">
   <div>&copy; ${new Date().getFullYear()} ${COMPANY}. All rights reserved.</div>
-  <div><a href="/privacy-policy">Privacy Policy</a><a href="${appUrl()}/terms">Terms of Service</a><a href="${appUrl()}/data-deletion">Data Deletion</a><a href="mailto:${SUPPORT_EMAIL}">Contact</a></div>
+  <div><a href="/privacy-policy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="${appUrl()}/data-deletion">Data Deletion</a><a href="mailto:${SUPPORT_EMAIL}">Contact</a></div>
 </div></footer>
 </body>
 </html>`;
@@ -160,10 +160,72 @@ const privacyPolicy = () => page(
 </main></div>`
 );
 
+const terms = () => page(
+  `Terms of Service — ${PRODUCT}`,
+  `The terms that govern your use of ${PRODUCT}, provided by ${COMPANY}.`,
+  `<div class="wrap"><main class="doc">
+<h1>Terms of Service</h1>
+<p class="muted">Last updated: ${LAST_UPDATED}</p>
+
+<h2>1. Agreement</h2>
+<p>These Terms of Service ("Terms") form a binding agreement between ${COMPANY}, operated by ${OWNER} ("we", "us"), and the organisation or individual accessing ${PRODUCT} (the "Service") at crmreadytechsolutions.in or the ReadyTech web application ("you"). By creating an account or using the Service you accept these Terms. If you do not agree, do not use the Service.</p>
+
+<h2>2. The Service</h2>
+<p>The Service is a cloud-based business management platform providing CRM, lead management, inventory and warehouse management, purchase and sales orders, invoicing, HR and payroll, automation, reporting and optional third-party integrations. Features may be added, modified or discontinued as the product evolves.</p>
+
+<h2>3. Accounts and eligibility</h2>
+<ul>
+  <li>You must be at least 18 years old and able to enter into a binding contract.</li>
+  <li>You are responsible for the accuracy of registration information and for keeping credentials confidential.</li>
+  <li>You are responsible for all activity carried out under your account and by users you invite.</li>
+  <li>You must notify us promptly of any suspected unauthorised access.</li>
+</ul>
+
+<h2>4. Acceptable use</h2>
+<p>You agree not to:</p>
+<ul>
+  <li>Use the Service for any unlawful, fraudulent, deceptive or infringing purpose.</li>
+  <li>Send unsolicited bulk messages or communications that violate applicable anti-spam or messaging-platform rules, including through a connected Gmail account.</li>
+  <li>Upload malware, attempt to gain unauthorised access, or disrupt or overload the Service or its infrastructure.</li>
+  <li>Reverse engineer, copy, resell or sublicense the Service except as permitted by law.</li>
+  <li>Store personal data of third parties without a lawful basis, notice or consent as required by law.</li>
+</ul>
+
+<h2>5. Your data and ownership</h2>
+<p>You retain all rights to the business data you submit to the Service. You grant us a limited licence to host, process, transmit and display that data solely to provide and support the Service. You are the controller of personal data you upload and are responsible for having a lawful basis to process it. Our handling of data is described in our <a href="/privacy-policy">Privacy Policy</a>.</p>
+
+<h2>6. Third-party integrations</h2>
+<p>Integrations such as Google (Gmail), Microsoft 365, Meta/Facebook, Instagram and WhatsApp Business are optional and operate under the terms and policies of those providers. When you connect Google, the Service only sends email on your behalf using the Gmail send permission, as described in our <a href="/privacy-policy">Privacy Policy</a>. You are responsible for holding the required accounts, permissions and consents, and you can disconnect an integration at any time. We are not liable for the availability, changes or acts of third-party platforms, and a provider's change may affect or interrupt an integration.</p>
+
+<h2>7. Fees and subscriptions</h2>
+<p>Paid plans are billed in advance on the cycle stated at purchase. Fees are exclusive of applicable taxes unless stated otherwise. Unless required by law, fees are non-refundable for periods already served. We may revise pricing with prior notice, effective from your next billing cycle.</p>
+
+<h2>8. Availability and support</h2>
+<p>We aim to keep the Service available at all times but do not warrant uninterrupted or error-free operation. Scheduled maintenance, upgrades or factors outside our control may cause downtime. Support is provided by email during normal business hours.</p>
+
+<h2>9. Suspension and termination</h2>
+<p>You may stop using the Service and request account closure at any time. We may suspend or terminate access if you breach these Terms, fail to pay fees, or if required for security or legal reasons. Following termination, data is handled as set out in our <a href="${appUrl()}/data-deletion">Data Deletion</a> policy.</p>
+
+<h2>10. Disclaimers and limitation of liability</h2>
+<p>The Service is provided "as is" and "as available" without warranties of any kind, whether express or implied, to the maximum extent permitted by law. We are not liable for indirect, incidental, special or consequential damages, or for loss of profits, revenue, goodwill or data. Our total aggregate liability arising out of or relating to the Service will not exceed the amount you paid to us in the twelve months preceding the claim.</p>
+
+<h2>11. Indemnity</h2>
+<p>You agree to indemnify and hold harmless ${COMPANY} and ${OWNER} against claims, damages and reasonable costs arising from your data, your use of the Service, or your breach of these Terms or applicable law.</p>
+
+<h2>12. Governing law</h2>
+<p>These Terms are governed by the laws of India, and the courts of Tamil Nadu, India shall have exclusive jurisdiction over any dispute, without prejudice to mandatory consumer protections in your jurisdiction.</p>
+
+<h2>13. Changes and contact</h2>
+<p>We may update these Terms; the updated version will be posted on this page with a revised date, and continued use constitutes acceptance. For questions, contact <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>.</p>
+</main></div>`
+);
+
 const sendHtml = (render) => (req, res) => res.type("html").set("Cache-Control", "public, max-age=300").send(render());
 
-/* "/" — HTML for browsers; JSON status for API clients / monitors */
-router.get("/", (req, res, next) => (req.accepts(["json", "html"]) === "html" ? sendHtml(homepage)(req, res) : next()));
+// "/" — HTML for browsers and crawlers (including "Accept: */*"); JSON status
+// only for clients that explicitly prefer application/json
+router.get("/", (req, res, next) => (req.accepts(["html", "json"]) === "html" ? sendHtml(homepage)(req, res) : next()));
 router.get(["/privacy-policy", "/privacy"], sendHtml(privacyPolicy));
+router.get(["/terms", "/terms-of-service"], sendHtml(terms));
 
 export default router;
