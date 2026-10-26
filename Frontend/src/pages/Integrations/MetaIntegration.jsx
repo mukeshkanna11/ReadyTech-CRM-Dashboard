@@ -170,6 +170,16 @@ const config = status?.config || { configured: true, missingEnv: [] };
                 Refresh
               </button>
 
+              {/* Re-runs the official Facebook Login for this workspace (new Page / permissions) */}
+              <button
+                onClick={handleConnect}
+                disabled={!!busy || !config?.configured}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium transition border rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                <Link2 size={16} />
+                {busy === "connect" ? "Redirecting..." : "Reconnect"}
+              </button>
+
               <button
                 onClick={handleDisconnect}
                 disabled={!!busy}
@@ -186,7 +196,7 @@ const config = status?.config || { configured: true, missingEnv: [] };
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white transition bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50"
             >
               <Link2 size={16} />
-              {busy === "connect" ? "Redirecting..." : "Connect Meta"}
+              {busy === "connect" ? "Redirecting..." : status?.token?.present ? "Reconnect Meta" : "Connect Meta"}
             </button>
           )}
         </div>
@@ -489,7 +499,13 @@ function WhatsAppCard({ wa, busy, onSync, platform, onConnect, onDisconnect }) {
             Use this workspace&apos;s own WhatsApp Cloud API number: Phone Number ID and WABA ID from
             Meta Business Manager → WhatsApp Manager, and a permanent System User token with{" "}
             <code>whatsapp_business_messaging</code> + <code>whatsapp_business_management</code>.
-            The token is verified with Meta and stored encrypted for this workspace only.
+            The token is verified with Meta and stored encrypted for this workspace only.{" "}
+            <a href="https://business.facebook.com/wa/manage/home/" target="_blank" rel="noopener noreferrer" className="font-medium text-emerald-700 underline">
+              Open WhatsApp Manager
+            </a>{" · "}
+            <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank" rel="noopener noreferrer" className="font-medium text-emerald-700 underline">
+              Cloud API setup guide
+            </a>
           </p>
           {[
             ["phoneNumberId", "Phone Number ID", "text"],

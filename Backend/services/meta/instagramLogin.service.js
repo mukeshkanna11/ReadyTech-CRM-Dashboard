@@ -147,8 +147,10 @@ const subscribeWebhook = async (token) => {
 
 export const completeInstagramConnection = async ({ code, userId }) => {
   const { appId, appSecret, redirectUri } = getInstagramConfig();
-  const owner = userId ? await User.findById(userId).select("_id workspace").lean() : null;
+  const owner = userId ? await User.findById(userId).select("_id workspace role isActive").lean() : null;
   if (!owner) throw fail("Connecting user not found"); // never Siva's doc
+  // Same rule as role("admin") on /instagram/oauth/url — re-checked at callback time
+  if (owner.role !== "admin" || owner.isActive === false) throw fail("Not allowed to connect Instagram for this workspace", 403);
 
   const short = await igFetch(null, {
     base: "https://api.instagram.com/oauth/access_token",

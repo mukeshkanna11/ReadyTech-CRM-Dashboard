@@ -194,7 +194,7 @@ test("Tenant's released IG account never falls back to Siva's workspace", async 
 test("Connecting a Page/IG already owned by another workspace is rejected", async () => {
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({
     access_token: "t", expires_in: 1, data: [{ id: "SIVA_PAGE", name: "P", access_token: "pt" }] }) });
-  stub(User, "findById", () => chain({ _id: SARA }));
+  stub(User, "findById", () => chain({ _id: SARA, role: "admin" }));
   let saved = false;
   stub(MetaConnection, "findOne", (f) => typeof f.key === "string"
     ? Promise.resolve({ key: f.key, save: async () => (saved = true) })
@@ -318,7 +318,7 @@ test("IG OAuth: rejects an account owned by another workspace, never saves", asy
     String(u).includes("api.instagram.com") ? { access_token: "s", user_id: "IG9", permissions: "instagram_business_basic" }
     : String(u).includes("/access_token") ? { access_token: "L", expires_in: 5184000 }
     : { user_id: "IG9", username: "sara" } });
-  stub(User, "findById", () => chain({ _id: SARA }));
+  stub(User, "findById", () => chain({ _id: SARA, role: "admin" }));
   let saved = false;
   stub(MetaConnection, "findOne", (f) => typeof f.key === "string"
     ? Promise.resolve({ key: f.key, save: async () => (saved = true) })

@@ -91,7 +91,7 @@ const mockGraph = () => {
 test("OAuth callback saves into the connecting admin's workspace", async () => {
   mockGraph();
   const saved = [];
-  stub(User, "findById", () => chain({ _id: SARA, workspace: null }));
+  stub(User, "findById", () => chain({ _id: SARA, workspace: null, role: "admin" }));
   // String key = getSingleton lookup; { $ne } key = cross-workspace claim check
   stub(MetaConnection, "findOne", ({ key }) =>
     typeof key === "string"
@@ -108,6 +108,17 @@ test("OAuth callback rejects unknown user instead of writing Siva's doc", async 
   stub(MetaConnection, "findOne", async () => ((touched = true), null));
   await assert.rejects(meta.completeConnection({ code: "c", userId: SARA }), /not found/);
   assert.equal(touched, false);
+});
+
+test("OAuth callback rejects a user who is no longer an active admin", async () => {
+  for (const user of [{ _id: SARA, role: "user" }, { _id: SARA, role: "admin", isActive: false }]) {
+    mockGraph();
+    let touched = false;
+    stub(User, "findById", () => chain(user));
+    stub(MetaConnection, "findOne", async () => ((touched = true), null));
+    await assert.rejects(meta.completeConnection({ code: "c", userId: SARA }), /Not allowed/);
+    assert.equal(touched, false);
+  }
 });
 
 test("signed OAuth state round-trips the admin id", () => {

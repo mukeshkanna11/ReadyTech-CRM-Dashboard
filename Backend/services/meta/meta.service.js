@@ -328,11 +328,15 @@ export const completeConnection = async ({ code, userId }) => {
 
   // Public callback has no request workspace — use the connecting admin's
   const owner = userId
-    ? await User.findById(userId).select("_id workspace").lean()
+    ? await User.findById(userId).select("_id workspace role isActive").lean()
     : null;
 
   // Never fall back to the default (Siva's) connection
   if (!owner) throw new Error("Connecting user not found");
+  // Same rule as role("admin") on /oauth/url — re-checked at callback time
+  if (owner.role !== "admin" || owner.isActive === false) {
+    throw new Error("Not allowed to connect Meta for this workspace");
+  }
 
   const connection = await MetaConnection.getSingleton(
     owner.workspace || owner._id
