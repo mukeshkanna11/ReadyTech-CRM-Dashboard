@@ -460,7 +460,7 @@ export default function DashboardPage() {
         >
           {salesTrend.length ? (
             <div className="h-[320px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 1, height: 320 }}>
                 <AreaChart data={salesTrend} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
@@ -488,7 +488,7 @@ export default function DashboardPage() {
         <SectionCard title="Lead Status" subtitle="Distribution across the funnel" badge="CRM">
           {leadStatusData.length ? (
             <div className="h-[320px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 1, height: 320 }}>
                 <PieChart>
                   <Pie data={leadStatusData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={98} paddingAngle={3}>
                     {leadStatusData.map((d) => (
@@ -510,7 +510,7 @@ export default function DashboardPage() {
       <SectionCard title="Inventory Distribution" subtitle="Current stock levels by product" badge="Real Time">
         {stockChart.length ? (
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 1, height: 300 }}>
               <BarChart data={stockChart} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                 <defs>
                   <linearGradient id="stockFill" x1="0" y1="0" x2="0" y2="1">

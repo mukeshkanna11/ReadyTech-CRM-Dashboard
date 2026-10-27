@@ -8,7 +8,7 @@ import { applyReserve, applyRelease } from "./inventory.controller.js";
 /* ==========================================
    GENERATE SALES ORDER NUMBER
 ========================================== */
-const generateSONumber = async () => {
+export const generateSONumber = async () => {
   const lastSO = await SalesOrder.findOne()
     .sort({ createdAt: -1 })
     .select("soNumber");
@@ -377,68 +377,7 @@ export const deliverSalesOrder = async (req, res) => {
         throw e;
       }
 
-      if (salesOrder.status !== "APPROVED") {
-        const e = new Error("Only approved sales orders can be delivered");
-        e.status = 400;
-        throw e;
-      }
-
-      // Deliver from the reserved warehouse when present, else from the body
-      const warehouse = salesOrder.warehouse
-        ? String(salesOrder.warehouse)
-        : req.body.warehouse;
-      if (!warehouse) {
-        const e = new Error("Warehouse is required");
-        e.status = 400;
-        throw e;
-      }
-
-      for (const item of salesOrder.items) {
-        if (!item.product) {
-          const e = new Error("One or more products no longer exist");
-          e.status = 400;
-          throw e;
-        }
-
-        // Negative-stock prevention for each line item (physical on-hand)
-        const available = await Inventory.getAvailable(
-          item.product._id,
-          warehouse,
-          session
-        );
-        if (item.qty > available) {
-          const e = new Error(
-            `Insufficient stock for ${item.product.name || item.product._id}. Available: ${available}, required: ${item.qty}`
-          );
-          e.status = 400;
-          throw e;
-        }
-
-        await Inventory.create(
-          [
-            {
-              product: item.product._id,
-              warehouse,
-              outQty: item.qty,
-              type: "SALE",
-              reference: salesOrder._id,
-              createdBy: req.user._id,
-            },
-          ],
-          { session }
-        );
-
-        // Release the reservation held for this order (clamped)
-        if (salesOrder.warehouse) {
-          await applyRelease(item.product._id, warehouse, item.qty, session);
-        }
-      }
-
-      salesOrder.status = "DELIVERED";
-      salesOrder.deliveredAt = new Date();
-      salesOrder.deliveredBy = req.user._id;
-
-      await salesOrder.save({ session });
+      await deliverSalesOrderInSession(salesOrder, req.body.warehouse, req.user._id, session);
     });
 
     return res.status(200).json({
@@ -462,6 +401,100 @@ export const deliverSalesOrder = async (req, res) => {
 };
 
 /* ==========================================
+   DELIVER RULES (shared by the API and the Shopify sync)
+   Runs inside the caller's transaction; items.product must be populated.
+========================================== */
+export const deliverSalesOrderInSession = async (salesOrder, warehouseFromBody, userId, session) => {
+  if (salesOrder.status !== "APPROVED") {
+    const e = new Error("Only approved sales orders can be delivered");
+    e.status = 400;
+    throw e;
+  }
+
+  // Deliver from the reserved warehouse when present, else from the body
+  const warehouse = salesOrder.warehouse
+    ? String(salesOrder.warehouse)
+    : warehouseFromBody;
+  if (!warehouse) {
+    const e = new Error("Warehouse is required");
+    e.status = 400;
+    throw e;
+  }
+
+  for (const item of salesOrder.items) {
+    if (!item.product) {
+      const e = new Error("One or more products no longer exist");
+      e.status = 400;
+      throw e;
+    }
+
+    // Negative-stock prevention for each line item (physical on-hand)
+    const available = await Inventory.getAvailable(
+      item.product._id,
+      warehouse,
+      session
+    );
+    if (item.qty > available) {
+      const e = new Error(
+        `Insufficient stock for ${item.product.name || item.product._id}. Available: ${available}, required: ${item.qty}`
+      );
+      e.status = 400;
+      throw e;
+    }
+
+    await Inventory.create(
+      [
+        {
+          product: item.product._id,
+          warehouse,
+          outQty: item.qty,
+          type: "SALE",
+          reference: salesOrder._id,
+          createdBy: userId,
+        },
+      ],
+      { session }
+    );
+
+    // Release the reservation held for this order (clamped)
+    if (salesOrder.warehouse) {
+      await applyRelease(item.product._id, warehouse, item.qty, session);
+    }
+  }
+
+  salesOrder.status = "DELIVERED";
+  salesOrder.deliveredAt = new Date();
+  salesOrder.deliveredBy = userId;
+
+  await salesOrder.save({ session });
+};
+
+/* ==========================================
+   CANCEL RULES (shared by the API and the Shopify sync)
+   Runs inside the caller's transaction.
+========================================== */
+export const cancelSalesOrderInSession = async (salesOrder, userId, session) => {
+  if (salesOrder.status === "DELIVERED") {
+    const e = new Error("Delivered sales orders cannot be cancelled");
+    e.status = 400;
+    throw e;
+  }
+
+  // Release any stock reserved for this order
+  if (salesOrder.status === "APPROVED" && salesOrder.warehouse) {
+    for (const item of salesOrder.items) {
+      await applyRelease(item.product, String(salesOrder.warehouse), item.qty, session);
+    }
+  }
+
+  salesOrder.status = "CANCELLED";
+  salesOrder.cancelledAt = new Date();
+  salesOrder.cancelledBy = userId;
+
+  await salesOrder.save({ session });
+};
+
+/* ==========================================
    CANCEL SALES ORDER
 ========================================== */
 export const cancelSalesOrder = async (req, res) => {
@@ -477,24 +510,7 @@ export const cancelSalesOrder = async (req, res) => {
         throw e;
       }
 
-      if (salesOrder.status === "DELIVERED") {
-        const e = new Error("Delivered sales orders cannot be cancelled");
-        e.status = 400;
-        throw e;
-      }
-
-      // Release any stock reserved for this order
-      if (salesOrder.status === "APPROVED" && salesOrder.warehouse) {
-        for (const item of salesOrder.items) {
-          await applyRelease(item.product, String(salesOrder.warehouse), item.qty, session);
-        }
-      }
-
-      salesOrder.status = "CANCELLED";
-      salesOrder.cancelledAt = new Date();
-      salesOrder.cancelledBy = req.user._id;
-
-      await salesOrder.save({ session });
+      await cancelSalesOrderInSession(salesOrder, req.user._id, session);
     });
 
     return res.status(200).json({

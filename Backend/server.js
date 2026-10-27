@@ -39,6 +39,8 @@ const server = app.listen(PORT, "0.0.0.0", () => {
 
     /* Daily restore points + password reminders (Admin Settings) */
     (await import("./services/scheduler.js")).startScheduler();
+    /* Shopify webhook inbox worker (no-op until Shopify is configured) */
+    (await import("./services/shopify/webhookWorker.js")).startShopifyWorker();
 
     /* ==========================
        Claude API Test

@@ -75,6 +75,7 @@ const MetaIntegration = lazy(() => import("./pages/Integrations/MetaIntegration"
 const WhatsAppInbox = lazy(() => import("./pages/Integrations/WhatsAppInbox"));
 const InstagramInbox = lazy(() => import("./pages/Integrations/InstagramInbox"));
 const EmailIntegration = lazy(() => import("./pages/Integrations/EmailIntegration"));
+const ShopifyIntegration = lazy(() => import("./pages/Integrations/ShopifyIntegration"));
 
 /* Public Legal Pages (no authentication required) */
 const PrivacyPolicy = lazy(() =>
@@ -234,6 +235,7 @@ export default function App() {
             <Route path="integrations/whatsapp" element={<WhatsAppInbox channel="whatsapp" />} />
             <Route path="integrations/instagram" element={<InstagramInbox />} />
             <Route path="integrations/email" element={<EmailIntegration />} />
+            <Route path="integrations/shopify" element={<ShopifyIntegration />} />
 
             {/* ======================================================
                           SETTINGS & INFO

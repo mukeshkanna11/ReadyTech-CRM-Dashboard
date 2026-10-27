@@ -19,10 +19,13 @@ import {
   listChatFaqsController,
 } from "../controllers/chat.controller.js";
 
-// import {
-//   verifyToken,
-//   isAdmin
-// } from "../middleware/auth.middleware.js";
+import auth from "../middlewares/auth.js";
+import role from "../middlewares/role.js";
+
+/* CRM admin routes: signed-in workspace admins only. `auth` binds the
+   request to the caller's workspace, so the workspace scope plugin limits
+   every Chat / ChatConversation query to that workspace. */
+const adminOnly = [auth, role("admin")];
 
 
 const router = express.Router();
@@ -42,16 +45,14 @@ router.post(
 
 
 /* =========================================================
-   CRM Admin Routes
-   Add auth middleware in production
+   CRM Admin Routes (auth + admin)
 ========================================================= */
 
 
 // Get All Chat Enquiries
 router.get(
   "/",
-  // verifyToken,
-  // isAdmin,
+  ...adminOnly,
   getChatsController
 );
 
@@ -82,7 +83,7 @@ router.delete(
 );
 
 // CRM list view
-router.get("/conversations", listChatConversationsController);
+router.get("/conversations", ...adminOnly, listChatConversationsController);
 
 // Rule-based FAQ list
 router.get("/faqs", listChatFaqsController);
@@ -91,8 +92,7 @@ router.get("/faqs", listChatFaqsController);
 // Get Single Chat
 router.get(
   "/:id",
-  // verifyToken,
-  // isAdmin,
+  ...adminOnly,
   getChatController
 );
 
@@ -100,8 +100,7 @@ router.get(
 // Update Status
 router.patch(
   "/:id/status",
-  // verifyToken,
-  // isAdmin,
+  ...adminOnly,
   updateStatusController
 );
 
@@ -109,8 +108,7 @@ router.patch(
 // Assign Chat To Sales User
 router.patch(
   "/:id/assign",
-  // verifyToken,
-  // isAdmin,
+  ...adminOnly,
   assignChatController
 );
 
@@ -118,8 +116,7 @@ router.patch(
 // Add Admin Note
 router.post(
   "/:id/note",
-  // verifyToken,
-  // isAdmin,
+  ...adminOnly,
   addAdminNoteController
 );
 
@@ -127,8 +124,7 @@ router.post(
 // Mark Chat Read
 router.patch(
   "/:id/read",
-  // verifyToken,
-  // isAdmin,
+  ...adminOnly,
   markAsReadController
 );
 
@@ -136,8 +132,7 @@ router.patch(
 // Soft Delete Chat
 router.delete(
   "/:id",
-  // verifyToken,
-  // isAdmin,
+  ...adminOnly,
   deleteChatController
 );
 

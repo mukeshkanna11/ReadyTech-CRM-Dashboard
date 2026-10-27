@@ -41,6 +41,8 @@ import publicSiteRoutes from "./routes/publicSite.routes.js";
 import whatsappRoutes from "./routes/whatsapp.routes.js";
 // Twilio Voice (browser calling from the CRM Lead page)
 import voipRoutes from "./routes/voip.routes.js";
+// Shopify (per-workspace store connection; auth applied per-route)
+import shopifyRoutes from "./routes/shopify.routes.js";
 // HR Module
 import hrRoutes from "./routes/hr/index.js";
 import hrReportRoutes from "./routes/hr/hrReport.routes.js";
@@ -118,7 +120,7 @@ app.use(
     // them for the X-Hub-Signature-256 HMAC check. All other routes unchanged.
     verify: (req, res, buf) => {
       const url = req.originalUrl || req.url || "";
-      if (url.startsWith("/api/whatsapp/webhook") || /^\/api\/meta\/(instagram\/)?webhook/.test(url)) {
+      if (url.startsWith("/api/whatsapp/webhook") || /^\/api\/meta\/(instagram\/)?webhook/.test(url) || url.startsWith("/api/shopify/webhooks")) {
         req.rawBody = buf;
       }
     },
@@ -181,6 +183,8 @@ app.use("/api/email", emailRoutes);
 app.use("/api/whatsapp", whatsappRoutes);
 // Twilio Voice (auth applied per-route; Twilio webhooks are public)
 app.use("/api/voip", voipRoutes);
+// Shopify (auth applied per-route; OAuth callback + webhooks are public, HMAC-verified)
+app.use("/api/shopify", shopifyRoutes);
 // User profile
 app.use("/api/user", auth, userRoutes);
 app.use("/api/ai", auth, aiRoutes);

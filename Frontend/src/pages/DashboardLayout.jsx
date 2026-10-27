@@ -119,6 +119,7 @@ const INTEGRATION_LINKS = [
   { to: "/integrations/whatsapp", icon: MessageSquare, label: "WhatsApp Inbox" },
   { to: "/integrations/instagram", icon: AtSign, label: "Instagram Inbox" },
   { to: "/integrations/email", icon: Mail, label: "Email Integration" },
+  { to: "/integrations/shopify", icon: ShoppingCart, label: "Shopify Integration" },
 ];
 
 function Sidebar({ open }) {
