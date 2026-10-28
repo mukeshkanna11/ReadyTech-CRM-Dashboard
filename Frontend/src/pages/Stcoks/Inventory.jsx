@@ -35,6 +35,17 @@ const onHandOf = (s) => s.onHand ?? s.available ?? 0;
 const reservedOf = (s) => s.reserved ?? 0;
 const availableOf = (s) => s.available ?? onHandOf(s) - reservedOf(s);
 
+// "assigned" = stock row in a live warehouse, "missing" = ledger points at a
+// deleted warehouse, "unassigned" = registered product with no ledger entry yet
+const hasWarehouse = (s) => (s.warehouseStatus ?? "assigned") === "assigned";
+const UNASSIGNED = "Unassigned";
+const warehouseLabelOf = (s) =>
+  s.warehouseStatus === "unassigned"
+    ? UNASSIGNED
+    : s.warehouseStatus === "missing"
+    ? "Deleted warehouse"
+    : s.warehouse?.name || "--";
+
 export default function Inventory() {
   const [stocks, setStocks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +58,9 @@ export default function Inventory() {
   const fetchInventory = async () => {
     try {
       setLoading(true);
-      const res = await API.get("/inventory/summary");
+      const res = await API.get("/inventory/summary", {
+        params: { includeUnstocked: true },
+      });
 
       const list = Array.isArray(res.data?.data)
         ? res.data.data
@@ -122,28 +135,45 @@ export default function Inventory() {
     }
   };
 
-  /* ================= KPI DATA ================= */
-  const totalProducts = stocks.length;
-  const totalStockQty = stocks.reduce((sum, s) => sum + onHandOf(s), 0);
-  const lowStockCount = stocks.filter((s) => {
-    const q = availableOf(s);
-    return q > 0 && q <= limitOf(s);
-  }).length;
-  const outOfStockCount = stocks.filter((s) => availableOf(s) <= 0).length;
+  /* ================= KPI DATA =================
+     Rows are product × warehouse; KPIs roll them up per unique product
+     so multi-warehouse products are counted once. */
+  const productTotals = useMemo(() => {
+    const map = new Map();
+    stocks.forEach((s) => {
+      const id = s.product?._id;
+      if (!id) return;
+      const t = map.get(id) || { onHand: 0, reserved: 0, available: 0, limit: limitOf(s) };
+      t.onHand += onHandOf(s);
+      t.reserved += reservedOf(s);
+      t.available += availableOf(s);
+      map.set(id, t);
+    });
+    return [...map.values()];
+  }, [stocks]);
 
-const warehouseCount = useMemo(
-  () => new Set(stocks.map((s) => s.warehouse?._id || s.warehouse?.name)).size,
-  [stocks]
-);
+  const totalProducts = productTotals.length;
+  const stockRecordCount = stocks.filter(hasWarehouse).length;
+  const unassignedCount = stocks.filter((s) => s.warehouseStatus === "unassigned").length;
+  const totalOnHand = stocks.reduce((sum, s) => sum + onHandOf(s), 0);
+  const totalReserved = stocks.reduce((sum, s) => sum + reservedOf(s), 0);
+  const totalAvailable = stocks.reduce((sum, s) => sum + availableOf(s), 0);
+  const lowStockCount = productTotals.filter((t) => t.available > 0 && t.available <= t.limit).length;
+  const outOfStockCount = productTotals.filter((t) => t.available <= 0).length;
 
-const inventoryValue = stocks.reduce((sum, s) => {
-  const price = s.product?.price || 0;
-  return sum + price * onHandOf(s);
-}, 0);
+  const warehouseCount = useMemo(
+    () => new Set(stocks.filter(hasWarehouse).map((s) => s.warehouse._id)).size,
+    [stocks]
+  );
+
+  const inventoryValue = stocks.reduce(
+    (sum, s) => sum + (s.product?.price || 0) * onHandOf(s),
+    0
+  );
   
   /* ================= FILTERS ================= */
   const warehouses = useMemo(
-    () => ["All", ...Array.from(new Set(stocks.map((s) => s.warehouse?.name).filter(Boolean)))],
+    () => ["All", ...Array.from(new Set(stocks.map(warehouseLabelOf).filter((w) => w !== "--")))],
     [stocks]
   );
 
@@ -154,9 +184,9 @@ const inventoryValue = stocks.reduce((sum, s) => {
         !q ||
         s.product?.name?.toLowerCase().includes(q) ||
         s.product?.sku?.toLowerCase().includes(q) ||
-        s.warehouse?.name?.toLowerCase().includes(q);
+        warehouseLabelOf(s).toLowerCase().includes(q);
       const matchesWarehouse =
-        warehouseFilter === "All" || s.warehouse?.name === warehouseFilter;
+        warehouseFilter === "All" || warehouseLabelOf(s) === warehouseFilter;
       const matchesStatus =
         statusFilter === "All" || statusOf(availableOf(s), limitOf(s)) === statusFilter;
       return matchesSearch && matchesWarehouse && matchesStatus;
@@ -272,7 +302,7 @@ const inventoryValue = stocks.reduce((sum, s) => {
 
       {/* ================= PREMIUM KPI DASHBOARD ================= */}
 
-<div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
+<div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
 
   <StatCard
     title="Total Products"
@@ -280,16 +310,34 @@ const inventoryValue = stocks.reduce((sum, s) => {
     subtitle="Registered Products"
     icon={Package}
     color="blue"
-    trend="+8.5%"
+    trend={unassignedCount ? `${unassignedCount} not in a warehouse` : `${stockRecordCount} stock records`}
   />
 
   <StatCard
-    title="Stock Quantity"
-    value={totalStockQty.toLocaleString()}
-    subtitle="Available Units"
+    title="On Hand"
+    value={totalOnHand.toLocaleString()}
+    subtitle="Physical Units"
+    icon={Boxes}
+    color="blue"
+    trend={`${stockRecordCount} stock records`}
+  />
+
+  <StatCard
+    title="Reserved"
+    value={totalReserved.toLocaleString()}
+    subtitle="Allocated Units"
+    icon={Clock}
+    color="amber"
+    trend="Not available to sell"
+  />
+
+  <StatCard
+    title="Available"
+    value={totalAvailable.toLocaleString()}
+    subtitle="On Hand − Reserved"
     icon={Boxes}
     color="emerald"
-    trend="+12.4%"
+    trend={`₹${inventoryValue.toLocaleString()} value`}
   />
 
   <StatCard
@@ -430,8 +478,18 @@ const inventoryValue = stocks.reduce((sum, s) => {
     <div className="flex flex-wrap gap-3 mt-5">
 
       <div className="px-4 py-2 text-sm font-semibold text-indigo-700 rounded-full bg-indigo-50">
-        Total Records : {stocks.length}
+        Products : {totalProducts}
       </div>
+
+      <div className="px-4 py-2 text-sm font-semibold rounded-full bg-slate-100 text-slate-700">
+        Stock Records : {stockRecordCount}
+      </div>
+
+      {unassignedCount > 0 && (
+        <div className="px-4 py-2 text-sm font-semibold rounded-full bg-amber-50 text-amber-700">
+          No Warehouse : {unassignedCount}
+        </div>
+      )}
 
       <div className="px-4 py-2 text-sm font-semibold rounded-full bg-emerald-50 text-emerald-700">
         Showing : {filteredStocks.length}
@@ -496,7 +554,7 @@ return(
 
 <tr
 
-key={s._id || `${s.product?._id}-${s.warehouse?._id}-${index}`}
+key={`${s.product?._id}-${s.warehouse?._id || s.warehouseStatus}-${index}`}
 
 className={`
 
@@ -548,6 +606,9 @@ SKU : {s.product?.sku || "--"}
 
 <div>
 
+{hasWarehouse(s) ? (
+
+<>
 <p className="font-medium">
 
 {s.warehouse?.name || "--"}
@@ -559,6 +620,25 @@ SKU : {s.product?.sku || "--"}
 Warehouse
 
 </p>
+</>
+
+) : (
+
+<>
+<span className="px-3 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-700">
+
+{warehouseLabelOf(s)}
+
+</span>
+
+<p className="mt-1 text-xs text-slate-400">
+
+{s.warehouseStatus === "unassigned" ? "No stock recorded yet" : "Warehouse no longer exists"}
+
+</p>
+</>
+
+)}
 
 </div>
 
@@ -646,6 +726,8 @@ status={status}
 label="IN"
 icon={Plus}
 color="emerald"
+disabled={!hasWarehouse(s)}
+title={hasWarehouse(s) ? undefined : "Use Stock Adjustment to add stock to a warehouse"}
 onClick={()=>handleStockIn(s)}
 />
 
@@ -653,7 +735,7 @@ onClick={()=>handleStockIn(s)}
 label="OUT"
 icon={Minus}
 color="red"
-disabled={onHand<=0}
+disabled={!hasWarehouse(s) || onHand<=0}
 onClick={()=>handleStockOut(s)}
 />
 
@@ -811,7 +893,7 @@ function StockBar({ qty, limit, status }) {
   );
 }
 
-function ActionBtn({ label, icon: Icon, color, onClick, disabled }) {
+function ActionBtn({ label, icon: Icon, color, onClick, disabled, title }) {
   const colors = {
     emerald: "bg-emerald-600 hover:bg-emerald-700",
     red: "bg-red-600 hover:bg-red-700",
@@ -820,6 +902,7 @@ function ActionBtn({ label, icon: Icon, color, onClick, disabled }) {
     <button
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white rounded-lg transition ${colors[color]} disabled:opacity-40 disabled:cursor-not-allowed`}
     >
       <Icon size={12} /> {label}

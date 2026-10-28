@@ -204,8 +204,17 @@ export const getInventory = async (req, res, next) => {
 
 /* ================================
    GET STOCK SUMMARY
+   One row per product + warehouse that has ledger entries.
+   ?includeUnstocked=true (Inventory page) additionally:
+   - keeps rows whose warehouse was deleted (warehouseStatus "missing")
+   - adds one zero-stock row (warehouse: null, warehouseStatus
+     "unassigned") per registered product with no ledger entry,
+   so every product in the master appears. Quantities are never
+   invented — unassigned rows are 0 / 0 / 0.
 ================================ */
 export const getStockSummary = async (req, res, next) => {
+  const includeUnstocked = String(req.query?.includeUnstocked) === "true";
+
   try {
     const summary = await Inventory.aggregate([
       {
@@ -232,7 +241,9 @@ export const getStockSummary = async (req, res, next) => {
           as: "warehouse",
         },
       },
-      { $unwind: "$warehouse" },
+      includeUnstocked
+        ? { $unwind: { path: "$warehouse", preserveNullAndEmptyArrays: true } }
+        : { $unwind: "$warehouse" },
       {
         $lookup: {
           from: "stocklevels",
@@ -260,7 +271,10 @@ export const getStockSummary = async (req, res, next) => {
             price: "$product.price",
             lowStockLimit: "$product.lowStockLimit",
           },
-          warehouse: { _id: "$warehouse._id", name: "$warehouse.name" },
+          warehouse: { _id: "$_id.warehouse", name: { $ifNull: ["$warehouse.name", null] } },
+          warehouseStatus: {
+            $cond: [{ $ifNull: ["$warehouse._id", false] }, "assigned", "missing"],
+          },
           inQty: 1,
           outQty: 1,
           onHand: 1,
@@ -269,6 +283,34 @@ export const getStockSummary = async (req, res, next) => {
         },
       },
     ]);
+
+    if (includeUnstocked) {
+      // Same workspace-scoped product list the Products module shows
+      const stocked = new Set(summary.map((r) => String(r.product._id)));
+      const products = await Product.find({}, "name sku price lowStockLimit")
+        .sort({ createdAt: -1 })
+        .lean();
+
+      for (const p of products) {
+        if (stocked.has(String(p._id))) continue;
+        summary.push({
+          product: {
+            _id: p._id,
+            name: p.name,
+            sku: p.sku,
+            price: p.price,
+            lowStockLimit: p.lowStockLimit,
+          },
+          warehouse: null,
+          warehouseStatus: "unassigned",
+          inQty: 0,
+          outQty: 0,
+          onHand: 0,
+          reserved: 0,
+          available: 0,
+        });
+      }
+    }
 
     return res.json({ success: true, data: summary });
   } catch (err) {
