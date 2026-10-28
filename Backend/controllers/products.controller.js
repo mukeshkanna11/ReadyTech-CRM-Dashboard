@@ -12,10 +12,29 @@ const generateBarcode = () => {
   );
 };
 
+// Trimmed SKU from the request body; "" when blank
+const normalizeSku = (value) =>
+  value === undefined || value === null ? "" : String(value).trim();
+
+const skuTakenResponse = (res) =>
+  res.status(409).json({
+    success: false,
+    message: "SKU already exists",
+  });
+
 
 /* ================= CREATE PRODUCT ================= */
 export const createProduct = async (req, res) => {
   try {
+    // Blank SKU → schema default generates one
+    const sku = normalizeSku(req.body.sku);
+    if (sku) {
+      if (await Product.findOne({ sku })) return skuTakenResponse(res);
+      req.body.sku = sku;
+    } else {
+      delete req.body.sku;
+    }
+
     let barcode = generateBarcode();
 
     // Ensure barcode is unique
@@ -34,6 +53,9 @@ export const createProduct = async (req, res) => {
       data: product,
     });
   } catch (error) {
+    if (error.code === 11000 && error.keyPattern?.sku) {
+      return skuTakenResponse(res);
+    }
     console.error("Create product error:", error);
     res.status(500).json({
       success: false,
@@ -112,8 +134,25 @@ export const getProductByBarcode = async (req, res) => {
 /* ================= UPDATE PRODUCT ================= */
 export const updateProduct = async (req, res) => {
   try {
+    // Barcode is never changed on edit
     delete req.body.barcode;
-    delete req.body.sku;
+
+    // SKU is editable; never regenerated on update
+    if (req.body.sku !== undefined) {
+      const sku = normalizeSku(req.body.sku);
+      if (!sku) {
+        return res.status(400).json({
+          success: false,
+          message: "SKU cannot be empty",
+        });
+      }
+      const duplicate = await Product.findOne({
+        sku,
+        _id: { $ne: req.params.id },
+      });
+      if (duplicate) return skuTakenResponse(res);
+      req.body.sku = sku;
+    }
 
     const product = await Product.findByIdAndUpdate(
       req.params.id,
@@ -137,6 +176,9 @@ export const updateProduct = async (req, res) => {
       data: product,
     });
   } catch (error) {
+    if (error.code === 11000 && error.keyPattern?.sku) {
+      return skuTakenResponse(res);
+    }
     res.status(500).json({
       success: false,
       message: error.message,

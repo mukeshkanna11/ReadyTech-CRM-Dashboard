@@ -89,8 +89,9 @@ export default function Products() {
         tax: Number(form.tax) || 0,
       };
 
-      // SKU & Barcode are system generated and read-only in the UI
-      delete payload.sku;
+      // Barcode is system generated; blank SKU is auto generated on create
+      payload.sku = (form.sku || "").trim();
+      if (!form._id && !payload.sku) delete payload.sku;
       delete payload.barcode;
 
       form._id
@@ -101,8 +102,8 @@ export default function Products() {
       setDrawerOpen(false);
       setForm(emptyForm);
       fetchProducts();
-    } catch {
-      toast.error("Save failed");
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Save failed");
     }
   };
 
@@ -734,10 +735,11 @@ const inventoryValue = products.reduce(
               </label>
 
               <input
-                readOnly
                 value={form.sku || ""}
-                placeholder="Auto generated"
-                className="w-full px-4 py-3 transition border cursor-not-allowed rounded-xl border-slate-300 bg-slate-50 text-slate-600 focus:outline-none"
+                onChange={(e) => setForm({ ...form, sku: e.target.value })}
+                required={Boolean(form._id)}
+                placeholder="Auto generated if left blank"
+                className="w-full px-4 py-3 transition border rounded-xl border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-100"
               />
             </div>
 
