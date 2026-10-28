@@ -105,6 +105,9 @@ const metaConnectionSchema = new mongoose.Schema(
       health: { type: String, enum: ["healthy", "error", null], default: null },
       connectedAt: { type: Date, default: null },
       lastTestedAt: { type: Date, default: null },
+      // Default workspace disconnected the platform (.env) number —
+      // it must never silently come back for this workspace
+      platformDisabled: { type: Boolean, default: false },
     },
 
     lastSyncedAt: { type: Date, default: null },
@@ -222,6 +225,7 @@ metaConnectionSchema.methods.toSafeJSON = function () {
       health: this.whatsapp?.health || null,
       connectedAt: this.whatsapp?.connectedAt || null,
       lastTestedAt: this.whatsapp?.lastTestedAt || null,
+      platformDisabled: !!this.whatsapp?.platformDisabled,
     },
 
     lastSyncedAt: this.lastSyncedAt,

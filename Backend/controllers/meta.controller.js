@@ -200,7 +200,9 @@ export const getMetaStatus = async (req, res) => {
     const safe = connection.toSafeJSON();
     // Only the default workspace may use the platform (.env) number
     const platformWhatsApp =
-      usesPlatformCredentials() && !!process.env.WHATSAPP_PHONE_NUMBER_ID;
+      usesPlatformCredentials() &&
+      !!process.env.WHATSAPP_PHONE_NUMBER_ID &&
+      !connection.whatsapp?.platformDisabled;
 
     res.json({
       success: true,

@@ -145,17 +145,39 @@ const isFacebookOrigin = (origin) => {
   }
 };
 
+/* Warm-up: fetch config + load the SDK BEFORE the click, so FB.login
+   runs synchronously inside the click and the popup isn't blocked. */
+const PREPARED_TTL_MS = 10 * 60 * 1000; // server state lives 15 min
+let prepared = null;
+let preparing = null;
+
+export const prepareEmbeddedSignup = () => {
+  if (prepared && Date.now() - prepared.at < PREPARED_TTL_MS) return Promise.resolve(prepared);
+  if (!preparing) {
+    preparing = (async () => {
+      const cfg = await getEmbeddedSignupConfig();
+      if (!cfg?.ready) {
+        throw Object.assign(new Error("WhatsApp signup is not configured on the server"), {
+          blockers: cfg?.blockers || [],
+        });
+      }
+      const FB = await loadFacebookSdk(cfg.appId, cfg.apiVersion);
+      prepared = { cfg, FB, at: Date.now() };
+      return prepared;
+    })().finally(() => {
+      preparing = null;
+    });
+  }
+  return preparing;
+};
+
 /* Resolves with the safe WhatsApp status; rejects with a readable
    Error (err.blockers = server setup blockers when not configured). */
 export const runEmbeddedSignup = async ({ coexistence = false } = {}) => {
-  const cfg = await getEmbeddedSignupConfig();
-  if (!cfg?.ready) {
-    throw Object.assign(new Error("WhatsApp signup is not configured on the server"), {
-      blockers: cfg?.blockers || [],
-    });
-  }
-
-  const FB = await loadFacebookSdk(cfg.appId, cfg.apiVersion);
+  // No await on the warm path → popup opens within the user's click
+  const ready = prepared && Date.now() - prepared.at < PREPARED_TTL_MS ? prepared : await prepareEmbeddedSignup();
+  prepared = null; // signed state is per attempt
+  const { cfg, FB } = ready;
 
   return new Promise((resolve, reject) => {
     let session = null;
@@ -229,9 +251,14 @@ export const runEmbeddedSignup = async ({ coexistence = false } = {}) => {
         config_id: cfg.configId,
         response_type: "code",
         override_default_response_type: true,
-        extras: coexistence
-          ? { setup: {}, featureType: "whatsapp_business_app_onboarding" }
-          : { setup: {} },
+        extras: {
+          setup: {},
+          sessionInfoVersion: cfg.sessionInfoVersion,
+          // v4 is Meta's default (selected by the Login for Business
+          // configuration) — only non-default versions are sent explicitly
+          ...(cfg.esVersion && cfg.esVersion !== "v4" ? { version: cfg.esVersion } : {}),
+          ...(coexistence ? { featureType: "whatsapp_business_app_onboarding" } : {}),
+        },
       }
     );
   });

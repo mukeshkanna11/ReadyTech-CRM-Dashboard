@@ -88,6 +88,9 @@ test("config: exact blockers instead of a fake ready state", async () => {
   }
   const cfg = await ctx.runWithWorkspace(SARA, () => wa.getEmbeddedSignupConfig("u1"));
   assert.equal(cfg.ready, true);
+  assert.equal(cfg.configId, "cfg-1");
+  assert.equal(cfg.esVersion, "v4");
+  assert.equal(cfg.sessionInfoVersion, "3");
   assert.equal(JSON.stringify(cfg).includes(process.env.META_APP_SECRET), false);
 });
 
@@ -232,4 +235,57 @@ test("webhook signature: only a valid app-secret HMAC is accepted", async () => 
   assert.equal(wa.verifyWebhookSignature(raw, sig), true);
   assert.equal(wa.verifyWebhookSignature(raw, sig.replace(/.$/, "0")), false);
   assert.equal(wa.verifyWebhookSignature(raw, undefined), false);
+});
+
+/* ---------------- platform (.env) number ---------------- */
+test("platform number: disconnect keeps it off, Connect Another Number works, others unaffected", async () => {
+  process.env.WHATSAPP_ACCESS_TOKEN = "ENV_TOKEN";
+  try {
+    const docs = fakeDocs();
+    // routing lookups read the default doc / phone owner from the fake store
+    stub(MetaConnection, "findOne", (filter) => ({
+      select: () => ({
+        lean: async () =>
+          filter.key === "default"
+            ? docs.default || null
+            : Object.values(docs).find(
+                (d) => d.whatsapp.phoneNumberId === filter["whatsapp.phoneNumberId"] && d.key !== filter.key?.$ne
+              ) || null,
+      }),
+    }));
+    const calls = fakeGraph();
+
+    // Before: default workspace uses the env number, webhooks route to it
+    const before = await ctx.runWithWorkspace(SIVA, () => wa.resolveWhatsAppAccount());
+    assert.equal(before.source, "platform");
+    assert.equal(await wa.workspaceForPhoneNumberId("999"), SIVA);
+
+    await ctx.runWithWorkspace(SIVA, () => wa.disconnectWhatsAppAccount());
+    assert.equal(docs.default.whatsapp.platformDisabled, true);
+    assert.equal(calls.some((c) => c.method === "DELETE"), false); // env WABA left alone
+
+    // Env number does not come back: no credentials, webhooks dropped
+    const after = await ctx.runWithWorkspace(SIVA, () => wa.resolveWhatsAppAccount());
+    assert.equal(after.accessToken, null);
+    assert.equal(after.phoneNumberId, null);
+    assert.equal(await wa.workspaceForPhoneNumberId("999"), null);
+    await assert.rejects(ctx.runWithWorkspace(SIVA, () => wa.syncWhatsAppAccount()), { status: 400 });
+
+    // Connect Another Number (Embedded Signup) on the same workspace
+    await signup(SIVA, "admin");
+    const now = await ctx.runWithWorkspace(SIVA, () => wa.resolveWhatsAppAccount());
+    assert.equal(now.source, "workspace");
+    assert.equal(now.phoneNumberId, "111");
+    assert.equal(now.accessToken, "BIZ_TOKEN");
+    assert.equal(docs.default.whatsapp.platformDisabled, true);
+    assert.equal(await wa.workspaceForPhoneNumberId("111"), SIVA);
+    assert.equal(await wa.workspaceForPhoneNumberId("999"), null);
+
+    // Other workspaces: never get the env number, can't claim it
+    const sara = await ctx.runWithWorkspace(SARA, () => wa.resolveWhatsAppAccount());
+    assert.equal(sara.accessToken, null);
+    await assert.rejects(signup(BOB, "u9", { phoneNumberId: "999" }), { status: 409 });
+  } finally {
+    delete process.env.WHATSAPP_ACCESS_TOKEN;
+  }
 });

@@ -52,9 +52,10 @@ export const getWhatsAppConfig = () => {
    its own DB doc as fallback. Any other workspace: ONLY its own DB doc
    (getWhatsAppConfig never returns env values there). */
 export const resolveWhatsAppAccount = async () => {
-  const config = getWhatsAppConfig();
   const connection = await MetaConnection.getSingleton();
   const wa = connection.whatsapp || {};
+  // Platform (.env) number switched off by the default workspace → own doc only
+  const config = wa.platformDisabled ? {} : getWhatsAppConfig();
 
   return {
     connection,
@@ -411,7 +412,11 @@ export const workspaceForPhoneNumberId = async (phoneNumberId) => {
   if (!id) return null;
 
   if (id === String(process.env.WHATSAPP_PHONE_NUMBER_ID || "")) {
-    return getDefaultWorkspaceId();
+    const own = await MetaConnection.findOne({ key: "default" })
+      .select("whatsapp.platformDisabled")
+      .lean();
+    if (!own?.whatsapp?.platformDisabled) return getDefaultWorkspaceId();
+    // Disabled: only routed if re-connected through the workspace doc below
   }
 
   const doc = await MetaConnection.findOne({ "whatsapp.phoneNumberId": id })
@@ -801,9 +806,9 @@ export const disconnectWhatsAppAccount = async () => {
   const connection = await MetaConnection.getSingleton();
   const wa = connection.whatsapp || {};
 
-  // Best effort: unsubscribe this app from the workspace's own WABA.
-  // Never for the default doc (platform .env number stays subscribed).
-  if (connection.key !== "default" && wa.wabaId && wa.encryptedToken) {
+  // Best effort: unsubscribe this app from the workspace's own WABA
+  // (DB-token connections only; the platform .env WABA is left as is).
+  if (wa.wabaId && wa.encryptedToken) {
     try {
       await graphFetch(`${wa.wabaId}/subscribed_apps`, {
         method: "DELETE",
@@ -824,8 +829,12 @@ export const disconnectWhatsAppAccount = async () => {
     connectedAt: null,
     lastError: null,
   });
-  // Keep phoneNumberId on the default doc (env number); clear elsewhere
-  if (connection.key !== "default") connection.whatsapp.phoneNumberId = null;
+  // Default workspace disconnecting the platform (.env) number: switch it
+  // off for this workspace so it never reappears on its own.
+  if (connection.key === "default" && process.env.WHATSAPP_PHONE_NUMBER_ID) {
+    connection.whatsapp.platformDisabled = true;
+  }
+  connection.whatsapp.phoneNumberId = null;
   await connection.save();
   return connection;
 };
@@ -908,6 +917,9 @@ export const getEmbeddedSignupConfig = (userId) => {
     appId: appId || null,
     configId,
     apiVersion,
+    // Embedded Signup flow version + session-info event format
+    esVersion: process.env.WHATSAPP_EMBEDDED_SIGNUP_VERSION || "v4",
+    sessionInfoVersion: process.env.WHATSAPP_EMBEDDED_SIGNUP_SESSION_INFO_VERSION || "3",
     state: blockers.length ? null : createSignupState(userId),
     ready: blockers.length === 0,
     blockers,
