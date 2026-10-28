@@ -7,7 +7,9 @@ import mongoose from "mongoose";
 await import("../utils/workspaceScope.js");
 const Inventory = (await import("../models/Inventory.model.js")).default;
 const Product = (await import("../models/Product.model.js")).default;
-const { getStockSummary } = await import("../controllers/inventory.controller.js");
+const Warehouse = (await import("../models/Warehouse.model.js")).default;
+const AuditLog = (await import("../models/AuditLog.js")).default;
+const { getStockSummary, transferStock, stockIn } = await import("../controllers/inventory.controller.js");
 
 const oid = () => new mongoose.Types.ObjectId();
 
@@ -102,4 +104,63 @@ test("includeUnstocked: product stocked only in a deleted warehouse is not dupli
   assert.equal(res.body.data.length, 1);
   assert.equal(res.body.data[0].warehouseStatus, "missing");
   assert.equal(res.body.data[0].onHand, 3);
+});
+
+/* ---------------- movement / actions ---------------- */
+const fakeSession = () =>
+  stub(mongoose, "startSession", async () => ({ withTransaction: async (fn) => fn(), endSession: async () => {} }));
+const chain = (v) => ({ session: async () => v });
+
+test("summary: exposes last movement per product-warehouse", async () => {
+  let pipeline;
+  stub(Inventory, "aggregate", async (p) => ((pipeline = p), []));
+  await call(getStockSummary, { query: {} });
+  assert.deepEqual(pipeline[0], { $sort: { createdAt: -1 } });
+  const project = pipeline.find((s) => s.$project).$project;
+  assert.deepEqual(project.lastTransaction, { type: "$lastType", qty: "$lastQty", date: "$lastAt" });
+});
+
+test("stock-in: createdBy is set from a lean auth user", async () => {
+  fakeSession();
+  const user = { _id: oid() };
+  stub(Product, "findById", () => chain({ _id: oid() }));
+  stub(Warehouse, "findById", () => chain({ _id: oid() }));
+  let created;
+  stub(Inventory, "create", async ([doc]) => ((created = doc), [doc]));
+  const res = await call(stockIn, { body: { product: oid(), warehouse: oid(), quantity: 2 }, user });
+  assert.equal(res.statusCode, 200);
+  assert.equal(created.createdBy, user._id);
+});
+
+const transferReq = (qty) => ({
+  body: { product: oid(), fromWarehouse: oid(), toWarehouse: oid(), quantity: qty },
+  user: { _id: oid() },
+});
+
+test("transfer: drains a deleted source warehouse via two ledger legs", async () => {
+  fakeSession();
+  stub(Warehouse, "exists", (f) => chain(null)); // source deleted
+  stub(Product, "exists", () => chain({ _id: oid() }));
+  stub(Warehouse, "findById", () => chain({ _id: oid() })); // destination live
+  stub(Inventory, "getAvailable", async () => 3);
+  stub(AuditLog, "create", async () => []);
+  let legs;
+  stub(Inventory, "create", async (docs) => ((legs = docs), docs));
+
+  const res = await call(transferStock, transferReq(3));
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(legs.map((l) => [l.type, l.inQty, l.outQty]), [["TRANSFER_OUT", 0, 3], ["TRANSFER_IN", 3, 0]]);
+});
+
+test("transfer: cannot move more than the deleted warehouse holds", async () => {
+  fakeSession();
+  stub(Warehouse, "exists", () => chain(null));
+  stub(Product, "exists", () => chain({ _id: oid() }));
+  stub(Warehouse, "findById", () => chain({ _id: oid() }));
+  stub(Inventory, "getAvailable", async () => 0); // e.g. other workspace's id → scoped ledger is empty
+  stub(Inventory, "create", async () => assert.fail("must not write"));
+
+  const res = await call(transferStock, transferReq(1));
+  assert.equal(res.statusCode, 400);
 });

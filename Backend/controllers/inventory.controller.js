@@ -106,7 +106,7 @@ export const stockIn = async (req, res, next) => {
             inQty: qty,
             type: "PURCHASE",
             reference: reference || null,
-            createdBy: req.user.id,
+            createdBy: req.user?._id || req.user?.id,
           },
         ],
         { session }
@@ -164,7 +164,7 @@ export const stockOut = async (req, res, next) => {
             outQty: qty,
             type: "SALE",
             reference: reference || null,
-            createdBy: req.user.id,
+            createdBy: req.user?._id || req.user?.id,
           },
         ],
         { session }
@@ -217,11 +217,15 @@ export const getStockSummary = async (req, res, next) => {
 
   try {
     const summary = await Inventory.aggregate([
+      { $sort: { createdAt: -1 } },
       {
         $group: {
           _id: { product: "$product", warehouse: "$warehouse" },
           inQty: { $sum: "$inQty" },
           outQty: { $sum: "$outQty" },
+          lastType: { $first: "$type" },
+          lastQty: { $first: { $max: ["$inQty", "$outQty"] } },
+          lastAt: { $first: "$createdAt" },
         },
       },
       {
@@ -280,6 +284,7 @@ export const getStockSummary = async (req, res, next) => {
           onHand: 1,
           reserved: 1,
           available: { $subtract: ["$onHand", "$reserved"] },
+          lastTransaction: { type: "$lastType", qty: "$lastQty", date: "$lastAt" },
         },
       },
     ]);
@@ -495,8 +500,21 @@ export const transferStock = async (req, res) => {
     let transferEntries = [];
 
     await session.withTransaction(async () => {
-      // Validate product & warehouses
-      await validateRefs(product, fromWarehouse, session);
+      // Validate product & warehouses. A deleted source warehouse is allowed
+      // only to drain its remaining ledger balance (checked below), so stock
+      // left there can be moved without being lost or duplicated.
+      const fromExists =
+        mongoose.isValidObjectId(fromWarehouse) &&
+        (await Warehouse.exists({ _id: fromWarehouse }).session(session));
+      if (fromExists) {
+        await validateRefs(product, fromWarehouse, session);
+      } else {
+        if (!mongoose.isValidObjectId(fromWarehouse) || !(await Product.exists({ _id: product }).session(session))) {
+          const e = new Error("Invalid product or warehouse ID");
+          e.status = 400;
+          throw e;
+        }
+      }
       await ensureWarehouse(toWarehouse, session);
 
       // Check available stock

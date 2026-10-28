@@ -53,6 +53,9 @@ export default function Inventory() {
   const [warehouseFilter, setWarehouseFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [aiOpen, setAiOpen] = useState(false);
+  const [warehouseList, setWarehouseList] = useState([]);
+  const [action, setAction] = useState(null); // { type: "in"|"out"|"move", stock, qty, warehouse, error }
+  const [busy, setBusy] = useState(null);
 
   /* ================= FETCH INVENTORY ================= */
   const fetchInventory = async () => {
@@ -80,34 +83,67 @@ export default function Inventory() {
 
   useEffect(() => {
     fetchInventory();
+    API.get("/warehouses")
+      .then((res) => {
+        const d = res.data;
+        const list = Array.isArray(d) ? d : d?.warehouses || d?.data || [];
+        setWarehouseList(list.filter((w) => w.status !== "Inactive"));
+      })
+      .catch(() => setWarehouseList([]));
   }, []);
 
   /* ================= STOCK ACTIONS ================= */
-  const handleStockIn = async (stock, qty = 1) => {
-    try {
-      await API.post("/inventory/stock-in", {
-        product: stock.product._id,
-        warehouse: stock.warehouse._id,
-        quantity: qty,
-      });
-      toast.success(`Stock increased by ${qty}`);
-      fetchInventory();
-    } catch (err) {
-      toast.error("Stock-in failed");
-    }
+  const rowKey = (s) => `${s.product?._id}-${s.warehouse?._id || s.warehouseStatus}`;
+
+  const ACTION_META = {
+    in: { title: "Stock IN", button: "Add Stock", success: "Stock added successfully", color: "from-emerald-600 to-green-600" },
+    out: { title: "Stock OUT", button: "Remove Stock", success: "Stock removed successfully", color: "from-red-600 to-rose-600" },
+    move: { title: "Move Stock", button: "Move Stock", success: "Stock moved successfully", color: "from-indigo-600 to-violet-600" },
   };
 
-  const handleStockOut = async (stock, qty = 1) => {
+  const needsWarehouse = (a) => a.type === "move" || !hasWarehouse(a.stock);
+  const maxQtyOf = (a) =>
+    a.type === "out" ? onHandOf(a.stock) : a.type === "move" ? availableOf(a.stock) : undefined;
+
+  const openAction = (type, s) =>
+    setAction({ type, stock: s, qty: type === "move" ? String(availableOf(s)) : "1", warehouse: "", error: "" });
+
+  const closeAction = () => {
+    if (!busy) setAction(null);
+  };
+
+  // Posts to an existing inventory API, then reloads persisted values
+  const submitAction = async (e) => {
+    e?.preventDefault();
+    if (!action || busy) return;
+    const { type, stock: s } = action;
+    const qty = Number(action.qty);
+    const max = maxQtyOf(action);
+    const fail = (error) => setAction((a) => ({ ...a, error }));
+
+    if (!Number.isFinite(qty) || qty <= 0) return fail("Enter a positive quantity");
+    if (max !== undefined && qty > max) return fail(`Quantity cannot exceed ${max}`);
+    if (needsWarehouse(action) && !action.warehouse) return fail("Select a warehouse");
+
+    const [url, body] =
+      type === "move"
+        ? ["/inventory/transfer", { product: s.product._id, fromWarehouse: s.warehouse._id, toWarehouse: action.warehouse,
+            quantity: qty, reason: "Recovered from deleted warehouse" }]
+        : [type === "in" ? "/inventory/stock-in" : "/inventory/stock-out",
+           { product: s.product._id, warehouse: action.warehouse || s.warehouse._id, quantity: qty }];
+
     try {
-      await API.post("/inventory/stock-out", {
-        product: stock.product._id,
-        warehouse: stock.warehouse._id,
-        quantity: qty,
-      });
-      toast.success(`Stock reduced by ${qty}`);
-      fetchInventory();
+      setBusy(rowKey(s));
+      await API.post(url, body);
+      toast.success(ACTION_META[type].success);
+      setAction(null);
+      await fetchInventory();
     } catch (err) {
-      toast.error("Stock-out failed");
+      const message = err.response?.data?.message || "Stock update failed";
+      fail(message);
+      toast.error(message);
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -704,13 +740,13 @@ status={status}
 
 <p className="font-medium">
 
-{tx.type || "--"}
+{tx.type ? tx.type.replace("_", " ") : "No movement"}
 
 </p>
 
 <p className="text-xs text-slate-500">
 
-{tx.qty || 0} Units
+{tx.type ? `${tx.qty} Units · ${new Date(tx.date).toLocaleDateString()}` : "—"}
 
 </p>
 
@@ -720,24 +756,45 @@ status={status}
 
 <Td>
 
-<div className="flex justify-end gap-2">
+<div className="flex items-center justify-end gap-2">
 
+{hasWarehouse(s) ? (
+<>
 <ActionBtn
 label="IN"
 icon={Plus}
 color="emerald"
-disabled={!hasWarehouse(s)}
-title={hasWarehouse(s) ? undefined : "Use Stock Adjustment to add stock to a warehouse"}
-onClick={()=>handleStockIn(s)}
+disabled={busy===rowKey(s)}
+onClick={()=>openAction("in", s)}
 />
 
 <ActionBtn
 label="OUT"
 icon={Minus}
 color="red"
-disabled={!hasWarehouse(s) || onHand<=0}
-onClick={()=>handleStockOut(s)}
+disabled={busy===rowKey(s) || onHand<=0}
+onClick={()=>openAction("out", s)}
 />
+</>
+) : s.warehouseStatus === "unassigned" ? (
+<ActionBtn
+label="IN"
+icon={Plus}
+color="emerald"
+disabled={busy===rowKey(s)}
+title="Record stock into a warehouse"
+onClick={()=>openAction("in", s)}
+/>
+) : (
+<ActionBtn
+label="MOVE"
+icon={RefreshCcw}
+color="emerald"
+disabled={busy===rowKey(s) || available<=0}
+title="Transfer the unreserved balance to a live warehouse"
+onClick={()=>openAction("move", s)}
+/>
+)}
 
 </div>
 
@@ -760,6 +817,117 @@ onClick={()=>handleStockOut(s)}
 </div>
 
       {/* ================= AI Assistant Panel ================= */}
+      {/* ================= STOCK ACTION MODAL ================= */}
+      {action && (
+        <div className="fixed inset-0 z-50 grid p-4 bg-slate-900/50 backdrop-blur-sm place-items-center" onClick={closeAction}>
+          <form
+            onSubmit={submitAction}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md overflow-hidden bg-white shadow-2xl rounded-3xl"
+          >
+            <div className="flex items-center justify-between px-6 py-5 text-white bg-gradient-to-r from-slate-900 via-indigo-900 to-blue-900">
+              <div>
+                <h3 className="text-lg font-bold">{ACTION_META[action.type].title}</h3>
+                <p className="mt-1 text-xs text-slate-300">
+                  {action.stock.product?.name} · SKU {action.stock.product?.sku || "--"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeAction}
+                disabled={!!busy}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-40"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                {[
+                  ["On Hand", onHandOf(action.stock)],
+                  ["Reserved", reservedOf(action.stock)],
+                  ["Available", availableOf(action.stock)],
+                ].map(([label, value]) => (
+                  <div key={label} className="p-3 rounded-2xl bg-slate-50">
+                    <p className="text-xs text-slate-500">{label}</p>
+                    <p className="mt-1 text-lg font-bold text-slate-900">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold tracking-wider uppercase text-slate-500">
+                  {action.type === "move" ? "From" : "Warehouse"}
+                </p>
+                <p className="mt-1 font-medium text-slate-800">{warehouseLabelOf(action.stock)}</p>
+              </div>
+
+              {needsWarehouse(action) && (
+                <label className="block">
+                  <span className="text-xs font-semibold tracking-wider uppercase text-slate-500">
+                    {action.type === "move" ? "To Warehouse" : "Target Warehouse"}
+                  </span>
+                  <select
+                    value={action.warehouse}
+                    onChange={(e) => setAction((a) => ({ ...a, warehouse: e.target.value, error: "" }))}
+                    disabled={!!busy}
+                    className="w-full px-4 py-3 mt-2 bg-white border outline-none rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                  >
+                    <option value="">Select warehouse</option>
+                    {warehouseList.map((w) => (
+                      <option key={w._id} value={w._id}>{w.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label className="block">
+                <span className="text-xs font-semibold tracking-wider uppercase text-slate-500">
+                  Quantity{maxQtyOf(action) !== undefined ? ` (max ${maxQtyOf(action)})` : ""}
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  autoFocus
+                  value={action.qty}
+                  onChange={(e) => setAction((a) => ({ ...a, qty: e.target.value, error: "" }))}
+                  disabled={!!busy}
+                  className="w-full px-4 py-3 mt-2 bg-white border outline-none rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                />
+              </label>
+
+              {action.error && (
+                <div className="flex items-start gap-2 px-4 py-3 text-sm text-red-700 border border-red-200 rounded-xl bg-red-50">
+                  <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                  {action.error}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t bg-slate-50">
+              <button
+                type="button"
+                onClick={closeAction}
+                disabled={!!busy}
+                className="px-5 py-2.5 font-semibold transition bg-white border rounded-xl border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!!busy}
+                className={`flex items-center gap-2 px-5 py-2.5 font-semibold text-white transition shadow-lg rounded-xl bg-gradient-to-r ${ACTION_META[action.type].color} hover:scale-105 disabled:opacity-60 disabled:hover:scale-100`}
+              >
+                {busy && <RefreshCcw size={16} className="animate-spin" />}
+                {busy ? "Saving…" : ACTION_META[action.type].button}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {aiOpen && (
         <InventoryAIAssistant inventory={stocks} onClose={() => setAiOpen(false)} />
       )}
