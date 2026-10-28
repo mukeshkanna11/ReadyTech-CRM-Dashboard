@@ -11,7 +11,7 @@ import {
 import { inboxSummary, retryDeadEvent, listEvents } from "../services/shopify/inbox.service.js";
 import { orderSummary } from "../services/shopify/orderSync.service.js";
 import {
-  listLocations, saveInventorySettings, scanVariants, syncInventory, inventorySummary, inventoryPreview,
+  listLocations, reconcileSavedLocation, saveInventorySettings, scanVariants, syncInventory, inventorySummary, inventoryPreview,
 } from "../services/shopify/inventorySync.service.js";
 import ShopifyConnection from "../models/ShopifyConnection.js";
 
@@ -147,7 +147,8 @@ router.get("/inventory/locations", auth, role("admin"), async (req, res) => {
   try {
     const conn = await activeConnection(req.workspace);
     if (!conn) return res.status(409).json({ success: false, message: "No Shopify store is connected" });
-    res.json({ success: true, data: (await listLocations(conn)).map(({ id, name }) => ({ id, name })) });
+    const locations = (await listLocations(conn)).map(({ id, name }) => ({ id, name }));
+    res.json({ success: true, data: locations, saved: await reconcileSavedLocation(conn, locations) });
   } catch (error) {
     sendError(res, error, "load Shopify locations");
   }

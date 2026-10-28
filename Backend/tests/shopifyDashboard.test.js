@@ -20,7 +20,7 @@ Object.assign(process.env, {
 await import("../utils/workspaceScope.js");
 const { encrypt } = await import("../services/shopify/crypto.js");
 const { listEvents } = await import("../services/shopify/inbox.service.js");
-const { inventoryPreview } = await import("../services/shopify/inventorySync.service.js");
+const { inventoryPreview, reconcileSavedLocation } = await import("../services/shopify/inventorySync.service.js");
 const { missingScopes } = await import("../services/shopify/shopify.service.js");
 const User = (await import("../models/User.js")).default;
 const ShopifyConnection = (await import("../models/ShopifyConnection.js")).default;
@@ -114,7 +114,8 @@ test("preview: per-SKU ERP available (on-hand − reserved − committed) and wh
   const r = await inventoryPreview(c);
 
   assert.equal(r.locationName, "My Custom Location");
-  assert.deepEqual(r.totals, { mapped: 4, willPush: 1, unchanged: 1, ambiguous: 2, failing: 1 });
+  // Each SKU is in exactly one bucket (the failing DUP is reported as a duplicate)
+  assert.deepEqual(r.totals, { mapped: 4, willPush: 1, unchanged: 1, ambiguous: 2, failing: 0, mismatched: 0 });
   const snow = r.items.find((i) => i.sku === "SNOW-MULTI-001");
   assert.deepEqual(
     { onHand: snow.onHand, reserved: snow.reserved, committed: snow.committed, available: snow.available, willPush: snow.willPush, product: snow.product },
@@ -123,6 +124,91 @@ test("preview: per-SKU ERP available (on-hand − reserved − committed) and wh
   const tee = r.items.find((i) => i.sku === "TEE-01");
   assert.equal(tee.available, 7); // 9 − 2
   assert.equal(tee.willPush, true); // last pushed 5
+});
+
+/* Regression: ERP Products showed Qty 10 while Stock by SKU showed 0. The
+   product-form Qty is not warehouse stock; the ledger of the mapped warehouse
+   is. The preview must show both and flag the gap, never push the form Qty. */
+const previewStubs = ({ ledger, links, products, reserved = [] }) => {
+  stub(ShopifyInventoryLink, "find", async () => links);
+  stub(Inventory, "aggregate", async (pipeline) => {
+    const wh = String(pipeline[0].$match.warehouse);
+    return ledger.filter((r) => r.warehouse === wh).map(({ product, onHand }) => ({ _id: product, onHand }));
+  });
+  stub(StockLevel, "find", async () => reserved);
+  stub(ShopifyOrderLink, "find", async () => []);
+  stub(ShopifyWebhookEvent, "find", async () => []);
+  stub(Product, "find", async () => products);
+  globalThis.fetch = async () => assert.fail("preview must not call Shopify");
+};
+
+test("preview: product Qty 10 with no ledger stock in the mapped warehouse → available 0, flagged as mismatch", async () => {
+  const OTHER_WH = oid();
+  previewStubs({
+    links: [{ _id: oid(), sku: "SNOW-MULTI-001", product: P1, lastPushedQty: 0, dirty: false, lastError: null }],
+    ledger: [{ warehouse: String(OTHER_WH), product: P1, onHand: 10 }], // stock booked elsewhere
+    products: [{ _id: P1, name: "The Multi-location Snowboard", stockQuantity: 10 }],
+  });
+  const r = await inventoryPreview(conn());
+  const [item] = r.items;
+  assert.equal(item.productQty, 10);
+  assert.equal(item.onHand, 0); // only the mapped warehouse counts
+  assert.equal(item.available, 0);
+  assert.equal(item.qtyMismatch, true);
+  assert.equal(r.totals.mismatched, 1);
+});
+
+test("preview: stock booked into the mapped warehouse is what gets pushed (no mismatch)", async () => {
+  previewStubs({
+    links: [{ _id: oid(), sku: "SNOW-MULTI-001", product: P1, lastPushedQty: 0, dirty: false, lastError: null }],
+    ledger: [{ warehouse: String(WH), product: P1, onHand: 10 }],
+    reserved: [{ product: P1, reserved: 3 }],
+    products: [{ _id: P1, name: "The Multi-location Snowboard", stockQuantity: 10 }],
+  });
+  const r = await inventoryPreview(conn());
+  const [item] = r.items;
+  assert.deepEqual([item.onHand, item.reserved, item.available, item.qtyMismatch, item.willPush], [10, 3, 7, false, true]);
+  assert.deepEqual(r.totals, { mapped: 1, willPush: 1, unchanged: 0, ambiguous: 0, failing: 0, mismatched: 0 });
+});
+
+test("preview: totals are exclusive and add up to the mapped count", async () => {
+  previewStubs({
+    links: [
+      { _id: oid(), sku: "A", product: P1, lastPushedQty: 0, dirty: true, lastError: "Item not stocked at location" }, // failing, not also "will update"
+      { _id: oid(), sku: "B", product: P2, lastPushedQty: 4, dirty: false, lastError: null },
+      { _id: oid(), sku: "C", product: P2, lastPushedQty: 1, dirty: false, lastError: null },
+    ],
+    ledger: [{ warehouse: String(WH), product: P2, onHand: 4 }],
+    products: [],
+  });
+  const { totals } = await inventoryPreview(conn());
+  assert.deepEqual(totals, { mapped: 3, willPush: 1, unchanged: 1, ambiguous: 0, failing: 1, mismatched: 0 });
+  assert.equal(totals.willPush + totals.unchanged + totals.ambiguous + totals.failing, totals.mapped);
+});
+
+/* ---------------- location mapping ---------------- */
+test("saved location: matched by id; a rename only refreshes the stored name (workspace-scoped)", async () => {
+  const writes = [];
+  stub(ShopifyConnection, "updateOne", async (f, u) => (writes.push({ f, u }), {}));
+  const c = conn({ enabled: true, warehouse: WH, locationGid: LOC, locationName: "My Custom Location" });
+
+  const same = await reconcileSavedLocation(c, [{ id: LOC, name: "My Custom Location" }]);
+  assert.deepEqual(same, { gid: LOC, name: "My Custom Location", active: true, renamed: false });
+  assert.equal(writes.length, 0);
+
+  const renamed = await reconcileSavedLocation(c, [{ id: "gid://shopify/Location/1", name: "Shop location" }, { id: LOC, name: "Hindusthan Store" }]);
+  assert.deepEqual(renamed, { gid: LOC, name: "Hindusthan Store", active: true, renamed: true });
+  assert.equal(writes.length, 1);
+  assert.equal(String(writes[0].f.workspace), String(WS));
+  assert.equal(writes[0].f["inventory.locationGid"], LOC);
+  assert.deepEqual(writes[0].u, { $set: { "inventory.locationName": "Hindusthan Store" } });
+});
+
+test("saved location: deactivated/deleted in Shopify → inactive, nothing written", async () => {
+  stub(ShopifyConnection, "updateOne", async () => assert.fail("no write"));
+  const r = await reconcileSavedLocation(conn(), [{ id: "gid://shopify/Location/1", name: "Shop location" }]);
+  assert.deepEqual(r, { gid: LOC, name: "My Custom Location", active: false, renamed: false });
+  assert.deepEqual(await reconcileSavedLocation(conn({ enabled: false, warehouse: null, locationGid: null }), []), { gid: null, name: null, active: false, renamed: false });
 });
 
 /* ---------------- permissions ---------------- */

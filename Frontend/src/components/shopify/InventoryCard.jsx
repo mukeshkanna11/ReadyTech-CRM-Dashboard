@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { ArrowRight, Boxes, MapPin, PackageSearch, RefreshCw, Save, Warehouse } from "lucide-react";
+import { AlertTriangle, ArrowRight, Boxes, MapPin, PackageSearch, RefreshCw, Save, Warehouse } from "lucide-react";
 import API from "../../services/api";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Notice, Skeleton, Stat } from "./ui";
-import { ago, errorText, fmt } from "./format";
-
-const rowStatus = (i) =>
-  i.ambiguous ? ["amber", "Duplicate SKU"] : i.lastError ? ["red", "Error"] : i.willPush ? ["blue", "Will update"] : ["green", "Up to date"];
+import { ago, errorText, fmt, locationState, rowStatus } from "./format";
 
 export default function InventoryCard({ conn, summary, admin, busy, run, onChanged, refreshKey }) {
   const saved = conn.inventory || {};
@@ -26,9 +24,12 @@ export default function InventoryCard({ conn, summary, admin, busy, run, onChang
   const loadOptions = useCallback(() => {
     setOptionsError(null);
     Promise.all([API.get("/warehouses"), API.get("/shopify/inventory/locations")])
-      .then(([w, l]) => setOptions({ warehouses: w.data?.warehouses || [], locations: l.data?.data || [] }))
+      .then(([w, l]) => {
+        setOptions({ warehouses: w.data?.warehouses || [], locations: l.data?.data || [] });
+        if (l.data?.saved?.renamed) onChanged(); // server refreshed the stored name
+      })
       .catch((err) => setOptionsError(errorText(err, "Couldn't load warehouses or Shopify locations.")));
-  }, []);
+  }, [onChanged]);
   useEffect(() => {
     if (admin) loadOptions();
   }, [admin, loadOptions]);
@@ -92,6 +93,8 @@ export default function InventoryCard({ conn, summary, admin, busy, run, onChang
     });
 
   const whName = options?.warehouses.find((w) => w._id === saved.warehouse)?.name;
+  const loc = options ? locationState(saved.locationGid, saved.locationName, options.locations) : { status: saved.locationGid ? "ok" : "unset", name: saved.locationName };
+  const locationInactive = loc.status === "inactive";
   const last = saved.lastResult;
   const totals = preview?.totals;
 
@@ -102,7 +105,7 @@ export default function InventoryCard({ conn, summary, admin, busy, run, onChang
       subtitle="ReadyTech ERP is the stock master. Available stock of one ERP warehouse is set on one Shopify location (every 5 minutes, or on demand). Products match by SKU."
       actions={
         admin && saved.enabled && (
-          <Button variant="primary" icon={RefreshCw} loading={busy === "preview" || busy === "sync"} disabled={!!busy || dirty} onClick={askSync} title={dirty ? "Save your changes first" : undefined}>
+          <Button variant="primary" icon={RefreshCw} loading={busy === "preview" || busy === "sync"} disabled={!!busy || dirty || locationInactive} onClick={askSync} title={dirty ? "Save your changes first" : locationInactive ? "Choose an active Shopify location first" : undefined}>
             {busy === "sync" ? "Syncing…" : "Sync now"}
           </Button>
         )
@@ -115,14 +118,20 @@ export default function InventoryCard({ conn, summary, admin, busy, run, onChang
         </span>
         <ArrowRight size={15} className="hidden text-slate-400 sm:block" />
         <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
-          <MapPin size={15} className="text-slate-500" /> {saved.locationName || "No Shopify location"}
+          <MapPin size={15} className="text-slate-500" /> {loc.name || "No Shopify location"}
         </span>
         <span className="sm:ml-auto"><Badge tone={saved.enabled ? "green" : "slate"}>{saved.enabled ? "Sync on" : "Sync off"}</Badge></span>
       </div>
       {configured && (
         <p className="text-xs text-slate-500">
-          Only <strong>{saved.locationName || "the mapped location"}</strong> is updated. Other Shopify locations keep their own quantities, so a store-wide total can differ from the ERP.
+          Only <strong>{loc.name || "the mapped location"}</strong> is updated. Other Shopify locations keep their own quantities, so a store-wide total can differ from the ERP.
         </p>
+      )}
+
+      {locationInactive && (
+        <Notice type="error" title="Saved Shopify location is no longer active">
+          “{loc.name}” was deactivated or deleted in Shopify, so stock can't be pushed. Choose an active location below and save.
+        </Notice>
       )}
 
       {admin && (
@@ -147,6 +156,7 @@ export default function InventoryCard({ conn, summary, admin, busy, run, onChang
                 <span className="font-medium text-slate-700">Shopify location</span>
                 <select value={form.locationGid} onChange={(e) => setForm({ ...form, locationGid: e.target.value })} className="w-full px-3 py-2 bg-white border rounded-xl border-slate-300">
                   <option value="">Choose…</option>
+                  {locationInactive && saved.locationGid && <option value={saved.locationGid} disabled>{loc.name} (inactive in Shopify)</option>}
                   {options.locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
               </label>
@@ -169,7 +179,7 @@ export default function InventoryCard({ conn, summary, admin, busy, run, onChang
         <Stat label="SKUs matched" value={totals?.mapped ?? summary?.mapped ?? 0} />
         <Stat label="Will update" value={totals ? totals.willPush : "—"} tone={totals?.willPush ? "amber" : undefined} hint="on next sync" />
         <Stat label="Up to date" value={totals ? totals.unchanged : "—"} tone="green" />
-        <Stat label="Failing" value={totals ? totals.failing : summary?.failing?.length ?? 0} tone={(totals ? totals.failing : summary?.failing?.length) ? "red" : undefined} />
+        <Stat label="Failing" value={totals ? totals.failing : summary?.failing?.length ?? 0} tone={(totals ? totals.failing : summary?.failing?.length) ? "red" : undefined} hint={totals?.ambiguous ? `${totals.ambiguous} duplicate SKU(s) skipped` : undefined} />
       </dl>
 
       {/* Last sync (the backend keeps the latest run per store) */}
@@ -204,6 +214,15 @@ export default function InventoryCard({ conn, summary, admin, busy, run, onChang
         </Notice>
       )}
 
+      {admin && totals?.mismatched > 0 && (
+        <Notice type="warning" title={`${totals.mismatched} SKU(s): product Qty isn't booked as stock in ${whName || "this warehouse"}`}>
+          The Qty typed on a product isn't warehouse stock. Shopify receives the ERP stock ledger of {whName || "the mapped warehouse"} (on hand − reserved).
+          To push it, record the units with a{" "}
+          <Link to="../../stocks/stock-adjustment" relative="path" className="font-semibold underline">Stock Adjustment</Link>
+          {" "}(or stock in / purchase) into {whName || "that warehouse"}, then run Sync now.
+        </Notice>
+      )}
+
       {/* Per-SKU preview */}
       {admin && configured && (
         <div className="space-y-2">
@@ -226,6 +245,7 @@ export default function InventoryCard({ conn, summary, admin, busy, run, onChang
                   <thead className="text-xs text-left uppercase text-slate-500">
                     <tr>
                       <th className="py-2 pr-4 font-medium">SKU</th>
+                      <th className="py-2 pr-4 font-medium text-right">Product Qty</th>
                       <th className="py-2 pr-4 font-medium text-right">On hand</th>
                       <th className="py-2 pr-4 font-medium text-right">Reserved</th>
                       <th className="py-2 pr-4 font-medium text-right">Shopify sold*</th>
@@ -243,6 +263,12 @@ export default function InventoryCard({ conn, summary, admin, busy, run, onChang
                             <p className="font-medium text-slate-900">{i.sku}</p>
                             <p className="text-xs text-slate-500">{i.product || "—"}</p>
                             {i.lastError && <p className="text-xs text-red-600 break-words">{i.lastError}</p>}
+                          </td>
+                          <td className={`py-2.5 pr-4 text-right tabular-nums ${i.qtyMismatch ? "text-amber-700" : "text-slate-500"}`}>
+                            <span className="inline-flex items-center gap-1" title={i.qtyMismatch ? "Not booked as stock in this warehouse" : undefined}>
+                              {i.qtyMismatch && <AlertTriangle size={13} aria-label="Mismatch" />}
+                              {i.productQty ?? "—"}
+                            </span>
                           </td>
                           <td className="py-2.5 pr-4 text-right tabular-nums">{i.onHand}</td>
                           <td className="py-2.5 pr-4 text-right tabular-nums">{i.reserved}</td>
@@ -269,6 +295,11 @@ export default function InventoryCard({ conn, summary, admin, busy, run, onChang
                       <p className="text-xs text-slate-600 tabular-nums">
                         {i.onHand} on hand − {i.reserved} reserved − {i.committed} sold = <strong>{i.available}</strong> · last pushed {i.lastPushedQty ?? "—"}
                       </p>
+                      {i.qtyMismatch && (
+                        <p className="flex items-center gap-1 text-xs text-amber-700">
+                          <AlertTriangle size={13} /> Product Qty {i.productQty} isn't booked in {whName || "this warehouse"}
+                        </p>
+                      )}
                       {i.lastError && <p className="text-xs text-red-600 break-words">{i.lastError}</p>}
                     </li>
                   );
@@ -292,7 +323,7 @@ export default function InventoryCard({ conn, summary, admin, busy, run, onChang
         onConfirm={sync}
       >
         <p>
-          Quantities from <strong>{whName || "the ERP warehouse"}</strong> will be set on <strong>{confirm?.locationName || "the mapped Shopify location"}</strong>.
+          Quantities from <strong>{whName || "the ERP warehouse"}</strong> will be set on <strong>{loc.name || confirm?.locationName || "the mapped Shopify location"}</strong>.
           No other Shopify location is changed.
         </p>
         {confirm && (

@@ -60,6 +60,24 @@ const SET_QUANTITIES = `mutation($input: InventorySetQuantitiesInput!, $idempote
 export const listLocations = async (conn) =>
   ((await connectionGraphql(conn, LOCATIONS))?.locations?.nodes || []).filter((l) => l.isActive !== false);
 
+/* The saved location is matched by its id (stable across renames). A rename in
+   Shopify only refreshes the stored display name; a missing id means it was
+   deactivated or deleted and must be re-chosen. */
+export const reconcileSavedLocation = async (conn, locations) => {
+  const gid = conn.inventory?.locationGid || null;
+  if (!gid) return { gid: null, name: null, active: false, renamed: false };
+  const current = locations.find((l) => l.id === gid);
+  if (!current) return { gid, name: conn.inventory.locationName || null, active: false, renamed: false };
+  const renamed = current.name !== conn.inventory.locationName;
+  if (renamed) {
+    await ShopifyConnection.updateOne(
+      { _id: conn._id, workspace: conn.workspace, "inventory.locationGid": gid },
+      { $set: { "inventory.locationName": current.name } }
+    );
+  }
+  return { gid, name: current.name, active: true, renamed };
+};
+
 /* ---------------- SKU mapping (Shopify inventory item ↔ ERP product) ---------------- */
 const erpProductsBySku = async (skus) => {
   const list = skus.length ? await Product.find({ sku: { $in: skus } }, "_id sku", { lean: true }) : [];
@@ -235,7 +253,8 @@ const PREVIEW_LIMIT = 500;
 export const inventoryPreview = async (conn) => {
   const { warehouse, locationGid, locationName } = conn.inventory || {};
   const base = { configured: Boolean(warehouse && locationGid), warehouse: warehouse || null, locationGid: locationGid || null, locationName: locationName || null };
-  if (!base.configured) return { ...base, totals: { mapped: 0, willPush: 0, unchanged: 0, ambiguous: 0, failing: 0 }, items: [], truncated: false };
+  const totals = { mapped: 0, willPush: 0, unchanged: 0, ambiguous: 0, failing: 0, mismatched: 0 };
+  if (!base.configured) return { ...base, totals, items: [], truncated: false };
 
   const links = await ShopifyInventoryLink.find(
     { workspace: conn.workspace, connection: conn._id },
@@ -245,27 +264,37 @@ export const inventoryPreview = async (conn) => {
   const ids = [...new Set(links.map((l) => String(l.product)))];
   const [desired, products] = await Promise.all([
     desiredQuantities(conn, ids),
-    ids.length ? Product.find({ _id: { $in: ids } }, "name", { lean: true }) : [],
+    ids.length ? Product.find({ _id: { $in: ids } }, "name stockQuantity", { lean: true }) : [],
   ]);
-  const names = new Map(products.map((p) => [String(p._id), p.name]));
+  const byId = new Map(products.map((p) => [String(p._id), p]));
   const perSku = new Map();
   links.forEach((l) => perSku.set(l.sku, (perSku.get(l.sku) || 0) + 1));
 
-  const totals = { mapped: links.length, willPush: 0, unchanged: 0, ambiguous: 0, failing: 0 };
+  totals.mapped = links.length;
   const items = links
     .map((l) => {
       const ambiguous = perSku.get(l.sku) > 1;
       const quantity = desired(l.product, l.sku);
       const willPush = !ambiguous && (l.dirty || l.lastPushedQty !== quantity);
+      // One bucket per SKU, same precedence as the row status: duplicate › failing › will update › up to date
       if (ambiguous) totals.ambiguous++;
+      else if (l.lastError) totals.failing++;
       else if (willPush) totals.willPush++;
       else totals.unchanged++;
-      if (l.lastError) totals.failing++;
+
+      const product = byId.get(String(l.product));
+      const parts = desired.parts(l.product, l.sku);
+      // Product-form Qty is not warehouse stock; flag it when it disagrees with the ledger
+      const productQty = product?.stockQuantity ?? null;
+      const qtyMismatch = productQty !== null && Number(productQty) !== parts.onHand;
+      if (qtyMismatch) totals.mismatched++;
       return {
         _id: l._id,
         sku: l.sku,
-        product: names.get(String(l.product)) || null,
-        ...desired.parts(l.product, l.sku),
+        product: product?.name || null,
+        ...parts,
+        productQty,
+        qtyMismatch,
         available: quantity,
         lastPushedQty: l.lastPushedQty,
         lastPushedAt: l.lastPushedAt,

@@ -81,6 +81,10 @@ export default function ShopifyIntegration() {
     return load(silent);
   }, [load]);
 
+  // Stable callbacks for the cards (their effects depend on them)
+  const reloadStatus = useCallback(() => load(true), [load]);
+  const reloadAll = useCallback(() => refreshAll(true), [refreshAll]);
+
   /* Auto-refresh: read-only status only, paused while hidden or busy; cleared on unmount */
   useEffect(() => {
     const id = setInterval(() => {
@@ -282,11 +286,11 @@ export default function ShopifyIntegration() {
       )}
 
       {state === "ready" && active && (
-        <WebhookEventsCard inbox={inbox} webhooks={conn.webhooks} admin={admin} busy={busy} run={run} onChanged={() => load(true)} refreshKey={refreshKey} />
+        <InventoryCard conn={conn} summary={data?.inventory} admin={admin} busy={busy} run={run} onChanged={reloadAll} refreshKey={refreshKey} />
       )}
 
       {state === "ready" && active && (
-        <InventoryCard conn={conn} summary={data?.inventory} admin={admin} busy={busy} run={run} onChanged={() => refreshAll(true)} refreshKey={refreshKey} />
+        <WebhookEventsCard inbox={inbox} webhooks={conn.webhooks} admin={admin} busy={busy} run={run} onChanged={reloadStatus} refreshKey={refreshKey} />
       )}
 
       {state === "ready" && orders?.recent?.length > 0 && (

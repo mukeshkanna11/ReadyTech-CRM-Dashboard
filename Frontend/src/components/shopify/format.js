@@ -13,3 +13,15 @@ export const ago = (d) => {
 
 export const errorText = (err, fallback = "Something went wrong. Please try again.") =>
   err?.response?.data?.message || fallback;
+
+/* One status per SKU row; same precedence as the backend preview totals */
+export const rowStatus = (i) =>
+  i.ambiguous ? ["amber", "Duplicate SKU"] : i.lastError ? ["red", "Failing"] : i.willPush ? ["blue", "Will update"] : ["green", "Up to date"];
+
+/* Saved Shopify location vs. the store's active locations (matched by id, never by name) */
+export const locationState = (savedGid, savedName, locations) => {
+  if (!savedGid) return { status: "unset", name: null };
+  const current = (locations || []).find((l) => l.id === savedGid);
+  if (!current) return { status: "inactive", name: savedName || "Saved location" };
+  return { status: current.name === savedName ? "ok" : "renamed", name: current.name };
+};
