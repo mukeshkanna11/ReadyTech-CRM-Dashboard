@@ -6,12 +6,12 @@ import User from "../models/User.js";
 import { runWithWorkspace } from "../utils/workspaceContext.js";
 import {
   missingConfig, normalizeShop, buildAuthUrl, verifyState, verifyCallbackHmac,
-  verifyWebhookHmac, completeConnection, getStatus, disconnect, handleWebhook, refreshWebhooks,
+  verifyWebhookHmac, completeConnection, getStatus, disconnect, handleWebhook, refreshWebhooks, missingScopes,
 } from "../services/shopify/shopify.service.js";
-import { inboxSummary, retryDeadEvent } from "../services/shopify/inbox.service.js";
+import { inboxSummary, retryDeadEvent, listEvents } from "../services/shopify/inbox.service.js";
 import { orderSummary } from "../services/shopify/orderSync.service.js";
 import {
-  listLocations, saveInventorySettings, scanVariants, syncInventory, inventorySummary,
+  listLocations, saveInventorySettings, scanVariants, syncInventory, inventorySummary, inventoryPreview,
 } from "../services/shopify/inventorySync.service.js";
 import ShopifyConnection from "../models/ShopifyConnection.js";
 
@@ -38,7 +38,10 @@ router.get("/status", auth, async (req, res) => {
     const [connection, inbox, orders, inventory] = await Promise.all([
       getStatus(req.workspace), inboxSummary(req.workspace), orderSummary(req.workspace), inventorySummary(req.workspace),
     ]);
-    res.json({ success: true, data: { available: missingConfig().length === 0, connection, inbox, orders, inventory } });
+    const available = missingConfig().length === 0;
+    // Permissions the app needs but this store's grant lacks → reconnect to approve them
+    if (connection?.connected && available) connection.missingScopes = missingScopes(connection.scopes);
+    res.json({ success: true, data: { available, connection, inbox, orders, inventory } });
   } catch (error) {
     console.error("Shopify status error:", error.message);
     res.status(500).json({ success: false, message: "Failed to load Shopify integration status" });
@@ -117,6 +120,18 @@ router.post("/events/:id/retry", auth, role("admin"), async (req, res) => {
   }
 });
 
+/* Webhook event table (metadata only, no payloads) — admin only */
+router.get("/events", auth, role("admin"), async (req, res) => {
+  try {
+    const { status, topic, page, limit } = req.query;
+    res.json({ success: true, data: await listEvents(req.workspace, { status, topic, page, limit }) });
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message });
+    console.error("Shopify events error:", error.message);
+    res.status(500).json({ success: false, message: "Failed to load Shopify events" });
+  }
+});
+
 /* ---------------- Inventory sync (ERP → Shopify) — admin only ---------------- */
 const activeConnection = (workspace) =>
   ShopifyConnection.findOne({ workspace, status: "active" }).select("+accessToken +refreshToken");
@@ -145,6 +160,17 @@ router.put("/inventory/settings", auth, role("admin"), async (req, res) => {
     res.json({ success: true, message: enabled ? "Inventory sync enabled — use Sync now to map products and push stock" : "Inventory sync settings saved", data: { shopDomain: conn.shopDomain } });
   } catch (error) {
     sendError(res, error, "save inventory settings");
+  }
+});
+
+/* Read-only preview of what Sync now would push (no Shopify call, no writes) */
+router.get("/inventory/preview", auth, role("admin"), async (req, res) => {
+  try {
+    const conn = await activeConnection(req.workspace);
+    if (!conn) return res.status(409).json({ success: false, message: "No Shopify store is connected" });
+    res.json({ success: true, data: await inventoryPreview(conn) });
+  } catch (error) {
+    sendError(res, error, "load the inventory preview");
   }
 });
 

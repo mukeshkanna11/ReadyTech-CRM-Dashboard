@@ -93,10 +93,15 @@ export const verifyState = (state, shop) => {
 };
 
 /* write_x implies read_x, and Shopify omits the implied scope from the grant */
+export const missingScopes = (grantedScopes) => {
+  const granted = new Set((Array.isArray(grantedScopes) ? grantedScopes : String(grantedScopes || "").split(",")).map((s) => String(s).trim()).filter(Boolean));
+  return env("SHOPIFY_SCOPES").split(",").map((s) => s.trim()).filter(Boolean)
+    .filter((s) => !granted.has(s) && !(s.startsWith("read_") && granted.has(`write_${s.slice(5)}`)));
+};
+
 export const assertScopes = (grantedScope) => {
   const granted = new Set(String(grantedScope || "").split(",").map((s) => s.trim()).filter(Boolean));
-  const missing = env("SHOPIFY_SCOPES").split(",").map((s) => s.trim()).filter(Boolean)
-    .filter((s) => !granted.has(s) && !(s.startsWith("read_") && granted.has(`write_${s.slice(5)}`)));
+  const missing = missingScopes(grantedScope);
   if (missing.length) throw httpError(422, `Shopify did not grant the required permissions: ${missing.join(", ")}`);
   return [...granted];
 };

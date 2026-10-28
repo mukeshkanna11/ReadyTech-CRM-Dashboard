@@ -110,3 +110,29 @@ export const retryDeadEvent = async (workspaceId, eventId) => {
   );
   return r.modifiedCount === 1;
 };
+
+/* Dashboard event table: newest first, filterable, paginated. Never returns
+   payloads (they can hold customer data) — only delivery metadata. */
+export const EVENT_STATUSES = ["pending", "processing", "processed", "ignored", "dead"];
+export const listEvents = async (workspaceId, { status, topic, page = 1, limit = 20 } = {}) => {
+  const filter = { workspace: workspaceId };
+  if (status) {
+    if (!EVENT_STATUSES.includes(status)) throw Object.assign(new Error("Unknown event status"), { status: 422 });
+    filter.status = status;
+  }
+  if (topic) {
+    if (!INBOX_TOPICS.includes(topic)) throw Object.assign(new Error("Unknown event topic"), { status: 422 });
+    filter.topic = topic;
+  }
+  const size = Math.min(50, Math.max(1, Number.parseInt(limit, 10) || 20));
+  const current = Math.max(1, Number.parseInt(page, 10) || 1);
+  const [items, total] = await Promise.all([
+    ShopifyWebhookEvent.find(filter, "topic status attempts lastError triggeredAt processedAt deadAt nextAttemptAt createdAt")
+      .sort({ createdAt: -1 })
+      .skip((current - 1) * size)
+      .limit(size)
+      .lean(),
+    ShopifyWebhookEvent.countDocuments(filter),
+  ]);
+  return { items, total, page: current, limit: size, pages: Math.max(1, Math.ceil(total / size)) };
+};

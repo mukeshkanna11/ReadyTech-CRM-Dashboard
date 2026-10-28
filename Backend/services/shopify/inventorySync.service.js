@@ -211,11 +211,71 @@ export const desiredQuantities = async (conn, productIds) => {
   ]);
   const onHand = new Map(ledger.map((r) => [String(r._id), num(r.onHand)]));
   const reserved = new Map(levels.map((r) => [String(r.product), num(r.reserved)]));
-  return (productId, sku) => {
+  const parts = (productId, sku) => {
     const id = String(productId);
-    const q = (onHand.get(id) || 0) - (reserved.get(id) || 0) - (committed.byProduct.get(id) || 0) - (committed.bySku.get(sku) || 0);
-    return Math.max(0, Math.floor(q));
+    return {
+      onHand: onHand.get(id) || 0,
+      reserved: reserved.get(id) || 0,
+      committed: (committed.byProduct.get(id) || 0) + (committed.bySku.get(sku) || 0),
+    };
   };
+  // desired(productId, sku) → quantity to push; desired.parts(...) → its breakdown
+  return Object.assign(
+    (productId, sku) => {
+      const p = parts(productId, sku);
+      return Math.max(0, Math.floor(p.onHand - p.reserved - p.committed));
+    },
+    { parts }
+  );
+};
+
+/* Read-only: what the next sync would push to the mapped location, per SKU.
+   Same calculation as syncInventory; never writes to Shopify or the ERP. */
+const PREVIEW_LIMIT = 500;
+export const inventoryPreview = async (conn) => {
+  const { warehouse, locationGid, locationName } = conn.inventory || {};
+  const base = { configured: Boolean(warehouse && locationGid), warehouse: warehouse || null, locationGid: locationGid || null, locationName: locationName || null };
+  if (!base.configured) return { ...base, totals: { mapped: 0, willPush: 0, unchanged: 0, ambiguous: 0, failing: 0 }, items: [], truncated: false };
+
+  const links = await ShopifyInventoryLink.find(
+    { workspace: conn.workspace, connection: conn._id },
+    "sku product lastPushedQty lastPushedAt dirty lastError",
+    { lean: true }
+  );
+  const ids = [...new Set(links.map((l) => String(l.product)))];
+  const [desired, products] = await Promise.all([
+    desiredQuantities(conn, ids),
+    ids.length ? Product.find({ _id: { $in: ids } }, "name", { lean: true }) : [],
+  ]);
+  const names = new Map(products.map((p) => [String(p._id), p.name]));
+  const perSku = new Map();
+  links.forEach((l) => perSku.set(l.sku, (perSku.get(l.sku) || 0) + 1));
+
+  const totals = { mapped: links.length, willPush: 0, unchanged: 0, ambiguous: 0, failing: 0 };
+  const items = links
+    .map((l) => {
+      const ambiguous = perSku.get(l.sku) > 1;
+      const quantity = desired(l.product, l.sku);
+      const willPush = !ambiguous && (l.dirty || l.lastPushedQty !== quantity);
+      if (ambiguous) totals.ambiguous++;
+      else if (willPush) totals.willPush++;
+      else totals.unchanged++;
+      if (l.lastError) totals.failing++;
+      return {
+        _id: l._id,
+        sku: l.sku,
+        product: names.get(String(l.product)) || null,
+        ...desired.parts(l.product, l.sku),
+        available: quantity,
+        lastPushedQty: l.lastPushedQty,
+        lastPushedAt: l.lastPushedAt,
+        willPush,
+        ambiguous,
+        lastError: l.lastError,
+      };
+    })
+    .sort((a, b) => a.sku.localeCompare(b.sku));
+  return { ...base, totals, items: items.slice(0, PREVIEW_LIMIT), truncated: items.length > PREVIEW_LIMIT };
 };
 
 /* ---------------- push ---------------- */

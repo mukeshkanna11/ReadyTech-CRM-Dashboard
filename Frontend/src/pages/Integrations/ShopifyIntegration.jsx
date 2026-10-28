@@ -1,14 +1,20 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { ShoppingCart, ShieldCheck, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import { ShoppingCart, ShieldCheck, KeyRound, Link2, Unplug, RefreshCw, Store, Receipt } from "lucide-react";
 import API from "../../services/api";
+import { Badge, Button, Card, Notice, SkeletonCard } from "../../components/shopify/ui";
+import { ago, errorText, fmt } from "../../components/shopify/format";
+import WebhookEventsCard from "../../components/shopify/WebhookEventsCard";
+import InventoryCard from "../../components/shopify/InventoryCard";
 
 /* =========================================================
    SHOPIFY INTEGRATION — this workspace's own Shopify store
    (OAuth). Each workspace connects and manages its store
-   independently.
+   independently. Every number here comes from the API.
 ========================================================= */
+const REFRESH_MS = 60_000;
+
 const isAdmin = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "{}")?.role === "admin";
@@ -16,8 +22,6 @@ const isAdmin = () => {
     return false;
   }
 };
-
-const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
 
 /* Integer minor units → "1180.00 INR" (exact, currency's own decimals) */
 const money = (minor, digits = 2, currency = "") => {
@@ -28,32 +32,62 @@ const money = (minor, digits = 2, currency = "") => {
 };
 
 const STATUS = {
-  active: ["bg-emerald-50 text-emerald-700 ring-emerald-200", "Connected"],
-  error: ["bg-amber-50 text-amber-700 ring-amber-200", "Reconnect required"],
-  uninstalled: ["bg-slate-50 text-slate-600 ring-slate-200", "App uninstalled in Shopify"],
-  disconnected: ["bg-slate-50 text-slate-600 ring-slate-200", "Not connected"],
+  active: ["green", "Connected"],
+  error: ["amber", "Reconnect required"],
+  uninstalled: ["slate", "App uninstalled in Shopify"],
+  disconnected: ["slate", "Not connected"],
 };
+
+function HealthTile({ label, tone, value, detail }) {
+  return (
+    <div className="p-4 bg-white border shadow-sm rounded-2xl border-slate-200">
+      <p className="text-xs font-medium tracking-wide uppercase text-slate-500">{label}</p>
+      <div className="mt-2"><Badge tone={tone}>{value}</Badge></div>
+      <p className="mt-2 text-xs text-slate-500 break-words">{detail}</p>
+    </div>
+  );
+}
 
 export default function ShopifyIntegration() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [state, setState] = useState("loading"); // loading | ready | error
   const [busy, setBusy] = useState(null);
+  const busyRef = useRef(null); // synchronous guard: blocks double clicks before re-render
   const [shop, setShop] = useState("");
   const [banner, setBanner] = useState(null); // { type: "success"|"error", text }
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [updatedAt, setUpdatedAt] = useState(null);
   const admin = isAdmin();
 
-  const load = useCallback(() => {
-    setState("loading");
-    API.get("/shopify/status")
+  /* silent = background refresh: keep the current view, no skeleton */
+  const load = useCallback((silent = false) => {
+    if (!silent) setState((s) => (s === "ready" ? "ready" : "loading"));
+    return API.get("/shopify/status")
       .then((res) => {
         setData(res.data?.data);
         setState("ready");
+        setUpdatedAt(new Date());
       })
-      .catch(() => setState("error"));
+      .catch(() => !silent && setState("error"));
   }, []);
 
-  useEffect(load, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const refreshAll = useCallback((silent = false) => {
+    setRefreshKey((k) => k + 1);
+    return load(silent);
+  }, [load]);
+
+  /* Auto-refresh: read-only status only, paused while hidden or busy; cleared on unmount */
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible" && !busyRef.current) refreshAll(true);
+    }, REFRESH_MS);
+    return () => clearInterval(id);
+  }, [refreshAll]);
 
   /* Result of the OAuth redirect, or a launch from Shopify admin (?shop=) */
   useEffect(() => {
@@ -71,18 +105,22 @@ export default function ShopifyIntegration() {
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  const run = async (key, fn) => {
-    if (busy) return;
+  const run = useCallback(async (key, fn) => {
+    if (busyRef.current) return;
+    busyRef.current = key;
     setBusy(key);
     setBanner(null);
     try {
       await fn();
     } catch (err) {
-      setBanner({ type: "error", text: err.response?.data?.message || "Something went wrong. Please try again." });
+      const text = err.userMessage || errorText(err);
+      setBanner({ type: "error", text });
+      toast.error(text);
     } finally {
+      busyRef.current = null;
       setBusy(null);
     }
-  };
+  }, []);
 
   /* Shopify OAuth for a store address; the platform app credentials stay on the server */
   const startOAuth = (key, shopDomain) =>
@@ -93,6 +131,7 @@ export default function ShopifyIntegration() {
 
   const connect = (e) => {
     e.preventDefault();
+    // The server normalises and validates the address (422 with guidance)
     startOAuth("connect", shop.trim());
   };
 
@@ -108,289 +147,164 @@ export default function ShopifyIntegration() {
     });
   };
 
-  const registerWebhooks = () =>
-    run("webhooks", async () => {
-      const res = await API.post("/shopify/webhooks/register");
-      toast.success(res.data?.message || "Webhooks registered");
-      load();
-    });
-
-  const retryEvent = (id) =>
-    run(`retry-${id}`, async () => {
-      await API.post(`/shopify/events/${id}/retry`);
-      toast.success("Event queued for retry");
-      load();
-    });
-
-  const [inv, setInv] = useState(null); // { warehouses, locations, enabled, warehouse, locationGid }
-
-  /* Inventory sync options — admins of a connected store */
-  useEffect(() => {
-    if (!admin || conn?.status !== "active") return;
-    Promise.all([API.get("/warehouses"), API.get("/shopify/inventory/locations")])
-      .then(([w, l]) =>
-        setInv({
-          warehouses: w.data?.warehouses || [],
-          locations: l.data?.data || [],
-          enabled: !!conn.inventory?.enabled,
-          warehouse: conn.inventory?.warehouse || "",
-          locationGid: conn.inventory?.locationGid || "",
-        })
-      )
-      .catch(() => setInv(null));
-  }, [admin, conn?.status, conn?.inventory?.enabled, conn?.inventory?.warehouse, conn?.inventory?.locationGid]);
-
-  const saveInventory = (e) => {
-    e.preventDefault();
-    run("inventory", async () => {
-      const res = await API.put("/shopify/inventory/settings", { enabled: inv.enabled, warehouse: inv.warehouse || null, locationGid: inv.locationGid || null });
-      toast.success(res.data?.message || "Saved");
-      load();
-    });
-  };
-
-  const syncInventory = () =>
-    run("sync", async () => {
-      const res = await API.post("/shopify/inventory/sync");
-      toast.success(res.data?.message || "Inventory synced");
-      load();
-    });
-
-  const inventory = data?.inventory;
   const inbox = data?.inbox;
   const orders = data?.orders;
-  const [pillCls, pillLabel] = STATUS[conn?.status] || STATUS.disconnected;
+  const [statusTone, statusLabel] = STATUS[conn?.status] || STATUS.disconnected;
+  const missing = conn?.missingScopes || [];
+  const webhookTone = !active ? "slate" : conn.webhooks?.lastError || inbox?.counts?.dead ? "amber" : conn.webhooks?.registered?.length ? "green" : "red";
+  const inv = conn?.inventory || {};
+  const syncTone = !inv.enabled ? "slate" : inv.lastError ? "red" : inv.lastSyncAt ? "green" : "amber";
 
   return (
-    <div className="max-w-5xl space-y-6">
-      <div className="p-6 bg-white border shadow-sm rounded-2xl border-slate-200">
-        <div className="flex items-start gap-4">
-          <div className="grid w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 place-items-center shrink-0">
-            <ShoppingCart size={22} />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold text-slate-900">Shopify Integration</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Connect your workspace's Shopify store to bring its orders, customers and stock into ReadyTech CRM &amp; ERP.
-            </p>
-            <p className="flex items-center gap-1.5 mt-2 text-xs text-slate-500">
-              <ShieldCheck size={14} className="text-emerald-600" />
-              You approve access in Shopify — ReadyTech never sees your Shopify password, and access keys are stored encrypted.
-            </p>
-          </div>
+    <div className="max-w-6xl pb-10 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-4 p-5 bg-white border shadow-sm sm:p-6 sm:flex-row sm:items-start rounded-2xl border-slate-200">
+        <div className="grid w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 place-items-center shrink-0">
+          <ShoppingCart size={22} />
         </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-bold text-slate-900">Shopify Integration</h1>
+            {state === "ready" && <Badge tone={conn ? statusTone : "slate"}>{conn ? statusLabel : "Not connected"}</Badge>}
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            Connect your workspace's Shopify store to bring its orders, customers and stock into ReadyTech CRM &amp; ERP.
+          </p>
+          <p className="flex items-center gap-1.5 mt-2 text-xs text-slate-500">
+            <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
+            You approve access in Shopify — ReadyTech never sees your Shopify password, and access keys are stored encrypted.
+          </p>
+        </div>
+        {state === "ready" && (
+          <div className="flex items-center gap-2 sm:flex-col sm:items-end">
+            <Button icon={RefreshCw} onClick={() => refreshAll()} disabled={!!busy} className="px-3 py-1.5 text-xs">Refresh</Button>
+            <span className="text-xs text-slate-400">Updated {ago(updatedAt)} · auto every minute</span>
+          </div>
+        )}
       </div>
 
       {banner && (
-        <div
-          className={`flex items-start gap-2 p-4 text-sm rounded-xl border ${
-            banner.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-700"
-          }`}
-        >
-          {banner.type === "success" ? <CheckCircle2 size={18} className="shrink-0" /> : <AlertTriangle size={18} className="shrink-0" />}
-          <span className="flex-1">{banner.text}</span>
-          <button onClick={() => setBanner(null)} className="text-xs font-semibold opacity-70 hover:opacity-100">Dismiss</button>
-        </div>
+        <Notice type={banner.type} action={<button onClick={() => setBanner(null)} className="text-xs font-semibold opacity-70 hover:opacity-100">Dismiss</button>}>
+          {banner.text}
+        </Notice>
       )}
 
       {state === "loading" && (
-        <p className="flex items-center gap-2 text-sm text-slate-500">
-          <Loader2 size={16} className="animate-spin" /> Loading Shopify integration…
-        </p>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <SkeletonCard key={i} rows={0} />)}</div>
+          <SkeletonCard />
+        </>
       )}
       {state === "error" && (
-        <p className="text-sm text-red-600">
-          Couldn't load Shopify integration status.{" "}
-          <button onClick={load} className="font-semibold underline">Retry</button>
-        </p>
+        <Notice type="error" action={<button onClick={() => load()} className="text-xs font-semibold underline">Retry</button>}>
+          Couldn't load the Shopify integration status.
+        </Notice>
       )}
 
+      {/* Health summary */}
       {state === "ready" && conn && (
-        <div className="p-6 space-y-4 bg-white border shadow-sm rounded-2xl border-slate-200">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-semibold text-slate-900">{conn.shop?.name || conn.shopDomain}</h2>
-              <p className="text-sm text-slate-500">{conn.shopDomain}</p>
-            </div>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${pillCls}`}>{pillLabel}</span>
-          </div>
-
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div><dt className="text-slate-500">Connected</dt><dd className="text-slate-900">{fmt(conn.connectedAt)}</dd></div>
-            <div><dt className="text-slate-500">Currency</dt><dd className="text-slate-900">{conn.shop?.currencyCode || "—"}</dd></div>
-            <div><dt className="text-slate-500">API version</dt><dd className="text-slate-900">{conn.apiVersion || "—"}</dd></div>
-            <div>
-              <dt className="text-slate-500">Webhooks</dt>
-              <dd className="text-slate-900">{conn.webhooks?.registered?.length ? conn.webhooks.registered.join(", ") : "None registered"}</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-slate-500">Permissions</dt>
-              <dd className="text-slate-900 break-words">{conn.scopes?.join(", ") || "—"}</dd>
-            </div>
-            {conn.status === "uninstalled" && (
-              <div className="sm:col-span-2"><dt className="text-slate-500">Uninstalled</dt><dd className="text-slate-900">{fmt(conn.uninstalledAt)}</dd></div>
-            )}
-          </dl>
-
-          {(conn.lastError || conn.webhooks?.lastError) && (
-            <p className="flex items-start gap-2 p-3 text-sm border rounded-xl bg-amber-50 border-amber-200 text-amber-800">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-              <span>{conn.lastError || `Webhook setup: ${conn.webhooks.lastError}`}</span>
-            </p>
-          )}
-
-          {admin && data?.available && (
-            <button
-              onClick={() => startOAuth("reconnect", conn.shopDomain)}
-              disabled={!!busy}
-              className="px-4 py-2 mr-2 text-sm font-semibold text-white rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
-            >
-              {busy === "reconnect" ? "Opening Shopify…" : active ? "Reconnect (refresh access)" : "Reconnect store"}
-            </button>
-          )}
-          {admin && (active || conn.status === "error") && (
-            <button
-              onClick={disconnect}
-              disabled={!!busy}
-              className="px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-xl hover:bg-red-50 disabled:opacity-50"
-            >
-              {busy === "disconnect" ? "Disconnecting…" : "Disconnect store"}
-            </button>
-          )}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <HealthTile label="Connection" tone={statusTone} value={statusLabel} detail={conn.lastError || `Since ${fmt(conn.connectedAt)}`} />
+          <HealthTile
+            label="Permissions"
+            tone={!active ? "slate" : missing.length ? "red" : "green"}
+            value={!active ? "—" : missing.length ? `${missing.length} missing` : "All granted"}
+            detail={missing.length ? missing.join(", ") : `${conn.scopes?.length || 0} scope(s) granted`}
+          />
+          <HealthTile
+            label="Webhooks"
+            tone={webhookTone}
+            value={`${conn.webhooks?.registered?.length || 0} topics`}
+            detail={inbox?.counts?.dead ? `${inbox.counts.dead} failed event(s)` : `Registered ${ago(conn.webhooks?.lastRegisteredAt)}`}
+          />
+          <HealthTile
+            label="Inventory sync"
+            tone={syncTone}
+            value={!inv.enabled ? "Off" : inv.lastError ? "Failing" : inv.lastSyncAt ? "Running" : "Waiting"}
+            detail={inv.enabled ? `Last sync ${ago(inv.lastSyncAt)}` : "Turn on below to push ERP stock"}
+          />
         </div>
       )}
 
-      {state === "ready" && active && inbox && (
-        <div className="p-6 space-y-4 bg-white border shadow-sm rounded-2xl border-slate-200">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-semibold text-slate-900">Webhook events</h2>
-              <p className="text-sm text-slate-500">Order, product and inventory updates received from Shopify for this workspace.</p>
-            </div>
-            {admin && (
-              <button
-                onClick={registerWebhooks}
-                disabled={!!busy}
-                className="px-4 py-2 text-sm font-semibold border rounded-xl border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                {busy === "webhooks" ? "Registering…" : "Re-register webhooks"}
-              </button>
-            )}
-          </div>
-
-          <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
-            {[["pending", "Waiting"], ["processing", "Processing"], ["processed", "Processed"], ["ignored", "Ignored"], ["dead", "Failed"]].map(([k, label]) => (
-              <div key={k} className="p-3 rounded-xl bg-slate-50">
-                <dt className="text-slate-500">{label}</dt>
-                <dd className={`text-lg font-semibold ${k === "dead" && inbox.counts[k] ? "text-red-600" : "text-slate-900"}`}>{inbox.counts[k] ?? 0}</dd>
-              </div>
-            ))}
-          </dl>
-
-          {inbox.failures?.length > 0 && (
-            <ul className="text-sm divide-y divide-slate-100">
-              {inbox.failures.map((f) => (
-                <li key={f._id} className="flex flex-wrap items-start justify-between gap-3 py-2">
-                  <div className="min-w-0">
-                    <p className="font-medium text-slate-900">
-                      {f.topic} <span className="text-xs font-normal text-slate-500">· {f.status === "dead" ? `failed after ${f.attempts} attempts` : `retrying (attempt ${f.attempts})`}</span>
-                    </p>
-                    <p className="text-xs break-words text-slate-500">{f.lastError}</p>
-                  </div>
-                  {admin && f.status === "dead" && (
-                    <button
-                      onClick={() => retryEvent(f._id)}
-                      disabled={!!busy}
-                      className="px-3 py-1 text-xs font-semibold border rounded-lg border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      {busy === `retry-${f._id}` ? "Retrying…" : "Retry"}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
+      {/* Connection details */}
+      {state === "ready" && conn && (
+        <Card
+          icon={Store}
+          title={conn.shop?.name || conn.shopDomain}
+          subtitle={conn.shopDomain}
+          actions={
+            admin && (
+              <>
+                {data?.available && (
+                  <Button variant={active && !missing.length ? "secondary" : "primary"} icon={Link2} loading={busy === "reconnect"} disabled={!!busy} onClick={() => startOAuth("reconnect", conn.shopDomain)}>
+                    {busy === "reconnect" ? "Opening Shopify…" : active ? "Reconnect (refresh access)" : "Reconnect store"}
+                  </Button>
+                )}
+                {(active || conn.status === "error") && (
+                  <Button variant="danger" icon={Unplug} loading={busy === "disconnect"} disabled={!!busy} onClick={disconnect}>
+                    {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
+                  </Button>
+                )}
+              </>
+            )
+          }
+        >
+          {active && missing.length > 0 && (
+            <Notice type="error" title="Shopify permissions missing">
+              This store hasn't granted: <strong>{missing.join(", ")}</strong>. Features that need them will fail.
+              {admin ? " Click Reconnect and approve the requested access in Shopify." : " Ask a workspace admin to reconnect the store."}
+            </Notice>
           )}
-        </div>
+          {conn.status === "error" && (
+            <Notice type="warning" title="Shopify access expired or was revoked">
+              {conn.lastError || "ReadyTech can't reach this store."} {admin ? "Reconnect the store to restore syncing." : "Ask a workspace admin to reconnect it."}
+            </Notice>
+          )}
+          {conn.status === "uninstalled" && (
+            <Notice type="warning" title="The ReadyTech app was uninstalled in Shopify">
+              Uninstalled {fmt(conn.uninstalledAt)}. Nothing syncs until the store is connected again.
+            </Notice>
+          )}
+
+          <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div><dt className="text-slate-500">Connected</dt><dd className="font-medium text-slate-900">{fmt(conn.connectedAt)}</dd></div>
+            <div><dt className="text-slate-500">Currency</dt><dd className="font-medium text-slate-900">{conn.shop?.currencyCode || "—"}</dd></div>
+            <div><dt className="text-slate-500">API version</dt><dd className="font-medium text-slate-900">{conn.apiVersion || "—"}</dd></div>
+            <div><dt className="text-slate-500">Access token</dt><dd className="font-medium text-slate-900">{conn.tokenExpiresAt ? `Renews ${fmt(conn.tokenExpiresAt)}` : active ? "Non-expiring" : "—"}</dd></div>
+          </dl>
+          <div className="text-sm">
+            <p className="flex items-center gap-1.5 text-slate-500"><KeyRound size={14} /> Granted permissions</p>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {conn.scopes?.length ? conn.scopes.map((s) => <Badge key={s}>{s}</Badge>) : <span className="text-slate-500">—</span>}
+            </div>
+          </div>
+        </Card>
       )}
 
       {state === "ready" && active && (
-        <div className="p-6 space-y-4 bg-white border shadow-sm rounded-2xl border-slate-200">
-          <div>
-            <h2 className="font-semibold text-slate-900">Inventory sync</h2>
-            <p className="text-sm text-slate-500">
-              ReadyTech ERP is the stock master: available stock of one ERP warehouse is pushed to one Shopify location every 5 minutes. Products are matched by SKU.
-            </p>
-          </div>
+        <WebhookEventsCard inbox={inbox} webhooks={conn.webhooks} admin={admin} busy={busy} run={run} onChanged={() => load(true)} refreshKey={refreshKey} />
+      )}
 
-          {admin && inv && (
-            <form onSubmit={saveInventory} className="grid gap-3 sm:grid-cols-3">
-              <select value={inv.warehouse} onChange={(e) => setInv({ ...inv, warehouse: e.target.value })} className="px-3 py-2 text-sm border rounded-xl border-slate-300">
-                <option value="">ERP warehouse…</option>
-                {inv.warehouses.map((w) => <option key={w._id} value={w._id}>{w.name}</option>)}
-              </select>
-              <select value={inv.locationGid} onChange={(e) => setInv({ ...inv, locationGid: e.target.value })} className="px-3 py-2 text-sm border rounded-xl border-slate-300">
-                <option value="">Shopify location…</option>
-                {inv.locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={inv.enabled} onChange={(e) => setInv({ ...inv, enabled: e.target.checked })} />
-                Push ERP stock to Shopify
-              </label>
-              <div className="flex gap-2 sm:col-span-3">
-                <button type="submit" disabled={!!busy} className="px-4 py-2 text-sm font-semibold text-white rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50">
-                  {busy === "inventory" ? "Saving…" : "Save"}
-                </button>
-                {conn.inventory?.enabled && (
-                  <button type="button" onClick={syncInventory} disabled={!!busy} className="px-4 py-2 text-sm font-semibold border rounded-xl border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                    {busy === "sync" ? "Syncing…" : "Sync now"}
-                  </button>
-                )}
-              </div>
-            </form>
-          )}
-
-          <dl className="grid gap-3 text-sm sm:grid-cols-3">
-            <div><dt className="text-slate-500">Status</dt><dd className="text-slate-900">{conn.inventory?.enabled ? `On · ${conn.inventory.locationName || "location"}` : "Off"}</dd></div>
-            <div><dt className="text-slate-500">Products matched by SKU</dt><dd className="text-slate-900">{inventory?.mapped ?? 0}</dd></div>
-            <div>
-              <dt className="text-slate-500">Last sync</dt>
-              <dd className="text-slate-900">
-                {fmt(conn.inventory?.lastSyncAt)}
-                {conn.inventory?.lastResult && (
-                  <span className="block text-xs text-slate-500">
-                    {conn.inventory.lastResult.pushed} updated · {conn.inventory.lastResult.unchanged} unchanged · {conn.inventory.lastResult.failed} failed
-                  </span>
-                )}
-              </dd>
-            </div>
-          </dl>
-
-          {(conn.inventory?.lastError || conn.inventory?.lastResult?.ambiguous?.length > 0 || inventory?.failing?.length > 0) && (
-            <div className="p-3 space-y-1 text-sm border rounded-xl bg-amber-50 border-amber-200 text-amber-800">
-              {conn.inventory?.lastError && <p>{conn.inventory.lastError}</p>}
-              {conn.inventory?.lastResult?.ambiguous?.length > 0 && (
-                <p>SKU used by several Shopify variants (not synced): {conn.inventory.lastResult.ambiguous.join(", ")}</p>
-              )}
-              {inventory?.failing?.map((f) => <p key={f._id}>{f.sku}: {f.lastError}</p>)}
-            </div>
-          )}
-        </div>
+      {state === "ready" && active && (
+        <InventoryCard conn={conn} summary={data?.inventory} admin={admin} busy={busy} run={run} onChanged={() => refreshAll(true)} refreshKey={refreshKey} />
       )}
 
       {state === "ready" && orders?.recent?.length > 0 && (
-        <div className="p-6 space-y-4 bg-white border shadow-sm rounded-2xl border-slate-200">
-          <div>
-            <h2 className="font-semibold text-slate-900">Shopify orders</h2>
-            <p className="text-sm text-slate-500">
+        <Card
+          icon={Receipt}
+          title="Shopify orders"
+          subtitle={
+            <>
               Imported as draft ERP sales orders. Stock, delivery and invoices stay manual for now.
               {orders.needsAttention > 0 && <span className="font-semibold text-amber-700"> {orders.needsAttention} need attention.</span>}
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-slate-500">
+            </>
+          }
+        >
+          <div className="-mx-5 overflow-x-auto sm:mx-0">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="text-xs text-left uppercase text-slate-500">
                 <tr>
-                  <th className="py-2 pr-4 font-medium">Order</th>
+                  <th className="py-2 pl-5 pr-4 font-medium sm:pl-0">Order</th>
                   <th className="py-2 pr-4 font-medium">ERP sales order</th>
                   <th className="py-2 pr-4 font-medium">Payment</th>
                   <th className="py-2 pr-4 font-medium">Total</th>
@@ -400,13 +314,13 @@ export default function ShopifyIntegration() {
               <tbody className="divide-y divide-slate-100">
                 {orders.recent.map((o) => (
                   <tr key={o._id} className="align-top">
-                    <td className="py-2 pr-4 font-medium text-slate-900">
+                    <td className="py-2.5 pl-5 pr-4 font-medium text-slate-900 sm:pl-0">
                       {o.orderName || "—"}
                       {o.status === "cancelled" && <span className="ml-1 text-xs text-red-600">cancelled</span>}
                     </td>
-                    <td className="py-2 pr-4 text-slate-700">{o.salesOrder ? `${o.salesOrder.soNumber} · ${o.salesOrder.status}` : "—"}</td>
-                    <td className="py-2 pr-4 text-slate-700">{o.financialStatus || "—"}</td>
-                    <td className="py-2 pr-4 text-slate-700">
+                    <td className="py-2.5 pr-4 text-slate-700">{o.salesOrder ? `${o.salesOrder.soNumber} · ${o.salesOrder.status}` : "—"}</td>
+                    <td className="py-2.5 pr-4 text-slate-700">{o.financialStatus || "—"}</td>
+                    <td className="py-2.5 pr-4 text-slate-700">
                       {o.financials ? (
                         <>
                           {money(o.financials.total, o.financials.digits, o.financials.currency)}
@@ -426,49 +340,40 @@ export default function ShopifyIntegration() {
                         <span key={r.currency} className="block text-xs text-amber-700">Refunded {money(r.amountMinor, r.digits, r.currency)}</span>
                       ))}
                     </td>
-                    <td className="py-2 text-xs text-amber-800">{o.issues?.join(" · ")}</td>
+                    <td className="py-2.5 pr-5 text-xs text-amber-800 sm:pr-0">{o.issues?.join(" · ")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
+        </Card>
       )}
 
       {state === "ready" && admin && !active && (
         data?.available ? (
-          <form onSubmit={connect} className="p-6 space-y-3 bg-white border shadow-sm rounded-2xl border-slate-200">
-            <div>
-              <h2 className="font-semibold text-slate-900">{conn ? "Connect a different store" : "Connect your Shopify store"}</h2>
-              <p className="text-sm text-slate-500">Enter your store's Shopify address. You'll approve access in Shopify, then return here.</p>
-            </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
+          <Card icon={Link2} title={conn ? "Connect a different store" : "Connect your Shopify store"} subtitle="Enter your store's Shopify address. You'll approve access in Shopify, then return here.">
+            <form onSubmit={connect} className="flex flex-col gap-3 sm:flex-row" noValidate>
               <input
                 value={shop}
                 onChange={(e) => setShop(e.target.value)}
                 placeholder="your-store.myshopify.com"
-                required
+                aria-label="Shopify store address"
                 className="flex-1 px-4 py-2.5 text-sm border rounded-xl border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
-              <button
-                type="submit"
-                disabled={!!busy}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
-              >
-                {busy === "connect" && <Loader2 size={16} className="animate-spin" />}
+              <Button type="submit" variant="primary" loading={busy === "connect"} disabled={!!busy || !shop.trim()}>
                 Connect with Shopify
-              </button>
-            </div>
-          </form>
+              </Button>
+            </form>
+          </Card>
         ) : (
-          <p className="p-4 text-sm border rounded-xl bg-slate-50 border-slate-200 text-slate-600">
+          <Notice type="info">
             Shopify connection isn't available yet: ReadyTech still has to finish the one-time Shopify platform setup. You don't need any Shopify API keys — please try again later or contact ReadyTech support.
-          </p>
+          </Notice>
         )
       )}
 
       {state === "ready" && !admin && !conn && (
-        <p className="text-sm text-slate-500">No Shopify store is connected. Ask a workspace admin to connect one.</p>
+        <Notice type="info">No Shopify store is connected. Ask a workspace admin to connect one.</Notice>
       )}
     </div>
   );
