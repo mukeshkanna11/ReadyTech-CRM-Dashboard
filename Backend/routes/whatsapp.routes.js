@@ -15,6 +15,8 @@ import {
   listAssignees,
   connectAccount,
   disconnectAccount,
+  embeddedSignupConfig,
+  embeddedSignupComplete,
 } from "../controllers/whatsapp.controller.js";
 
 import auth from "../middlewares/auth.js";
@@ -42,6 +44,10 @@ router.get("/assignees", auth, listAssignees);
 /* Admin — connect / disconnect this workspace's own WhatsApp number */
 router.post("/connect", auth, role("admin"), connectAccount);
 router.post("/disconnect", auth, role("admin"), disconnectAccount);
+
+/* Admin — Meta Embedded Signup (connect / change number / reconnect) */
+router.get("/embedded-signup/config", auth, role("admin"), embeddedSignupConfig);
+router.post("/embedded-signup", auth, role("admin"), embeddedSignupComplete);
 
 /* Admin — refresh WhatsApp account metadata from Meta */
 router.post("/sync", auth, role("admin"), syncAccount);

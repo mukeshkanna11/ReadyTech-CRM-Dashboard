@@ -11,6 +11,8 @@ import {
   markWebhookSubscribed,
   subscribeWabaToWebhook,
   connectWhatsAppAccount,
+  getEmbeddedSignupConfig,
+  completeEmbeddedSignup,
   disconnectWhatsAppAccount,
   fetchWhatsAppMedia,
 } from "../services/meta/whatsapp.service.js";
@@ -439,5 +441,26 @@ export const disconnectAccount = async (req, res) => {
     res.json({ success: true, message: "WhatsApp disconnected", data: connection.toSafeJSON().whatsapp });
   } catch (error) {
     fail(res, error, "Failed to disconnect WhatsApp");
+  }
+};
+
+/* GET /embedded-signup/config (admin) — public app/config ids + signed
+   state; lists exact server setup blockers. Never returns secrets. */
+export const embeddedSignupConfig = async (req, res) => {
+  try {
+    res.json({ success: true, data: getEmbeddedSignupConfig(req.user?._id || req.user?.id) });
+  } catch (error) {
+    fail(res, error, "Failed to load WhatsApp signup configuration");
+  }
+};
+
+/* POST /embedded-signup (admin) — connect / change / reconnect number */
+export const embeddedSignupComplete = async (req, res) => {
+  try {
+    const connection = await completeEmbeddedSignup(req.body || {}, req.user?._id || req.user?.id);
+    res.json({ success: true, message: "WhatsApp connected", data: connection.toSafeJSON().whatsapp });
+  } catch (error) {
+    console.error("WhatsApp embedded signup error:", error.message);
+    fail(res, error, "WhatsApp signup failed");
   }
 };

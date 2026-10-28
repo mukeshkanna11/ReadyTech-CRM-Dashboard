@@ -95,3 +95,144 @@ export const disconnectWhatsApp = async () => {
   const { data } = await API.post("/whatsapp/disconnect");
   return data?.data;
 };
+
+/* =========================================================
+   META EMBEDDED SIGNUP (connect / change number / reconnect)
+   The browser only receives a 30-second code + the chosen
+   phone/WABA ids; the server exchanges the code for the token.
+========================================================= */
+export const getEmbeddedSignupConfig = async () => {
+  const { data } = await API.get("/whatsapp/embedded-signup/config");
+  return data?.data;
+};
+
+const completeEmbeddedSignup = async (payload) => {
+  const { data } = await API.post("/whatsapp/embedded-signup", payload);
+  return data?.data;
+};
+
+let sdkPromise = null;
+const loadFacebookSdk = (appId, version) => {
+  const init = () => {
+    window.FB.init({ appId, autoLogAppEvents: true, xfbml: false, version });
+    return window.FB;
+  };
+  if (window.FB) return Promise.resolve(init());
+  if (!sdkPromise) {
+    sdkPromise = new Promise((resolve, reject) => {
+      window.fbAsyncInit = () => resolve(init());
+      const script = document.createElement("script");
+      script.src = "https://connect.facebook.net/en_US/sdk.js";
+      script.async = true;
+      script.defer = true;
+      script.crossOrigin = "anonymous";
+      script.onerror = () => {
+        sdkPromise = null;
+        reject(new Error("Could not load the Facebook SDK. Disable ad/tracking blockers for this site and try again."));
+      };
+      document.body.appendChild(script);
+    });
+  }
+  return sdkPromise.then(init);
+};
+
+const isFacebookOrigin = (origin) => {
+  try {
+    const host = new URL(origin).hostname;
+    return host === "facebook.com" || host.endsWith(".facebook.com");
+  } catch {
+    return false;
+  }
+};
+
+/* Resolves with the safe WhatsApp status; rejects with a readable
+   Error (err.blockers = server setup blockers when not configured). */
+export const runEmbeddedSignup = async ({ coexistence = false } = {}) => {
+  const cfg = await getEmbeddedSignupConfig();
+  if (!cfg?.ready) {
+    throw Object.assign(new Error("WhatsApp signup is not configured on the server"), {
+      blockers: cfg?.blockers || [],
+    });
+  }
+
+  const FB = await loadFacebookSdk(cfg.appId, cfg.apiVersion);
+
+  return new Promise((resolve, reject) => {
+    let session = null;
+    let code = null;
+    let settled = false;
+    let timer = null;
+
+    const cleanup = () => {
+      window.removeEventListener("message", onMessage);
+      clearTimeout(timer);
+    };
+    const fail = (message) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error(message));
+    };
+    const finish = () => {
+      if (settled || !code || !session) return;
+      settled = true;
+      cleanup();
+      completeEmbeddedSignup({ code, state: cfg.state, ...session })
+        .then(resolve)
+        // surfaced: the axios interceptor already showed this error
+        .catch((err) => reject(Object.assign(new Error(err.response?.data?.message || err.message), { surfaced: !!err.response })));
+    };
+
+    function onMessage(event) {
+      if (!isFacebookOrigin(event.origin)) return;
+      let msg;
+      try {
+        msg = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+      } catch {
+        return;
+      }
+      if (msg?.type !== "WA_EMBEDDED_SIGNUP") return;
+
+      const d = msg.data || {};
+      if (msg.event === "FINISH" || msg.event === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING") {
+        session = {
+          phoneNumberId: d.phone_number_id,
+          wabaId: d.waba_id,
+          coexistence: msg.event === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING",
+        };
+        finish();
+      } else if (msg.event === "FINISH_ONLY_WABA") {
+        fail("Signup finished without a phone number. Run it again and add or select a phone number.");
+      } else if (msg.event === "CANCEL" || msg.event === "ERROR") {
+        fail(
+          d.error_message
+            ? `Meta reported an error: ${d.error_message}${d.error_code ? ` (code ${d.error_code})` : ""}`
+            : `WhatsApp signup was cancelled${d.current_step ? ` at step "${d.current_step}"` : ""}.`
+        );
+      }
+    }
+
+    window.addEventListener("message", onMessage);
+
+    FB.login(
+      (response) => {
+        code = response?.authResponse?.code || null;
+        if (!code) return fail("WhatsApp signup was closed before it finished.");
+        finish();
+        // Code lives 30s — give the session event a short window to arrive
+        timer = setTimeout(
+          () => fail("Meta did not report which number was set up. Please try again."),
+          15000
+        );
+      },
+      {
+        config_id: cfg.configId,
+        response_type: "code",
+        override_default_response_type: true,
+        extras: coexistence
+          ? { setup: {}, featureType: "whatsapp_business_app_onboarding" }
+          : { setup: {} },
+      }
+    );
+  });
+};

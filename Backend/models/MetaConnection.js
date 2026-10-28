@@ -98,6 +98,13 @@ const metaConnectionSchema = new mongoose.Schema(
       lastInboundAt: { type: Date, default: null },
       lastSyncedAt: { type: Date, default: null },
       lastError: { type: String, default: null },
+      // "embedded" | "coexistence" (Embedded Signup) | "manual" (pasted token)
+      onboardingType: { type: String, default: null },
+      // Two-step verification PIN set at /register (encrypted, never returned)
+      encryptedPin: { type: String, default: null },
+      health: { type: String, enum: ["healthy", "error", null], default: null },
+      connectedAt: { type: Date, default: null },
+      lastTestedAt: { type: Date, default: null },
     },
 
     lastSyncedAt: { type: Date, default: null },
@@ -211,6 +218,10 @@ metaConnectionSchema.methods.toSafeJSON = function () {
       lastInboundAt: this.whatsapp?.lastInboundAt || null,
       lastSyncedAt: this.whatsapp?.lastSyncedAt || null,
       lastError: this.whatsapp?.lastError || null,
+      onboardingType: this.whatsapp?.onboardingType || null,
+      health: this.whatsapp?.health || null,
+      connectedAt: this.whatsapp?.connectedAt || null,
+      lastTestedAt: this.whatsapp?.lastTestedAt || null,
     },
 
     lastSyncedAt: this.lastSyncedAt,

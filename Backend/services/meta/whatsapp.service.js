@@ -426,6 +426,29 @@ export const workspaceForPhoneNumberId = async (phoneNumberId) => {
    WEBHOOK ENTRY POINT
    Tolerant by design: unsupported events are ignored, never thrown.
 ========================================================= */
+/* account_update: the business removed this app / offboarded the
+   number in Meta. Mark that WABA's connection disconnected so the UI
+   never shows a stale "Connected". Returns 1 when nothing matched. */
+const OFFBOARD_EVENTS = new Set(["PARTNER_REMOVED", "ACCOUNT_OFFBOARDED", "ACCOUNT_DELETED"]);
+
+const processAccountUpdate = async (wabaId, value = {}) => {
+  const event = String(value?.event || "").toUpperCase();
+  if (!wabaId || !OFFBOARD_EVENTS.has(event)) return 1;
+
+  const r = await MetaConnection.updateMany(
+    { "whatsapp.wabaId": String(wabaId), "whatsapp.connected": true },
+    {
+      $set: {
+        "whatsapp.connected": false,
+        "whatsapp.health": "error",
+        "whatsapp.webhookSubscribed": false,
+        "whatsapp.lastError": `Meta reported ${event} for this WhatsApp account — reconnect WhatsApp to resume messaging`,
+      },
+    }
+  );
+  return r.modifiedCount ? 0 : 1;
+};
+
 export const processWebhookPayload = async (payload) => {
   const result = { messages: 0, statuses: 0, ignored: 0 };
 
@@ -436,6 +459,11 @@ export const processWebhookPayload = async (payload) => {
 
   for (const entry of payload.entry || []) {
     for (const change of entry.changes || []) {
+      if (change.field === "account_update") {
+        result.ignored += await processAccountUpdate(entry.id, change.value);
+        continue;
+      }
+
       if (change.field !== "messages") {
         result.ignored += 1;
         continue;
@@ -663,11 +691,15 @@ export const syncWhatsAppAccount = async () => {
     connection.whatsapp.verifiedName = data.verified_name || null;
     connection.whatsapp.qualityRating = data.quality_rating || null;
     connection.whatsapp.lastSyncedAt = new Date();
+    connection.whatsapp.lastTestedAt = new Date();
+    connection.whatsapp.health = "healthy";
     connection.whatsapp.lastError = null;
   } catch (error) {
     connection.whatsapp.connected = false;
+    connection.whatsapp.health = "error";
     connection.whatsapp.lastError = error.message;
     connection.whatsapp.lastSyncedAt = new Date();
+    connection.whatsapp.lastTestedAt = new Date();
     await connection.save();
     throw error;
   }
@@ -727,17 +759,7 @@ export const connectWhatsAppAccount = async ({ phoneNumberId, wabaId, accessToke
     throw error;
   }
 
-  const key = metaKeyFor();
-  const claimed = await MetaConnection.findOne({
-    "whatsapp.phoneNumberId": id,
-    key: { $ne: key },
-  }).select("_id").lean();
-
-  if (claimed || (key !== "default" && id === String(process.env.WHATSAPP_PHONE_NUMBER_ID || ""))) {
-    const error = new Error("This WhatsApp number is already connected to another workspace");
-    error.status = 409;
-    throw error;
-  }
+  await assertNumberAvailable(id);
 
   // Throws on invalid token / number — nothing is stored then
   const data = await graphFetch(id, {
@@ -754,6 +776,10 @@ export const connectWhatsAppAccount = async ({ phoneNumberId, wabaId, accessToke
     verifiedName: data.verified_name || null,
     qualityRating: data.quality_rating || null,
     encryptedToken: encryptToken(token),
+    onboardingType: "manual",
+    connectedAt: new Date(),
+    health: "healthy",
+    lastTestedAt: new Date(),
     lastSyncedAt: new Date(),
     lastError: null,
   });
@@ -773,14 +799,211 @@ export const connectWhatsAppAccount = async ({ phoneNumberId, wabaId, accessToke
 
 export const disconnectWhatsAppAccount = async () => {
   const connection = await MetaConnection.getSingleton();
+  const wa = connection.whatsapp || {};
+
+  // Best effort: unsubscribe this app from the workspace's own WABA.
+  // Never for the default doc (platform .env number stays subscribed).
+  if (connection.key !== "default" && wa.wabaId && wa.encryptedToken) {
+    try {
+      await graphFetch(`${wa.wabaId}/subscribed_apps`, {
+        method: "DELETE",
+        token: decryptToken(wa.encryptedToken),
+      });
+    } catch (error) {
+      console.warn("WhatsApp unsubscribe on disconnect failed:", error.message);
+    }
+  }
+
   Object.assign(connection.whatsapp, {
     connected: false,
     encryptedToken: null,
+    encryptedPin: null,
     webhookSubscribed: false,
+    health: null,
+    onboardingType: null,
+    connectedAt: null,
     lastError: null,
   });
   // Keep phoneNumberId on the default doc (env number); clear elsewhere
   if (connection.key !== "default") connection.whatsapp.phoneNumberId = null;
+  await connection.save();
+  return connection;
+};
+
+/* A number may belong to exactly one workspace */
+const assertNumberAvailable = async (phoneNumberId) => {
+  const key = metaKeyFor();
+  const claimed = await MetaConnection.findOne({
+    "whatsapp.phoneNumberId": phoneNumberId,
+    key: { $ne: key },
+  }).select("_id").lean();
+
+  if (claimed || (key !== "default" && phoneNumberId === String(process.env.WHATSAPP_PHONE_NUMBER_ID || ""))) {
+    const error = new Error("This WhatsApp number is already connected to another workspace");
+    error.status = 409;
+    throw error;
+  }
+};
+
+const httpError = (status, message) => Object.assign(new Error(message), { status });
+
+/* =========================================================
+   EMBEDDED SIGNUP (Meta Cloud API, Tech Provider flow)
+   1. GET config → app id + Login-for-Business config id + a signed,
+      short-lived state bound to this workspace + admin user.
+   2. Browser runs FB.login; Meta returns a 30-second code plus the
+      chosen phone_number_id / waba_id (session info event).
+   3. POST → state verified, code exchanged server-side for the
+      business token, number/WABA ownership confirmed, webhooks
+      subscribed, number registered (skipped for Coexistence).
+      Only then is THIS workspace's connection replaced, so a failed
+      Change Number never breaks the working number.
+========================================================= */
+const SIGNUP_STATE_TTL_MS = 15 * 60 * 1000;
+const b64url = (buf) => Buffer.from(buf).toString("base64url");
+const signState = (body, secret) =>
+  crypto.createHmac("sha256", secret).update(`wa-embedded-signup:${body}`).digest("base64url");
+
+export const createSignupState = (userId) => {
+  const { appSecret } = getMetaConfig();
+  const body = b64url(JSON.stringify({
+    k: metaKeyFor(),
+    u: String(userId || ""),
+    e: Date.now() + SIGNUP_STATE_TTL_MS,
+    n: crypto.randomBytes(8).toString("hex"),
+  }));
+  return `${body}.${signState(body, appSecret)}`;
+};
+
+export const verifySignupState = (state, userId) => {
+  const { appSecret } = getMetaConfig();
+  const [body, sig] = String(state || "").split(".");
+  if (!appSecret || !body || !sig) return false;
+
+  const expected = Buffer.from(signState(body, appSecret));
+  const given = Buffer.from(sig);
+  if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) return false;
+
+  try {
+    const s = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    return s.k === metaKeyFor() && s.u === String(userId || "") && s.e > Date.now();
+  } catch {
+    return false;
+  }
+};
+
+/* Exact server-side blockers — the UI shows these instead of a fake status */
+export const getEmbeddedSignupConfig = (userId) => {
+  const { appId, appSecret, apiVersion } = getMetaConfig();
+  const configId = process.env.WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID || null;
+
+  const blockers = [
+    !appId && "META_APP_ID is not set on the server.",
+    !appSecret && "META_APP_SECRET is not set on the server (needed for the token exchange and webhook signatures).",
+    !configId && "WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID is not set — create a Facebook Login for Business configuration (WhatsApp Embedded Signup) in the Meta App Dashboard and set its ID.",
+    !process.env.WHATSAPP_VERIFY_TOKEN && "WHATSAPP_VERIFY_TOKEN is not set — the WhatsApp webhook cannot be verified.",
+  ].filter(Boolean);
+
+  return {
+    appId: appId || null,
+    configId,
+    apiVersion,
+    state: blockers.length ? null : createSignupState(userId),
+    ready: blockers.length === 0,
+    blockers,
+  };
+};
+
+const exchangeSignupCode = async (code) => {
+  const { appId, appSecret, apiVersion } = getMetaConfig();
+  const url = new URL(`https://graph.facebook.com/${apiVersion}/oauth/access_token`);
+  url.searchParams.set("client_id", appId);
+  url.searchParams.set("client_secret", appSecret);
+  url.searchParams.set("code", code);
+
+  const response = await fetch(url.toString());
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || !data?.access_token) {
+    throw httpError(400, explainMetaError(
+      data?.error,
+      "Meta did not return a business token. The signup code is valid for 30 seconds and single use — please start again."
+    ));
+  }
+  return data.access_token;
+};
+
+export const completeEmbeddedSignup = async ({ code, state, phoneNumberId, wabaId, coexistence } = {}, userId) => {
+  if (!verifySignupState(state, userId)) {
+    throw httpError(403, "This signup session expired or belongs to another workspace. Please start WhatsApp signup again.");
+  }
+
+  const id = String(phoneNumberId || "").trim();
+  const waba = String(wabaId || "").trim();
+  if (!code || !/^\d+$/.test(id) || !/^\d+$/.test(waba)) {
+    throw httpError(400, "Meta did not return a phone number and WhatsApp Business Account. Finish every signup step, including adding a phone number.");
+  }
+
+  await assertNumberAvailable(id);
+
+  const token = await exchangeSignupCode(code);
+
+  // The shared WABA must actually own the chosen number
+  const numbers = await graphFetch(`${waba}/phone_numbers`, {
+    token,
+    params: { fields: "id,display_phone_number,verified_name,quality_rating,platform_type" },
+  });
+  const phone = (numbers?.data || []).find((p) => String(p.id) === id);
+  if (!phone) {
+    throw httpError(400, "The selected phone number does not belong to the shared WhatsApp Business Account.");
+  }
+
+  // Webhooks (messages, statuses) for this WABA → /api/whatsapp/webhook
+  const sub = await graphFetch(`${waba}/subscribed_apps`, { method: "POST", token });
+  if (sub?.success !== true) {
+    throw httpError(502, "Meta did not confirm the webhook subscription for this WhatsApp Business Account.");
+  }
+
+  // Cloud API registration. Coexistence numbers are already registered
+  // through the WhatsApp Business app and must not be re-registered.
+  let pin = null;
+  if (!coexistence) {
+    pin = String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+    try {
+      await graphFetch(`${id}/register`, {
+        method: "POST",
+        token,
+        body: { messaging_product: "whatsapp", pin },
+      });
+    } catch (error) {
+      // Already on Cloud API (e.g. reconnecting the same number) is fine
+      if (phone.platform_type !== "CLOUD_API") {
+        throw httpError(error.status || 400, `Phone number registration failed: ${error.message}`);
+      }
+      pin = null;
+    }
+  }
+
+  const connection = await MetaConnection.getSingleton();
+  const sameNumber = connection.whatsapp.phoneNumberId === id;
+  Object.assign(connection.whatsapp, {
+    connected: true,
+    phoneNumberId: id,
+    wabaId: waba,
+    displayPhoneNumber: phone.display_phone_number || null,
+    verifiedName: phone.verified_name || null,
+    qualityRating: phone.quality_rating || null,
+    encryptedToken: encryptToken(token),
+    encryptedPin: pin ? encryptToken(pin) : sameNumber ? connection.whatsapp.encryptedPin : null,
+    webhookSubscribed: true,
+    onboardingType: coexistence ? "coexistence" : "embedded",
+    connectedAt: new Date(),
+    health: "healthy",
+    lastTestedAt: new Date(),
+    lastSyncedAt: new Date(),
+    lastError: null,
+  });
+
   await connection.save();
   return connection;
 };
