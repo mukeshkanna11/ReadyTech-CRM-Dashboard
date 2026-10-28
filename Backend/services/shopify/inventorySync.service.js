@@ -48,8 +48,10 @@ const VARIANTS = `query($after: String) {
     pageInfo { hasNextPage endCursor }
   }
 }`;
-const SET_QUANTITIES = `mutation($input: InventorySetQuantitiesInput!) {
-  inventorySetQuantities(input: $input) {
+// 2026-04+: @idempotent is required and every quantity needs changeFromQuantity
+// (null = absolute set; ignoreCompareQuantity no longer exists)
+const SET_QUANTITIES = `mutation($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+  inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
     inventoryAdjustmentGroup { id }
     userErrors { field message }
   }
@@ -223,13 +225,14 @@ const pushBatch = async (conn, batch) => {
   const failed = new Map();
   let pending = batch;
   for (let attempt = 0; attempt < 2 && pending.length; attempt++) {
+    // New key per attempt: the retry sends a different set of quantities
     const data = await connectionGraphql(conn, SET_QUANTITIES, {
       input: {
         name: "available",
         reason: "correction",
-        ignoreCompareQuantity: true,
-        quantities: pending.map((c) => ({ inventoryItemId: c.link.inventoryItemGid, locationId: conn.inventory.locationGid, quantity: c.qty })),
+        quantities: pending.map((c) => ({ inventoryItemId: c.link.inventoryItemGid, locationId: conn.inventory.locationGid, quantity: c.qty, changeFromQuantity: null })),
       },
+      idempotencyKey: crypto.randomUUID(),
     });
     const errors = data?.inventorySetQuantities?.userErrors || [];
     if (!errors.length) return { applied: pending, failed };
@@ -274,6 +277,7 @@ export const syncInventory = async (connectionId, workspaceId) => {
   return runWithWorkspace(conn.workspace, async () => {
     const result = { pushed: 0, unchanged: 0, failed: 0, ambiguous: [] };
     let error = null;
+    let upstream = false;
     try {
       const links = await ShopifyInventoryLink.find({ workspace: conn.workspace, connection: conn._id }, null, { lean: true });
       const bySku = new Map();
@@ -306,13 +310,14 @@ export const syncInventory = async (connectionId, workspaceId) => {
       }
     } catch (err) {
       error = String(err.message).slice(0, 300);
+      upstream = Boolean(err.upstream);
     }
 
     await ShopifyConnection.updateOne(
       { _id: conn._id, workspace: conn.workspace, "inventory.leaseToken": token },
       { $set: { "inventory.lastSyncAt": new Date(), "inventory.lastResult": result, "inventory.lastError": error, "inventory.leaseUntil": null, "inventory.leaseToken": null } }
     );
-    if (error) throw Object.assign(new Error(error), { result });
+    if (error) throw Object.assign(new Error(error), { result, upstream });
     return result;
   });
 };

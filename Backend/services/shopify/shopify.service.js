@@ -186,7 +186,9 @@ export const graphql = async (shop, token, query, variables = {}, { attempts = 4
     if (res.status === 401 || res.status === 403) {
       throw Object.assign(new Error("Shopify rejected the access token"), { unauthorized: true });
     }
-    if (!res.ok || body.errors) throw new Error(`Shopify GraphQL error (${res.status}): ${errorText(body.errors || res.statusText)}`);
+    if (!res.ok || body.errors) {
+      throw Object.assign(new Error(`Shopify GraphQL error (${res.status}): ${errorText(body.errors || res.statusText)}`), { upstream: true });
+    }
     return body.data;
   }
 };

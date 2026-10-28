@@ -53,7 +53,7 @@ beforeEach(() => {
     _id: oid(), workspace: WS, shopDomain: "a.myshopify.com", status: "active", connectedBy: ADMIN,
     accessToken: encrypt("shpat"), inventory: { enabled: true, warehouse: WH, locationGid: LOC },
   };
-  state = { links: [], linkUpdates: [], connUpdates: [], pushes: [], ledger: [], releases: [], orderLinks: [], sos: [] };
+  state = { bodies: [], links: [], linkUpdates: [], connUpdates: [], pushes: [], ledger: [], releases: [], orderLinks: [], sos: [] };
   stub(AuditLog, "create", async (d) => d);
   stub(mongoose, "startSession", async () => ({ withTransaction: async (fn) => fn(), endSession: async () => {} }));
 });
@@ -108,7 +108,9 @@ const syncStubs = ({ claim = true, owner = true, userErrors = () => [] } = {}) =
   stub(ShopifyInventoryLink, "find", async () => state.links);
   stub(ShopifyInventoryLink, "updateOne", async (f, u) => (state.linkUpdates.push({ f, u }), {}));
   globalThis.fetch = async (url, init) => {
-    const { variables } = JSON.parse(init.body);
+    const body = JSON.parse(init.body);
+    const { variables } = body;
+    state.bodies.push(body);
     state.pushes.push(variables.input);
     return json({ data: { inventorySetQuantities: { inventoryAdjustmentGroup: { id: "g" }, userErrors: userErrors(variables.input, state.pushes.length) } } });
   };
@@ -126,7 +128,7 @@ test("pushes only changed or drifted items; unchanged and ambiguous SKUs are ski
   const result = await inv.syncInventory(conn._id, WS);
   assert.deepEqual(result, { pushed: 1, unchanged: 1, failed: 0, ambiguous: ["DUP"] });
   assert.equal(state.pushes.length, 1);
-  assert.deepEqual(state.pushes[0].quantities, [{ inventoryItemId: "gid://shopify/InventoryItem/2", locationId: LOC, quantity: 4 }]);
+  assert.deepEqual(state.pushes[0].quantities, [{ inventoryItemId: "gid://shopify/InventoryItem/2", locationId: LOC, quantity: 4, changeFromQuantity: null }]);
   assert.equal(state.pushes[0].name, "available");
   assert.equal(state.linkUpdates[0].u.$set.lastPushedQty, 4);
   assert.equal(String(state.linkUpdates[0].f.workspace), String(WS));
@@ -144,6 +146,47 @@ test("an item Shopify rejects is reported; the rest of the batch is retried and 
   assert.equal(state.pushes.length, 2);
   assert.equal(state.pushes[1].quantities.length, 1);
   assert.ok(state.linkUpdates.some((x) => x.u.$set.lastError === "Item not stocked at location"));
+});
+
+/* Regression: on API 2026-04+ the old mutation (no @idempotent, ignoreCompareQuantity)
+   was rejected by Shopify, so every POST /api/shopify/inventory/sync returned 500 */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+test("push uses the 2026-04+ contract: @idempotent key per attempt, changeFromQuantity null, no ignoreCompareQuantity", async () => {
+  stockStubs({ onHand: { [P1]: 3, [P2]: 4 }, reserved: {} });
+  state.links = [link(), link({ sku: "P2-SKU", product: P2, inventoryItemGid: "gid://shopify/InventoryItem/2" })];
+  syncStubs({ userErrors: (input, n) => (n === 1 ? [{ field: ["input", "quantities", "0", "locationId"], message: "Item not stocked at location" }] : []) });
+  await inv.syncInventory(conn._id, WS);
+  assert.equal(state.bodies.length, 2);
+  for (const { query, variables } of state.bodies) {
+    assert.match(query, /\$idempotencyKey: String!/);
+    assert.match(query, /inventorySetQuantities\(input: \$input\) @idempotent\(key: \$idempotencyKey\)/);
+    assert.doesNotMatch(JSON.stringify({ query, variables }), /ignoreCompareQuantity/);
+    assert.match(variables.idempotencyKey, UUID);
+    assert.ok(variables.input.quantities.every((q) => "changeFromQuantity" in q && q.changeFromQuantity === null));
+  }
+  assert.notEqual(state.bodies[0].variables.idempotencyKey, state.bodies[1].variables.idempotencyKey);
+});
+
+test("SNOW-MULTI-001 with no ERP stock movements (blank stock) pushes 0, not an error", async () => {
+  stockStubs({ onHand: {}, reserved: {} });
+  state.links = [link({ sku: "SNOW-MULTI-001", product: P2, inventoryItemGid: "gid://shopify/InventoryItem/9" })];
+  syncStubs();
+  const result = await inv.syncInventory(conn._id, WS);
+  assert.deepEqual(result, { pushed: 1, unchanged: 0, failed: 0, ambiguous: [] });
+  assert.deepEqual(state.pushes[0].quantities, [{ inventoryItemId: "gid://shopify/InventoryItem/9", locationId: LOC, quantity: 0, changeFromQuantity: null }]);
+});
+
+test("a Shopify GraphQL error is flagged upstream, recorded, and the lease released", async () => {
+  stockStubs();
+  state.links = [link()];
+  syncStubs();
+  globalThis.fetch = async () => json({ errors: [{ message: "Access denied for inventorySetQuantities field." }] });
+  const err = await inv.syncInventory(conn._id, WS).then(() => assert.fail("must reject"), (e) => e);
+  assert.equal(err.upstream, true);
+  assert.match(err.message, /Access denied for inventorySetQuantities/);
+  const done = state.connUpdates.at(-1).u.$set;
+  assert.match(done["inventory.lastError"], /Access denied/);
+  assert.equal(done["inventory.leaseToken"], null);
 });
 
 test("a second sync while one is running is skipped (lease)", async () => {

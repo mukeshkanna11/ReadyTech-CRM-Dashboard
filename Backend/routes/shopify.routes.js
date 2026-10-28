@@ -121,9 +121,11 @@ router.post("/events/:id/retry", auth, role("admin"), async (req, res) => {
 const activeConnection = (workspace) =>
   ShopifyConnection.findOne({ workspace, status: "active" }).select("+accessToken +refreshToken");
 
+// Messages only (never tokens). Shopify-side failures → 502 with Shopify's reason
 const sendError = (res, error, fallback) => {
   if (!error.status && !error.unauthorized) console.error(`Shopify ${fallback}:`, error.message);
-  res.status(error.status || (error.unauthorized ? 409 : 500)).json({ success: false, message: error.status || error.unauthorized ? error.message : `Failed to ${fallback}` });
+  const status = error.status || (error.unauthorized ? 409 : error.upstream ? 502 : 500);
+  res.status(status).json({ success: false, message: status === 500 ? `Failed to ${fallback}` : error.message });
 };
 
 router.get("/inventory/locations", auth, role("admin"), async (req, res) => {
