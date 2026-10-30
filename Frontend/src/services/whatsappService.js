@@ -145,6 +145,18 @@ const isFacebookOrigin = (origin) => {
   }
 };
 
+/* The Facebook SDK refuses FB.login on http:// pages (localhost included),
+   so Embedded Signup must run from an HTTPS origin. */
+const assertSecureOrigin = () => {
+  if (window.location.protocol === "https:") return;
+  throw new Error(
+    import.meta.env.DEV
+      ? `WhatsApp signup needs HTTPS — Facebook blocks FB.login on ${window.location.origin}. ` +
+        "Open the dev app through an HTTPS URL (e.g. an https tunnel to the Vite server) to test signup."
+      : "WhatsApp signup must be opened over HTTPS. Reload this page using https:// and try again."
+  );
+};
+
 /* Warm-up: fetch config + load the SDK BEFORE the click, so FB.login
    runs synchronously inside the click and the popup isn't blocked. */
 const PREPARED_TTL_MS = 10 * 60 * 1000; // server state lives 15 min
@@ -152,6 +164,11 @@ let prepared = null;
 let preparing = null;
 
 export const prepareEmbeddedSignup = () => {
+  try {
+    assertSecureOrigin();
+  } catch (err) {
+    return Promise.reject(err);
+  }
   if (prepared && Date.now() - prepared.at < PREPARED_TTL_MS) return Promise.resolve(prepared);
   if (!preparing) {
     preparing = (async () => {
