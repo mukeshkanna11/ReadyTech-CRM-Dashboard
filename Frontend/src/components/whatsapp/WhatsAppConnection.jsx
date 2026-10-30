@@ -27,7 +27,7 @@ import {
    Meta Integration page. Pass `status` + `onChanged` to reuse a
    parent's /api/meta/status payload; otherwise it loads its own.
 ========================================================= */
-export default function WhatsAppConnection({ status: parentStatus, onChanged, compact = false, quietDisconnect = false }) {
+export default function WhatsAppConnection({ status: parentStatus, onChanged, compact = false, hideDisconnect = false }) {
   const [ownStatus, setOwnStatus] = useState(null);
   const [busy, setBusy] = useState("");
   const status = parentStatus !== undefined ? parentStatus : ownStatus;
@@ -96,16 +96,12 @@ export default function WhatsAppConnection({ status: parentStatus, onChanged, co
       wa={status?.whatsapp}
       busy={busy}
       compact={compact}
-      quietDisconnect={quietDisconnect}
+      hideDisconnect={hideDisconnect}
       platform={!!status?.platformWhatsApp}
       onSync={handleSync}
       onSignup={handleSignup}
       onConnect={(form) => runAction("wa-connect", () => connectWhatsApp(form), "WhatsApp connected")}
-      onDisconnect={() =>
-        quietDisconnect
-          ? runAction("wa-disconnect", () => disconnectWhatsApp({ silent: true }))
-          : runAction("wa-disconnect", disconnectWhatsApp, "WhatsApp disconnected")
-      }
+      onDisconnect={() => runAction("wa-disconnect", disconnectWhatsApp, "WhatsApp disconnected")}
     />
   );
 }
@@ -127,7 +123,7 @@ const ONBOARDING_LABEL = {
   manual: "System User token",
 };
 
-function WhatsAppCard({ wa, busy, onSync, platform, onConnect, onSignup, onDisconnect, compact, quietDisconnect }) {
+function WhatsAppCard({ wa, busy, onSync, platform, onConnect, onSignup, onDisconnect, compact, hideDisconnect }) {
   const connected = !!wa?.connected;
   const configured = !!wa?.phoneNumberId;
   const unhealthy = connected && wa?.health === "error";
@@ -156,14 +152,6 @@ function WhatsAppCard({ wa, busy, onSync, platform, onConnect, onSignup, onDisco
     const r = await onSignup(opts, success);
     if (r?.blockers?.length) setBlockers(r.blockers);
   };
-
-  // Inbox: disconnect straight away — no confirmation or messages
-  const requestDisconnect = quietDisconnect
-    ? async () => {
-        await onDisconnect();
-        prepareEmbeddedSignup().catch(() => {}); // ready for "Connect Another Number"
-      }
-    : () => setConfirm("disconnect");
 
   const confirmAction = async () => {
     const action = confirm;
@@ -221,9 +209,9 @@ function WhatsAppCard({ wa, busy, onSync, platform, onConnect, onSignup, onDisco
             </button>
           )}
 
-          {platform && (connected || configured) && (
+          {platform && (connected || configured) && !hideDisconnect && (
             <button
-              onClick={requestDisconnect}
+              onClick={() => setConfirm("disconnect")}
               disabled={working}
               className={`${btn} border border-rose-200 text-rose-600 hover:bg-rose-50`}
             >
@@ -241,13 +229,15 @@ function WhatsAppCard({ wa, busy, onSync, platform, onConnect, onSignup, onDisco
                   <RefreshCw size={13} className={busy === "wa-signup" ? "animate-spin" : ""} /> Reconnect
                 </button>
               )}
-              <button
-                onClick={requestDisconnect}
-                disabled={working}
-                className={`${btn} border border-rose-200 text-rose-600 hover:bg-rose-50`}
-              >
-                <Unlink size={13} /> Disconnect
-              </button>
+              {!hideDisconnect && (
+                <button
+                  onClick={() => setConfirm("disconnect")}
+                  disabled={working}
+                  className={`${btn} border border-rose-200 text-rose-600 hover:bg-rose-50`}
+                >
+                  <Unlink size={13} /> Disconnect
+                </button>
+              )}
             </>
           ) : (
             <button

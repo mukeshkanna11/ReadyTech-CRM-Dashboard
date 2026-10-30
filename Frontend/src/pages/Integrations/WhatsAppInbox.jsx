@@ -80,8 +80,9 @@ const readFile = (file) =>
    UNIFIED INBOX — WhatsApp + Instagram + Messenger
 ========================================================= */
 /* `channel` locks the inbox to one channel (WhatsApp / Instagram Inbox
-   pages); `banner` renders a connection strip under the header. */
-export default function WhatsAppInbox({ channel: lockedChannel = "", banner = null }) {
+   pages); `banner` renders a connection strip under the header,
+   `headerActions` extra buttons beside Refresh. */
+export default function WhatsAppInbox({ channel: lockedChannel = "", banner = null, headerActions = null }) {
   const [conversations, setConversations] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
@@ -299,6 +300,7 @@ export default function WhatsAppInbox({ channel: lockedChannel = "", banner = nu
           >
             <RefreshCw size={15} className={listLoading ? "animate-spin" : ""} /> Refresh
           </button>
+          {headerActions}
         </div>
       </div>
 
