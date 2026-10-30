@@ -93,7 +93,8 @@ export const connectWhatsApp = async (payload) => {
 
 // silent: skip the global error toasts (Inbox disconnect shows no messages)
 export const disconnectWhatsApp = async ({ silent = false } = {}) => {
-  const { data } = await API.post("/whatsapp/disconnect", null, silent ? { silent: true } : undefined);
+  // No body: a `null` body is sent as JSON "null", which express.json rejects (400)
+  const { data } = await API.post("/whatsapp/disconnect", undefined, silent ? { silent: true } : undefined);
   return data?.data;
 };
 
