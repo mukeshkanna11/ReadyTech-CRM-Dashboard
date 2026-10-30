@@ -61,6 +61,11 @@ API.interceptors.response.use(
   },
 
   (error) => {
+    // Caller opted out of error toasts (401 session handling still runs)
+    if (error.config?.silent && error.response?.status !== 401) {
+      return Promise.reject(error);
+    }
+
     // 🌐 Network / CORS / Server down
     if (!error.response) {
       toast.error("Server unreachable. Please try again later.");

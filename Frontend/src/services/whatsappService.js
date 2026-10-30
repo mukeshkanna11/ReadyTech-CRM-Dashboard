@@ -91,8 +91,9 @@ export const connectWhatsApp = async (payload) => {
   return data?.data;
 };
 
-export const disconnectWhatsApp = async () => {
-  const { data } = await API.post("/whatsapp/disconnect");
+// silent: skip the global error toasts (Inbox disconnect shows no messages)
+export const disconnectWhatsApp = async ({ silent = false } = {}) => {
+  const { data } = await API.post("/whatsapp/disconnect", null, silent ? { silent: true } : undefined);
   return data?.data;
 };
 
