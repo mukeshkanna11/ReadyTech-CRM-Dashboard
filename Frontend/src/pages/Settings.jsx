@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { motion } from "framer-motion";
 import {
@@ -48,13 +49,6 @@ const DEFAULTS = {
   },
 
   email: {
-    smtpHost: "",
-    smtpPort: "587",
-    username: "",
-    password: "",
-    fromName: "ReadyTech CRM",
-    fromEmail: "",
-    encryption: "TLS",
     notifications: true,
   },
 
@@ -80,7 +74,18 @@ const load = (key) => {
 export default function Settings() {
   const [tab, setTab] = useState("company");
   const [company, setCompany] = useState(() => load("company"));
-  const [email, setEmail] = useState(() => load("email"));
+  // Only the notification preference is kept; SMTP credentials saved here by
+  // older versions are purged from the browser (they now live, encrypted, in
+  // Integrations → Mail Integration)
+  const [email, setEmail] = useState(() => {
+    const clean = { notifications: load("email").notifications !== false };
+    try {
+      localStorage.setItem("settings:email", JSON.stringify(clean));
+    } catch {
+      /* storage unavailable */
+    }
+    return clean;
+  });
   const [system, setSystem] = useState(() => load("system"));
 
   const save = (key, value) => {
@@ -177,10 +182,10 @@ export default function Settings() {
           Email
         </p>
         <h3 className="mt-1 text-lg font-bold text-white">
-          SMTP Ready
+          Mail Integration
         </h3>
         <p className="text-sm text-emerald-400">
-          Secure Connection
+          Managed in Integrations
         </p>
       </div>
 
@@ -582,135 +587,21 @@ export default function Settings() {
     </div>
   </div>
 
-  {/* SMTP Card */}
-  <div className="p-8 border rounded-3xl border-slate-200 bg-slate-50">
-
-    <div className="flex items-center justify-between mb-8">
-      <div>
-        <h3 className="text-xl font-bold text-slate-800">
-          SMTP Configuration
-        </h3>
-
-        <p className="mt-1 text-sm text-slate-500">
-          Configure outgoing mail server credentials.
-        </p>
-      </div>
-
-      <span className="px-4 py-2 text-xs font-semibold text-green-700 bg-green-100 rounded-full">
-        Secure Connection
-      </span>
+  {/* Mail accounts live in Integrations → Mail Integration (credentials are
+      verified and encrypted server-side, never stored in the browser) */}
+  <div className="flex flex-col gap-4 p-6 border sm:flex-row sm:items-center sm:justify-between rounded-3xl border-slate-200 bg-slate-50">
+    <div>
+      <h3 className="text-lg font-bold text-slate-800">Sending mailboxes</h3>
+      <p className="mt-1 text-sm text-slate-500">
+        Connect Gmail, Outlook / Microsoft 365, Zoho Mail or your company-domain email (SMTP) in Mail Integration.
+      </p>
     </div>
-
-    <div className="grid gap-6 lg:grid-cols-2">
-
-      <Field label="SMTP Host">
-        <input
-          className={INPUT}
-          value={email.smtpHost}
-          onChange={(e) =>
-            setEmail({
-              ...email,
-              smtpHost: e.target.value,
-            })
-          }
-          placeholder="smtp.gmail.com"
-        />
-      </Field>
-
-      <Field label="SMTP Port">
-        <input
-          className={INPUT}
-          value={email.smtpPort}
-          onChange={(e) =>
-            setEmail({
-              ...email,
-              smtpPort: e.target.value,
-            })
-          }
-          placeholder="587"
-        />
-      </Field>
-
-      <Field label="SMTP Username">
-        <input
-          className={INPUT}
-          value={email.username}
-          onChange={(e) =>
-            setEmail({
-              ...email,
-              username: e.target.value,
-            })
-          }
-        />
-      </Field>
-
-      <Field label="SMTP Password">
-        <input
-          type="password"
-          className={INPUT}
-          value={email.password}
-          onChange={(e) =>
-            setEmail({
-              ...email,
-              password: e.target.value,
-            })
-          }
-        />
-      </Field>
-
-      <Field label="From Name">
-        <input
-          className={INPUT}
-          value={email.fromName}
-          onChange={(e) =>
-            setEmail({
-              ...email,
-              fromName: e.target.value,
-            })
-          }
-        />
-      </Field>
-
-      <Field label="From Email">
-        <input
-          className={INPUT}
-          value={email.fromEmail}
-          onChange={(e) =>
-            setEmail({
-              ...email,
-              fromEmail: e.target.value,
-            })
-          }
-        />
-      </Field>
-
-      <Field label="Encryption">
-        <select
-          className={INPUT}
-          value={email.encryption}
-          onChange={(e) =>
-            setEmail({
-              ...email,
-              encryption: e.target.value,
-            })
-          }
-        >
-          {["TLS", "SSL", "None"].map((item) => (
-            <option key={item}>{item}</option>
-          ))}
-        </select>
-      </Field>
-
-      <div className="flex items-end">
-        <button
-          type="button"
-          className="w-full rounded-2xl bg-gradient-to-r from-sky-600 to-indigo-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:scale-[1.02]"
-        >
-          Test SMTP Connection
-        </button>
-      </div>
-
-    </div>
+    <Link
+      to="/integrations/email"
+      className="inline-flex items-center justify-center px-5 py-3 font-semibold text-white shadow-lg rounded-2xl bg-gradient-to-r from-sky-600 to-indigo-600"
+    >
+      Open Mail Integration
+    </Link>
   </div>
 
   {/* Notifications */}

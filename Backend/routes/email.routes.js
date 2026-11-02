@@ -1,5 +1,7 @@
-// routes/email.routes.js — Email Integration (per-workspace Gmail / Microsoft 365)
+// routes/email.routes.js — Mail Integration (per-workspace Gmail, Microsoft 365,
+// Zoho Mail and custom-domain SMTP; several accounts, one default sender)
 import express from "express";
+import rateLimit from "express-rate-limit";
 import auth from "../middlewares/auth.js";
 import role from "../middlewares/role.js";
 import mongoose from "mongoose";
@@ -9,6 +11,7 @@ import { sendLeadEmail } from "../services/email.service.js";
 import {
   PROVIDERS, missingConfig, buildAuthUrl, verifyState, completeConnection,
   verifyConnection, disconnect, sendViaConnectedAccount, detectProvider,
+  listAccounts, setDefaultAccount, saveSmtpAccount, markTested,
 } from "../services/emailOAuth.service.js";
 
 const router = express.Router();
@@ -21,7 +24,7 @@ const providerList = (isAdmin) =>
   Object.entries(PROVIDERS).map(([id, p]) => {
     const available = missingConfig(id).length === 0;
     return {
-      id, name: p.name, available, limitations: p.limitations, revokeUrl: p.revokeUrl,
+      id, kind: p.kind, name: p.name, available, limitations: p.limitations, revokeUrl: p.revokeUrl,
       ...(isAdmin && { setupStatus: available ? "Ready" : "Awaiting one-time ReadyTech setup" }),
     };
   });
@@ -31,7 +34,7 @@ const NOT_AVAILABLE = (name) => `${name} connection isn't available yet. ReadyTe
 /* Friendly callback errors (details are logged server-side) */
 const friendlyError = (err) => {
   if (err.name === "TokenExpiredError" || err.name === "JsonWebTokenError" || err.message === "Invalid OAuth state") return "The connection link expired — please click Connect again.";
-  if (/refresh token|Not allowed|no email address|Permission to send/.test(err.message)) return err.message;
+  if (/refresh token|Not allowed|no email address|Permission to send/.test(err.message) || err.status === 409) return err.message;
   if (/admin|consent|AADSTS65001|AADSTS90094/i.test(err.message)) return "Your organisation requires an administrator to approve this app. Ask your IT admin to grant consent, then connect again.";
   return "We couldn't finish connecting your email account. Please try again.";
 };
@@ -39,7 +42,8 @@ const friendlyError = (err) => {
 /* Status — any workspace member (no secrets) */
 router.get("/status", auth, async (req, res) => {
   try {
-    res.json({ success: true, data: { providers: providerList(req.user?.role === "admin"), connection: await verifyConnection(req.workspace) } });
+    const connection = await verifyConnection(req.workspace);
+    res.json({ success: true, data: { providers: providerList(req.user?.role === "admin"), accounts: await listAccounts(req.workspace), connection } });
   } catch (error) {
     console.error("Email integration status error:", error.message);
     res.status(500).json({ success: false, message: "Failed to load email integration status" });
@@ -57,7 +61,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /* Start OAuth — admin only; state binds user + workspace */
 router.get("/oauth/:provider/url", auth, role("admin"), (req, res) => {
   const { provider } = req.params;
-  if (!PROVIDERS[provider]) return res.status(404).json({ success: false, message: "Unknown provider" });
+  if (PROVIDERS[provider]?.kind !== "oauth") return res.status(404).json({ success: false, message: "Unknown provider" });
 
   const missing = missingConfig(provider);
   if (missing.length) {
@@ -74,7 +78,7 @@ router.get("/oauth/:provider/url", auth, role("admin"), (req, res) => {
 router.get("/oauth/:provider/callback", async (req, res) => {
   const { provider } = req.params;
   const { code, state, error, error_description: desc } = req.query;
-  if (!PROVIDERS[provider]) return res.redirect(clientRedirect({ connected: "0", message: "Unknown provider" }));
+  if (PROVIDERS[provider]?.kind !== "oauth") return res.redirect(clientRedirect({ connected: "0", message: "Unknown provider" }));
   if (error || !code) {
     if (error) console.warn(`Email OAuth (${provider}) provider error: ${error} ${desc || ""}`);
     const message = error === "access_denied" ? "Sign-in was cancelled or permission wasn't granted." : friendlyError(new Error(String(desc || error || "")));
@@ -88,7 +92,10 @@ router.get("/oauth/:provider/callback", async (req, res) => {
     if (!user || user.role !== "admin" || user.isActive === false || String(user.workspace || user._id) !== s.ws) {
       throw new Error("Not allowed to connect an email account for this workspace");
     }
-    const email = await completeConnection({ provider, code: String(code), workspaceId: s.ws, userId: s.uid });
+    const email = await completeConnection({
+      provider, code: String(code), workspaceId: s.ws, userId: s.uid,
+      accountsServer: provider === "zoho" ? String(req.query["accounts-server"] || "") : undefined,
+    });
     return res.redirect(clientRedirect({ connected: "1", email }));
   } catch (err) {
     console.error(`Email OAuth (${provider}) callback failed:`, err.message);
@@ -98,28 +105,105 @@ router.get("/oauth/:provider/callback", async (req, res) => {
 
 router.post("/disconnect", auth, role("admin"), async (req, res) => {
   try {
-    const removed = await disconnect(req.workspace);
+    const removed = await disconnect(req.workspace, req.body?.accountId);
     if (!removed) return res.status(409).json({ success: false, message: "No email account is connected" });
-    res.json({ success: true, message: "Email account disconnected", data: { revokeUrl: PROVIDERS[removed.provider]?.revokeUrl } });
+    res.json({ success: true, message: `${removed.email} disconnected`, data: { revokeUrl: PROVIDERS[removed.provider]?.revokeUrl } });
   } catch (error) {
     console.error("Email disconnect error:", error.message);
     res.status(500).json({ success: false, message: "Failed to disconnect email account" });
   }
 });
 
-/* Real test send to the admin's own address through the connected mailbox */
-router.post("/test", auth, role("admin"), async (req, res) => {
+/* Per-workspace limits for actions that reach external mail servers */
+const limiter = (limit, message) => rateLimit({
+  windowMs: 15 * 60 * 1000, limit, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: (req) => `mail:${req.workspace}`,
+  message: { success: false, message },
+});
+const smtpLimiter = limiter(10, "Too many connection attempts. Please wait a few minutes and try again.");
+const testLimiter = limiter(10, "Too many test emails. Please wait a few minutes and try again.");
+
+/* Real test send to the admin's own address through a connected mailbox */
+const sendTest = async (req, res) => {
+  const accountId = req.params?.id || req.body?.accountId;
   try {
     const sent = await sendViaConnectedAccount(req.workspace, {
       to: req.user.email,
       subject: "ReadyTech CRM — email integration test",
       message: "This test email was sent through your connected email account from ReadyTech CRM.",
-    });
-    if (!sent) return res.status(409).json({ success: false, message: "No email account is connected" });
+    }, { accountId });
+    if (!sent) return res.status(accountId ? 404 : 409).json({ success: false, message: accountId ? "Email account not found" : "No email account is connected" });
+    if (accountId) await markTested(req.workspace, accountId);
     res.json({ success: true, message: `Test email sent from ${sent.from} to ${req.user.email}` });
   } catch (error) {
     console.error("Email test send error:", error.message);
     res.status(error.status ? 409 : 500).json({ success: false, message: error.status ? error.message : "We couldn't send the test email. Please try again." });
+  }
+};
+router.post("/test", auth, role("admin"), testLimiter, sendTest);
+
+/* ---------- Accounts (multi-account management) ---------- */
+const badId = (req, res) => {
+  if (mongoose.isValidObjectId(req.params.id)) return false;
+  res.status(404).json({ success: false, message: "Email account not found" });
+  return true;
+};
+
+router.get("/accounts", auth, async (req, res) => {
+  try {
+    res.json({ success: true, data: await listAccounts(req.workspace) });
+  } catch (error) {
+    console.error("Email accounts error:", error.message);
+    res.status(500).json({ success: false, message: "Failed to load email accounts" });
+  }
+});
+
+/* Custom-domain SMTP: verified with a real login before anything is saved */
+const smtpError = (res, error) => {
+  if (!error.status) console.error("SMTP account error:", error.message);
+  res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "We couldn't save the SMTP account. Please try again." });
+};
+router.post("/smtp", auth, role("admin"), smtpLimiter, async (req, res) => {
+  try {
+    const account = await saveSmtpAccount(req.workspace, req.user._id, req.body);
+    res.json({ success: true, message: `${account.email} connected`, data: account });
+  } catch (error) {
+    smtpError(res, error);
+  }
+});
+router.put("/accounts/:id/smtp", auth, role("admin"), smtpLimiter, async (req, res) => {
+  if (badId(req, res)) return;
+  try {
+    const account = await saveSmtpAccount(req.workspace, req.user._id, req.body, req.params.id);
+    res.json({ success: true, message: `${account.email} updated`, data: account });
+  } catch (error) {
+    smtpError(res, error);
+  }
+});
+
+router.post("/accounts/:id/default", auth, role("admin"), async (req, res) => {
+  if (badId(req, res)) return;
+  try {
+    const account = await setDefaultAccount(req.workspace, req.params.id);
+    if (!account) return res.status(404).json({ success: false, message: "Email account not found" });
+    res.json({ success: true, message: `${account.email} is now the default sender`, data: account });
+  } catch (error) {
+    console.error("Email default error:", error.message);
+    res.status(500).json({ success: false, message: "Failed to update the default sender" });
+  }
+});
+
+router.post("/accounts/:id/test", auth, role("admin"), testLimiter, (req, res) => (badId(req, res) ? undefined : sendTest(req, res)));
+
+router.delete("/accounts/:id", auth, role("admin"), async (req, res) => {
+  if (badId(req, res)) return;
+  try {
+    const removed = await disconnect(req.workspace, req.params.id);
+    if (!removed) return res.status(404).json({ success: false, message: "Email account not found" });
+    res.json({ success: true, message: `${removed.email} disconnected`, data: { revokeUrl: PROVIDERS[removed.provider]?.revokeUrl } });
+  } catch (error) {
+    console.error("Email disconnect error:", error.message);
+    res.status(500).json({ success: false, message: "Failed to disconnect email account" });
   }
 });
 

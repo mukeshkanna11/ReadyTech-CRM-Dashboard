@@ -23,21 +23,35 @@ const WS_A = "64b0000000000000000000a1";
 const WS_B = "64b0000000000000000000b2";
 const ADMIN_A = "64b0000000000000000000c3";
 
-/* ---- in-memory EmailConnection keyed by workspace ---- */
-let store, calls;
-const doc = (ws) => {
-  const d = store.get(ws);
-  if (!d) return null;
-  return Object.assign(d, { save: async () => store.set(ws, d) });
+/* ---- in-memory EmailConnection: many accounts per workspace ---- */
+const { default: mongoose } = await import("mongoose");
+let rows, calls;
+const same = (a, b) => String(a) === String(b);
+const matches = (d, f = {}) => Object.entries(f).every(([k, v]) => same(d[k], v));
+const live = (d) => Object.assign(d, { save: async () => d });
+const inWs = (ws) => rows.filter((d) => same(d.workspace, ws));
+// Legacy helpers: store.get(ws) → that workspace's default sender
+const store = {
+  get: (ws) => { const a = inWs(ws); return a.find((d) => d.isDefault) || a[0]; },
+  has: (ws) => inWs(ws).length > 0,
+  set: (ws, d) => rows.push(live({ _id: new mongoose.Types.ObjectId().toString(), workspace: ws, createdAt: new Date(), ...d })),
+  get size() { return rows.length; },
 };
-const q = (v) => ({ select() { return this; }, lean: async () => v, then: (a, b) => Promise.resolve(v).then(a, b) });
+const q = (v) => ({ select() { return this; }, sort() { return this; }, lean: async () => v, then: (a, b) => Promise.resolve(v).then(a, b) });
 beforeEach(() => {
-  store = new Map();
+  rows = [];
   calls = [];
-  EmailConnection.findOne = (f) => q(doc(String(f.workspace)));
-  EmailConnection.findOneAndUpdate = async (f, u) => store.set(String(f.workspace), { _id: "id-" + f.workspace, ...u.$set });
-  EmailConnection.updateOne = async (f, u) => { const d = store.get(String(f.workspace)); if (d) Object.assign(d, u.$set); };
-  EmailConnection.deleteOne = async (f) => store.delete(String(f.workspace));
+  EmailConnection.find = (f) => q(rows.filter((d) => matches(d, f)));
+  EmailConnection.findOne = (f) => q(rows.find((d) => matches(d, f)) || null);
+  EmailConnection.findOneAndUpdate = async (f, u, o = {}) => {
+    let d = rows.find((x) => matches(x, f));
+    if (!d && !o.upsert) return null;
+    if (!d) rows.push((d = live({ _id: new mongoose.Types.ObjectId().toString(), createdAt: new Date(), ...f })));
+    return Object.assign(d, u.$set);
+  };
+  EmailConnection.updateOne = async (f, u) => { const d = rows.find((x) => matches(x, f)); if (d) Object.assign(d, u.$set); };
+  EmailConnection.updateMany = async (f, u) => rows.filter((x) => matches(x, f)).forEach((d) => Object.assign(d, u.$set));
+  EmailConnection.deleteOne = async (f) => { rows = rows.filter((x) => !matches(x, f)); };
   User.findById = () => q({ _id: ADMIN_A, role: "admin", workspace: WS_A });
 });
 
@@ -67,7 +81,7 @@ test("OAuth callback stores encrypted tokens for the initiating workspace only",
   const r = await connectA();
   assert.match(r.redirectUrl, /connected=1/);
   const saved = store.get(WS_A);
-  assert.equal(saved.email, "Owner@A.com");
+  assert.equal(saved.email, "owner@a.com");
   assert.notEqual(saved.accessToken, "AT1");
   assert.notEqual(saved.refreshToken, "RT1");
   assert.equal(store.has(WS_B), false);
@@ -107,7 +121,7 @@ test("sends via Gmail for the connected workspace; other workspace falls back (n
   await connectA();
   mockFetch({ "gmail/v1/users/me/messages/send": () => json(200, { id: "m1" }) });
   const sent = await svc.sendViaConnectedAccount(WS_A, { to: "lead@x.com", subject: "Hi", message: "Body" });
-  assert.deepEqual(sent, { id: "m1", from: "Owner@A.com", provider: "google" });
+  assert.deepEqual(sent, { id: "m1", from: "owner@a.com", provider: "google" });
   assert.equal(calls.at(-1).opts.headers.authorization, "Bearer AT1");
   assert.equal(await svc.sendViaConnectedAccount(WS_B, { to: "x@y.z", subject: "s", message: "m" }), null);
 });
@@ -220,7 +234,7 @@ test("ERP customer email: connected mailbox for own workspace; other workspace's
   const ok = res();
   await handler("post", "/customers/:id")({ params: { id: CUST_A }, body: { subject: "Quote", message: "Hi" }, workspace: WS_A }, ok);
   assert.equal(ok.body.success, true);
-  assert.equal(ok.body.data.from, "Owner@A.com");
+  assert.equal(ok.body.data.from, "owner@a.com");
   assert.equal(ok.body.data.provider, "google");
 
   const other = res();
@@ -295,11 +309,226 @@ test("two workspaces, two Gmail accounts: each sends only with its own token", a
   assert.doesNotMatch(JSON.stringify(s.body), /AT_|RT_|alice/);
 });
 
-test("switching Google account revokes the old grant; reconnecting the same account does not", async () => {
+test("second Google account is added next to the first; reconnecting the same account updates it", async () => {
   await connectGoogle(WS_A, "old@gmail.com", ["AT1", "RT_OLD"]);
   await connectGoogle(WS_A, "old@gmail.com", ["AT2", "RT_SAME"]);
-  assert.ok(!calls.some((c) => c.url.includes("/revoke")));
+  assert.equal(inWs(WS_A).length, 1);
   await connectGoogle(WS_A, "new@gmail.com", ["AT3", "RT_NEW"]);
-  assert.ok(calls.some((c) => c.url.includes("/revoke") && String(c.opts.body).includes("token=RT_SAME")));
-  assert.equal(store.get(WS_A).email, "new@gmail.com");
+  assert.ok(!calls.some((c) => c.url.includes("/revoke")));
+  assert.deepEqual(inWs(WS_A).map((d) => [d.email, d.isDefault]), [["old@gmail.com", true], ["new@gmail.com", false]]);
+});
+
+/* ================= Zoho Mail ================= */
+const smtp = await import("../services/mail/smtp.service.js");
+const withZoho = async (fn) => {
+  Object.assign(process.env, { ZOHO_CLIENT_ID: "zid", ZOHO_CLIENT_SECRET: "zsecret", ZOHO_OAUTH_REDIRECT_URI: "http://api/email/oauth/zoho/callback" });
+  try { await fn(); } finally { delete process.env.ZOHO_CLIENT_ID; }
+};
+const zohoCallback = async (ws, query) => {
+  User.findById = () => q({ _id: ADMIN_A, role: "admin", workspace: ws });
+  const url = new URL(svc.buildAuthUrl({ provider: "zoho", userId: ADMIN_A, workspaceId: ws }));
+  const r = res();
+  await handler("get", "/oauth/:provider/callback")({ params: { provider: "zoho" }, query: { code: "c", state: url.searchParams.get("state"), ...query } }, r);
+  return { r, url };
+};
+
+test("Zoho: data-centre callback, account lookup and send for workspace B only", () =>
+  withZoho(async () => {
+    mockFetch({
+      "accounts.zoho.in/oauth/v2/token": () => json(200, { access_token: "ZAT", refresh_token: "ZRT", expires_in: 3600 }),
+      "mail.zoho.in/api/accounts": () => json(200, { data: [{ accountId: "991", primaryEmailAddress: "Sales@B.in" }] }),
+    });
+    const { r, url } = await zohoCallback(WS_B, { "accounts-server": "https://accounts.zoho.in" });
+    assert.equal(url.origin, "https://accounts.zoho.com");
+    assert.equal(url.searchParams.get("scope"), "ZohoMail.messages.CREATE,ZohoMail.accounts.READ");
+    assert.match(r.redirectUrl, /connected=1/);
+    const saved = store.get(WS_B);
+    assert.deepEqual([saved.email, saved.providerData.accountId, saved.providerData.mailBase], ["sales@b.in", "991", "https://mail.zoho.in"]);
+    assert.notEqual(saved.accessToken, "ZAT");
+    assert.equal(store.has(WS_A), false);
+
+    mockFetch({ "mail.zoho.in/api/accounts/991/messages": () => json(200, { status: { code: 200 }, data: { messageId: "z1" } }) });
+    const sent = await svc.sendViaConnectedAccount(WS_B, { to: "lead@x.com", subject: "Hi", message: "Body" });
+    assert.deepEqual(sent, { id: "z1", from: "sales@b.in", provider: "zoho" });
+    assert.equal(calls.at(-1).opts.headers.authorization, "Zoho-oauthtoken ZAT");
+    assert.equal(await svc.sendViaConnectedAccount(WS_A, { to: "x@y.z", subject: "s", message: "m" }), null);
+  }));
+
+test("Zoho: a forged accounts-server never receives the client secret", () =>
+  withZoho(async () => {
+    const err = console.error; console.error = () => {};
+    mockFetch({});
+    const { r } = await zohoCallback(WS_A, { "accounts-server": "https://accounts.zoho.evil.com" });
+    console.error = err;
+    assert.match(r.redirectUrl, /connected=0/);
+    assert.equal(calls.length, 0);
+    assert.equal(store.size, 0);
+  }));
+
+test("Zoho: refresh rejected with HTTP 200 + error marks reconnect needed", () =>
+  withZoho(async () => {
+    store.set(WS_A, { provider: "zoho", email: "z@a.com", accessToken: svc.encrypt("old"), refreshToken: svc.encrypt("ZRT"), expiresAt: new Date(0), status: "connected", providerData: { accountsServer: "https://accounts.zoho.eu", mailBase: "https://mail.zoho.eu", accountId: "1" } });
+    const err = console.error; console.error = () => {};
+    mockFetch({ "accounts.zoho.eu/oauth/v2/token": () => json(200, { error: "invalid_code" }) });
+    await assert.rejects(svc.getAccessToken(WS_A));
+    console.error = err;
+    assert.equal(store.get(WS_A).status, "error");
+    assert.match(store.get(WS_A).lastError, /reconnect/);
+  }));
+
+/* ================= Custom-domain SMTP ================= */
+let transports;
+const smtpHooks = ({ ip = "203.0.114.10", verify = async () => true } = {}) => {
+  transports = [];
+  smtp.__setSmtpTestHooks({
+    lookup: async () => [{ address: ip, family: 4 }],
+    createTransport: (opts) => {
+      const t = { opts, sent: [], verify, sendMail: async (m) => (t.sent.push(m), { messageId: "<s1@x>" }), close() {} };
+      transports.push(t);
+      return t;
+    },
+  });
+};
+const SMTP_BODY = { email: "Info@Acme.in", host: "smtp.hostinger.com", port: 465, security: "ssl", password: "p@ss", displayName: "Acme Sales" };
+const admin = (ws, extra = {}) => ({ workspace: ws, user: { _id: ADMIN_A, email: "admin@acme.in", role: "admin" }, params: {}, body: {}, ...extra });
+
+test("SMTP: verified login, pinned public IP + TLS hostname, encrypted password, send", async () => {
+  smtpHooks();
+  const r = res();
+  await handler("post", "/smtp")(admin(WS_A, { body: SMTP_BODY }), r);
+  assert.equal(r.body.success, true, r.body.message);
+  assert.equal(r.body.data.email, "info@acme.in");
+  assert.equal(r.body.data.isDefault, true);
+  assert.doesNotMatch(JSON.stringify(r.body), /p@ss|smtpPassword/);
+  const t = transports[0].opts;
+  assert.deepEqual([t.host, t.servername, t.tls.servername, t.secure, t.tls.rejectUnauthorized], ["203.0.114.10", "smtp.hostinger.com", "smtp.hostinger.com", true, true]);
+  assert.ok(t.connectionTimeout && t.socketTimeout);
+  const saved = store.get(WS_A);
+  assert.notEqual(saved.smtpPassword, "p@ss");
+  assert.equal(saved.smtp.username, "info@acme.in");
+
+  const sent = await svc.sendViaConnectedAccount(WS_A, { to: "lead@x.com", subject: "Hi\r\nBcc: evil@x.com", message: "Body" });
+  assert.deepEqual(sent, { id: "<s1@x>", from: "info@acme.in", provider: "smtp" });
+  const m = transports.at(-1).sent[0];
+  assert.deepEqual(m.from, { name: "Acme Sales", address: "info@acme.in" });
+  assert.doesNotMatch(m.subject, /\r|\n/);
+  assert.equal(transports.at(-1).opts.auth.pass, "p@ss");
+  assert.equal(await svc.sendViaConnectedAccount(WS_B, { to: "x@y.z", subject: "s", message: "m" }), null);
+});
+
+test("SMTP: private / internal addresses are refused before connecting (SSRF)", async () => {
+  for (const ip of ["127.0.0.1", "10.1.2.3", "169.254.169.254", "192.168.1.1", "::1", "fd00::1", "::ffff:10.0.0.1"]) {
+    smtpHooks({ ip });
+    const r = res();
+    await handler("post", "/smtp")(admin(WS_A, { body: SMTP_BODY }), r);
+    assert.equal(r.statusCode, 422, ip);
+    assert.match(r.body.message, /isn't allowed/);
+    assert.equal(transports.length, 0);
+  }
+  assert.equal(store.size, 0);
+});
+
+test("SMTP: input validation (IP literal host, wrong port, missing password)", async () => {
+  smtpHooks();
+  for (const [body, msg] of [
+    [{ ...SMTP_BODY, host: "127.0.0.1" }, /hostname/],
+    [{ ...SMTP_BODY, port: 587 }, /SSL uses port 465/],
+    [{ ...SMTP_BODY, security: "starttls", port: 8080 }, /STARTTLS uses port 587/],
+    [{ ...SMTP_BODY, security: "none" }, /SSL or STARTTLS/],
+    [{ ...SMTP_BODY, password: "" }, /password/],
+    [{ ...SMTP_BODY, email: "nope" }, /valid email/],
+  ]) {
+    const r = res();
+    await handler("post", "/smtp")(admin(WS_A, { body }), r);
+    assert.equal(r.statusCode, 422);
+    assert.match(r.body.message, msg);
+  }
+  assert.equal(transports.length, 0);
+});
+
+test("SMTP: wrong password is reported clearly and nothing is stored", async () => {
+  smtpHooks({ verify: async () => { throw Object.assign(new Error("535 5.7.8 auth failed secret-detail"), { code: "EAUTH", responseCode: 535 }); } });
+  const err = console.error; console.error = () => {};
+  const r = res();
+  await handler("post", "/smtp")(admin(WS_A, { body: SMTP_BODY }), r);
+  console.error = err;
+  assert.equal(r.statusCode, 422);
+  assert.match(r.body.message, /username or password/);
+  assert.doesNotMatch(r.body.message, /secret-detail/);
+  assert.equal(store.size, 0);
+});
+
+test("SMTP: update keeps the saved password when left blank; other workspace can't update it", async () => {
+  smtpHooks();
+  await handler("post", "/smtp")(admin(WS_A, { body: SMTP_BODY }), res());
+  const id = String(store.get(WS_A)._id);
+  const r = res();
+  await handler("put", "/accounts/:id/smtp")(admin(WS_A, { params: { id }, body: { ...SMTP_BODY, password: "", security: "starttls", port: 587 } }), r);
+  assert.equal(r.body.success, true, r.body.message);
+  assert.equal(transports.at(-1).opts.auth.pass, "p@ss");
+  assert.equal(store.get(WS_A).smtp.port, 587);
+  assert.equal(inWs(WS_A).length, 1);
+
+  const other = res();
+  await handler("put", "/accounts/:id/smtp")(admin(WS_B, { params: { id }, body: SMTP_BODY }), other);
+  assert.equal(other.statusCode, 404);
+});
+
+/* ================= Multi-account management ================= */
+test("multiple accounts: default sender switch, per-account test, delete promotes next; isolation by id", async () => {
+  await connectGoogle(WS_A, "g@gmail.com", ["GAT", "GRT"]);
+  smtpHooks();
+  await handler("post", "/smtp")(admin(WS_A, { body: SMTP_BODY }), res());
+  const [g, s] = inWs(WS_A);
+  assert.deepEqual([g.isDefault, s.isDefault], [true, false]);
+
+  const d = res();
+  await handler("post", "/accounts/:id/default")(admin(WS_A, { params: { id: String(s._id) } }), d);
+  assert.equal(d.body.success, true);
+  assert.deepEqual([g.isDefault, s.isDefault], [false, true]);
+  assert.equal((await svc.sendViaConnectedAccount(WS_A, { to: "l@x.com", subject: "s", message: "m" })).provider, "smtp");
+
+  mockFetch({ "messages/send": () => json(200, { id: "g1" }) });
+  const t = res();
+  await handler("post", "/accounts/:id/test")(admin(WS_A, { params: { id: String(g._id) } }), t);
+  assert.match(t.body.message, /from g@gmail.com/);
+  assert.ok(g.lastTestedAt);
+
+  for (const [method, path] of [["post", "/accounts/:id/default"], ["post", "/accounts/:id/test"], ["delete", "/accounts/:id"]]) {
+    const x = res();
+    await handler(method, path)(admin(WS_B, { params: { id: String(g._id) } }), x);
+    assert.equal(x.statusCode, 404, `${method} ${path}`);
+  }
+  assert.equal(inWs(WS_A).length, 2);
+
+  const del = res();
+  await handler("delete", "/accounts/:id")(admin(WS_A, { params: { id: String(s._id) } }), del);
+  assert.equal(del.body.success, true);
+  assert.deepEqual(inWs(WS_A).map((a) => [a.email, a.isDefault]), [["g@gmail.com", true]]);
+
+  const st = res();
+  await handler("get", "/status")({ workspace: WS_A, user: { role: "user" } }, st);
+  assert.equal(st.body.data.accounts.length, 1);
+  assert.ok(st.body.data.providers.some((p) => p.id === "smtp" && p.available));
+  assert.doesNotMatch(JSON.stringify(st.body), /GAT|GRT|accessToken|smtpPassword|ZOHO_/);
+});
+
+test("unreadable stored secrets (key changed): disconnect still works, send asks to reconnect", async () => {
+  store.set(WS_A, { provider: "google", email: "k@gmail.com", accessToken: "bad.blob.x", refreshToken: "bad.blob.y", expiresAt: new Date(Date.now() + 3600e3), status: "connected" });
+  const err = console.error; console.error = () => {};
+  await assert.rejects(svc.sendViaConnectedAccount(WS_A, { to: "l@x.com", subject: "s", message: "m" }), /reconnect/);
+  console.error = err;
+  const r = res();
+  await handler("post", "/disconnect")({ workspace: WS_A, body: {} }, r);
+  assert.equal(r.body.success, true);
+  assert.equal(store.size, 0);
+});
+
+test("isBlockedIp covers internal ranges and allows public addresses", () => {
+  for (const ip of ["0.0.0.0", "100.64.0.1", "172.20.0.1", "224.0.0.1", "fe80::1", "64:ff9b::a00:1", "garbage"]) assert.equal(smtp.isBlockedIp(ip), true, ip);
+  for (const ip of ["8.8.8.8", "2a00:1450:4001::1", "::ffff:8.8.8.8"]) assert.equal(smtp.isBlockedIp(ip), false, ip);
+});
+
+test("detectProvider recognises Zoho domains", async () => {
+  assert.equal(await svc.detectProvider("a@zohomail.in"), "zoho");
 });
