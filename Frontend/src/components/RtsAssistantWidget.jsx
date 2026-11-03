@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Mic, RotateCcw, Sparkles, X } from "lucide-react";
+import { Mic, MicOff, RotateCcw, Sparkles, X } from "lucide-react";
 
 import API from "../services/api";
 import useRtsVoice from "../hooks/useRtsVoice";
@@ -144,13 +144,23 @@ export default function RtsAssistantWidget() {
     setMessages([]);
   };
 
-  const voice = useRtsVoice({
-    // null = wake word only → the listening pill / panel shows we're ready
-    onCommand: (question) => (question ? runCommand(question) : voiceRef.current?.stopSpeaking?.()),
-  });
+  // Only real commands arrive here — the wake word itself never becomes a chat message
+  const voice = useRtsVoice({ onCommand: (command) => runCommand(command) });
   voiceRef.current = voice;
 
-  const state = executing ? "executing" : busy ? "thinking" : voice.speaking ? "speaking" : voice.awake || voice.pttActive ? "listening" : "idle";
+  const state = executing
+    ? "executing"
+    : voice.phase === "command"
+    ? "listening"
+    : voice.phase === "detected"
+    ? "detected"
+    : busy
+    ? "thinking"
+    : voice.speaking
+    ? "speaking"
+    : voice.phase === "error"
+    ? "error"
+    : "idle";
 
   const close = () => {
     voice.stopSpeaking?.();
@@ -176,26 +186,45 @@ export default function RtsAssistantWidget() {
             aria-live="polite"
             className="fixed z-40 flex items-center gap-2 py-2 pl-3 pr-4 text-sm text-white rounded-full shadow-2xl bottom-[10.5rem] right-6 max-w-[min(80vw,320px)] bg-slate-900/90 backdrop-blur"
           >
-            <RtsWave state={state} light />
-            <span className="font-medium shrink-0">{executing || STATE_LABEL[state]}</span>
-            {state === "listening" && voice.heard && <span className="italic truncate text-slate-300">“{voice.heard}”</span>}
+            {state === "error" ? <MicOff size={16} className="text-rose-300 shrink-0" /> : <RtsWave state={state} light />}
+            <span className="font-medium shrink-0">{state === "executing" ? `Opening ${executing}…` : STATE_LABEL[state]}</span>
+            {state === "error" && <span className="truncate text-rose-200">{voice.error}</span>}
+            {(state === "listening" || state === "detected") && voice.heard && <span className="italic truncate text-slate-300">“{voice.heard}”</span>}
           </button>
         )}
         <button
           onClick={() => setOpen(true)}
-          title="RTS AI Assistant"
+          title={voice.phase === "wake" ? `RTS AI Assistant · ${STATE_LABEL.wake}` : "RTS AI Assistant"}
           aria-label="Open RTS AI Assistant"
           className={`fixed z-40 flex items-center justify-center text-white transition rounded-full shadow-xl bottom-24 right-6 h-14 w-14 bg-gradient-to-br from-fuchsia-600 to-indigo-600 hover:scale-105 active:scale-95 ${
-            state === "listening" ? "ring-4 ring-fuchsia-300/70 animate-pulse" : ""
+            state === "listening" || state === "detected" ? "ring-4 ring-fuchsia-300/70 animate-pulse" : ""
           }`}
         >
           <Sparkles size={22} />
-          {voice.enabled && (
-            <span className="absolute flex items-center justify-center w-5 h-5 border-2 border-white rounded-full -right-0.5 -top-0.5 bg-emerald-500">
-              <Mic size={10} />
+          {(voice.enabled || voice.phase === "error") && (
+            <span
+              className={`absolute flex items-center justify-center w-5 h-5 border-2 border-white rounded-full -right-0.5 -top-0.5 ${
+                voice.phase === "error" ? "bg-rose-500" : "bg-emerald-500"
+              }`}
+            >
+              {voice.phase === "error" ? <MicOff size={10} /> : <Mic size={10} />}
             </span>
           )}
         </button>
+        {/* Manual mic fallback: listen for a command right now, panel stays closed */}
+        {voice.supported && (
+          <button
+            onClick={voice.listenNow}
+            title={state === "listening" ? "Stop listening" : "Speak a command now"}
+            aria-label={state === "listening" ? "Stop listening" : "Speak a command now"}
+            aria-pressed={state === "listening"}
+            className={`fixed z-40 flex items-center justify-center w-10 h-10 transition bg-white border rounded-full shadow-lg bottom-[6.5rem] right-[5.5rem] hover:scale-105 ${
+              state === "listening" ? "border-rose-300 text-rose-600 animate-pulse" : "border-slate-200 text-indigo-600"
+            }`}
+          >
+            <Mic size={18} />
+          </button>
+        )}
       </>
     );
   }
@@ -213,7 +242,9 @@ export default function RtsAssistantWidget() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate">RTS AI Assistant</p>
           <p className="text-xs text-indigo-100 truncate" aria-live="polite">
-            {state === "idle" ? "CRM & ERP · live data · read-only" : executing || STATE_LABEL[state]}
+            {state === "idle"
+              ? voice.phase === "wake" ? STATE_LABEL.wake : "CRM & ERP · live data · read-only"
+              : state === "executing" ? `Opening ${executing}…` : STATE_LABEL[state]}
           </p>
         </div>
         {messages.length > 0 && (

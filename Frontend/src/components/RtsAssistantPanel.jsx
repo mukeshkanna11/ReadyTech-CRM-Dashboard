@@ -20,7 +20,7 @@ const SUGGESTIONS = [
 
 /* Animated voice waveform (state indicator, not a live mic level meter) */
 export function RtsWave({ state = "idle", light = false }) {
-  const active = state !== "idle";
+  const active = state !== "idle" && state !== "error";
   const speed = state === "listening" ? 0.9 : state === "speaking" ? 0.6 : 1.4;
   return (
     <span className="inline-flex items-center gap-[3px] h-5" aria-hidden="true">
@@ -283,16 +283,16 @@ export default function RtsAssistantPanel({ messages, busy, state = "idle", onSe
           <p className={`min-w-0 flex-1 truncate ${voice.error ? "text-rose-600" : "text-slate-600"}`} title={voice.error || voice.heard}>
             {state !== "idle" && !voice.error && <span className="mr-1.5 inline-block align-middle"><RtsWave state={state} /></span>}
             {voice.error ||
-              (voice.pttActive
-                ? "Listening… speak now"
-                : voice.enabled
-                ? voice.awake
-                  ? "Listening… ask your question"
-                  : 'Say "Hey RTS" + your question'
+              (voice.phase === "command"
+                ? "Listening for command… speak now"
+                : voice.phase === "detected"
+                ? "Wake word detected"
+                : voice.phase === "wake"
+                ? 'Wake listening — say "Hey RTS, go to invoices"'
                 : voice.supported
-                ? "Tap the mic to talk"
+                ? 'Tap the mic to talk, or turn "Hey RTS" on'
                 : "Voice input needs Chrome or Edge — typing works everywhere")}
-            {!voice.error && voice.heard && (voice.enabled || voice.pttActive) && (
+            {!voice.error && voice.heard && voice.listening && (
               <span className="ml-1 italic text-slate-500">“{voice.heard}”</span>
             )}
           </p>
@@ -304,12 +304,12 @@ export default function RtsAssistantPanel({ messages, busy, state = "idle", onSe
         {voice.supported && (
           <button
             type="button"
-            onClick={voice.pushToTalk}
-            title={voice.pttActive ? "Stop listening" : "Push to talk"}
-            aria-label={voice.pttActive ? "Stop listening" : "Push to talk"}
-            aria-pressed={voice.pttActive}
+            onClick={voice.listenNow}
+            title={voice.phase === "command" ? "Stop listening" : "Speak a command now"}
+            aria-label={voice.phase === "command" ? "Stop listening" : "Speak a command now"}
+            aria-pressed={voice.phase === "command"}
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition ${
-              voice.pttActive ? "animate-pulse border-rose-300 bg-rose-50 text-rose-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+              voice.phase === "command" ? "animate-pulse border-rose-300 bg-rose-50 text-rose-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"
             }`}
           >
             <Mic size={16} />

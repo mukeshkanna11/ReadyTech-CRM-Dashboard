@@ -60,7 +60,32 @@ const VERBS = [
 ];
 const FILLER = ["the", "a", "my", "page", "screen", "module", "section", "tab", "please", "pls", "now", "to", "me", "ku", "kku", "ah", "va", "பக்கம்", "பக்கத்துக்கு", "பக்கத்தை", "பக்கத்து", "க்கு", "கு", "ஐ"];
 const QUESTION = /\b(how|why|what|when|which|steps?|explain|evlo|ethana|eppadi|epdi|enna)\b|\?|எப்படி|என்ன|எத்தனை|எவ்வளவு/i;
-const WAKE = /^\s*(hey[\s,.!]*(r[\s.]*t[\s.]*s|rts|arts|artis|rds)|ஹே[\s,.!]*(ஆர்[\s.]*டி[\s.]*எஸ்|ஆர்டிஎஸ்))[\s,.!?]*/i;
+/* "Hey RTS" wake word as browsers commonly transcribe it.
+   EN/Tanglish: hey|hay|hei|hi|hello|ok(ay) + rts / r t s / r.t.s / rt's /
+   arts / artist(s) / arties / rds / rtx.  Tamil script: ஹே|ஹேய்|ஏய்|ஹாய்
+   + ஆர்டிஎஸ் / ஆர் டி எஸ் (or Latin RTS). */
+const WAKE_RE = new RegExp(
+  "(?:^|[^a-z\u0B80-\u0BFF])" +
+    "(?:(?:hey|hay|hei|hi|hello|ok|okay)[\\s,.!-]*(?:r[\\s.]*t[\\s.'’]*s|arts|artists?|arties|artis|rds|rtx)" +
+    "|(?:ஹே|ஹேய்|ஏய்|ஹாய்)[\\s,.!-]*(?:ஆர்[\\s.]*டி[\\s.]*எஸ்|ஆர்டிஎஸ்|r[\\s.]*t[\\s.]*s))" +
+    "(?![a-z\u0B80-\u0BFF])[\\s,.!?:;-]*",
+  "i"
+);
+
+/* Returns { start, end, rest } when the wake word is present, else null.
+   rest = whatever was said after it ("go to invoice"). */
+export function matchWake(raw) {
+  const text = String(raw || "");
+  const m = WAKE_RE.exec(text);
+  if (!m) return null;
+  const end = m.index + m[0].length;
+  return { start: m.index, end, rest: text.slice(end).trim() };
+}
+
+const stripWake = (text) => {
+  const w = matchWake(text);
+  return w ? w.rest : text;
+};
 
 const isLatin = (s) => /^[\x20-\x7e]+$/.test(s);
 const term = (s) => (isLatin(s) ? new RegExp(`(^|[^a-z0-9])${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^a-z0-9])`, "i") : new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
@@ -73,7 +98,7 @@ const ALIASES = PAGES.flatMap((p) => p.aliases.map((a) => ({ alias: a, page: p }
 
 /* Returns { path, name } for a plain page command, else null */
 export function parseNavigation(raw) {
-  const text = String(raw || "").replace(WAKE, "").replace(/[.,!]+/g, " ").replace(/['’]s\b/gi, "").trim().toLowerCase();
+  const text = stripWake(String(raw || "")).replace(/[.,!]+/g, " ").replace(/['’]s\b/gi, "").trim().toLowerCase();
   if (!text || text.length > 80 || QUESTION.test(text)) return null;
 
   const verb = VERBS.some((v) => term(v).test(text));
@@ -89,4 +114,7 @@ export function parseNavigation(raw) {
 
 export const isTamil = (s) => /[஀-௿]/.test(s || "");
 
-export const STATE_LABEL = { listening: "Listening…", thinking: "Thinking…", speaking: "Speaking…", executing: "Opening…", idle: "" };
+export const STATE_LABEL = {
+  wake: "Wake listening — say \"Hey RTS\"", detected: "Wake word detected", listening: "Listening for command…",
+  thinking: "Thinking…", speaking: "Speaking…", executing: "Opening page…", error: "Voice error", idle: "",
+};
