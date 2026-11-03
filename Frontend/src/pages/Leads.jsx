@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import API from "../services/api";
+import useAssistantFilters from "../hooks/useAssistantFilters";
 import toast from "react-hot-toast";
 
 import {
@@ -197,6 +198,7 @@ export default function Leads() {
 
   const [search, setSearch] =
     useState("");
+  useAssistantFilters({ setSearch });
 
   const [statusFilter, setStatusFilter] =
     useState("All");

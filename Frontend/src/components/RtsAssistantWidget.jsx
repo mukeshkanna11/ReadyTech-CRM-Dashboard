@@ -1,80 +1,202 @@
-import { useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { Mic, Sparkles, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Mic, RotateCcw, Sparkles, X } from "lucide-react";
 
 import API from "../services/api";
 import useRtsVoice from "../hooks/useRtsVoice";
-import RtsAssistantPanel from "./RtsAssistantPanel";
+import RtsAssistantPanel, { RtsWave } from "./RtsAssistantPanel";
+import { STATE_LABEL, isTamil, parseNavigation } from "./rtsCommands";
 
 /* ======================================================
-   RTS AI ASSISTANT WIDGET
-   Separate from ChatSupportWidget (brain icon). Assistance
-   only — never creates, converts or modifies leads/enquiries.
-   Launcher sits above the brain icon; on desktop the panel
-   opens above it too, so the brain stays clickable and its
-   own panel (z-50) layers over this one (z-45).
+   RTS AI ASSISTANT WIDGET (Siri-style)
+   Separate from ChatSupportWidget (brain icon). Mounted once in
+   DashboardLayout, so "Hey RTS" works on every authenticated page,
+   panel open or closed.
+   - Page commands ("go to invoice") run on-device → React Router.
+   - Everything else → /api/ai/help (live read-only data, record
+     search, page help). Latest command wins; stale replies are
+     dropped and never spoken.
+   Never creates, converts or modifies leads/enquiries/records.
 ====================================================== */
 
 const ERP_PATHS = /^\/(stocks|hr)(\/|$)/i;
+const SAFE_PATH = /^\/[a-z0-9/_-]*(\?[a-z0-9=&%+._-]*)?$/i;
+const isPhone = () => window.matchMedia?.("(max-width: 639px)").matches;
 
 export default function RtsAssistantWidget() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [executing, setExecuting] = useState("");
   const historyRef = useRef([]);
   const voiceRef = useRef(null);
+  const abortRef = useRef(null);
+  const reqId = useRef(0);
+  const execTimer = useRef(null);
+
+  const push = (...items) => {
+    historyRef.current = [...historyRef.current, ...items];
+    setMessages(historyRef.current);
+  };
+
+  const execute = (path, label) => {
+    if (!SAFE_PATH.test(path) || path.startsWith("//")) return;
+    setExecuting(label || "Opening");
+    clearTimeout(execTimer.current);
+    execTimer.current = setTimeout(() => setExecuting(""), 1600);
+    navigate(path);
+    if (isPhone()) setOpen(false); // full-screen panel would hide the page
+  };
 
   const ask = async (question) => {
-    const history = [...historyRef.current, { role: "user", text: question }];
-    historyRef.current = history;
-    setMessages(history);
+    // Latest command wins: cancel the in-flight request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const id = (reqId.current += 1);
+
+    push({ role: "user", text: question });
     setBusy(true);
 
     let reply;
     try {
-      const { data } = await API.post("/ai/help", {
-        product: ERP_PATHS.test(pathname) ? "ERP" : "CRM",
-        messages: history.filter((m) => !m.error),
-      });
-      reply = { role: "assistant", text: data?.data?.text || "Sorry, I have no answer for that." };
+      const { data } = await API.post(
+        "/ai/help",
+        {
+          product: ERP_PATHS.test(pathname) ? "ERP" : "CRM",
+          page: pathname,
+          tzOffset: new Date().getTimezoneOffset(),
+          messages: historyRef.current.filter((m) => !m.error).map(({ role, text }) => ({ role, text })),
+        },
+        { timeout: 60000, silent: true, signal: controller.signal } // tool lookups can exceed the 15s default
+      );
+      const d = data?.data || {};
+      reply = {
+        role: "assistant",
+        text: d.text || "Sorry, I have no answer for that.",
+        cards: Array.isArray(d.cards) ? d.cards : [],
+        actions: Array.isArray(d.actions) ? d.actions : [],
+      };
     } catch (err) {
+      if (err?.code === "ERR_CANCELED" || controller.signal.aborted) return; // superseded / cancelled
       reply = {
         role: "assistant",
         error: true,
-        text: err?.response?.data?.message || "RTS AI is unavailable right now. Please try again.",
+        text:
+          err?.response?.data?.message ||
+          (err?.code === "ECONNABORTED" ? "RTS AI took too long to answer. Please try again." : "RTS AI is unavailable right now. Please try again."),
       };
     }
+    if (id !== reqId.current) return; // a newer command arrived meanwhile
 
-    historyRef.current = [...historyRef.current, reply];
-    setMessages(historyRef.current);
+    push(reply);
     setBusy(false);
+    abortRef.current = null;
+
+    const nav = reply.actions?.find((a) => a.type === "navigate");
+    if (nav) execute(nav.path, nav.label);
     if (!reply.error) voiceRef.current?.speak(reply.text);
   };
 
+  /* Single entry point for voice, typed text and suggestion chips */
+  const runCommand = (raw) => {
+    const text = String(raw || "").trim();
+    if (!text) return;
+    voiceRef.current?.stopSpeaking?.(); // new command interrupts speech
+
+    const nav = parseNavigation(text);
+    if (nav) {
+      abortRef.current?.abort();
+      reqId.current += 1;
+      setBusy(false);
+      const say = isTamil(text) ? `${nav.name} திறக்கிறேன்.` : `Opening ${nav.name}.`;
+      push({ role: "user", text }, { role: "assistant", text: say, actions: [{ type: "navigate", path: nav.path, label: nav.name }] });
+      execute(nav.path, nav.name);
+      voiceRef.current?.speak(say);
+      return;
+    }
+
+    setOpen(true);
+    ask(text);
+  };
+
+  const cancel = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    reqId.current += 1;
+    setBusy(false);
+    voiceRef.current?.cancel?.();
+  };
+
+  const retry = () => {
+    const h = historyRef.current;
+    if (!h.at(-1)?.error || h.at(-2)?.role !== "user" || busy) return;
+    const question = h.at(-2).text;
+    historyRef.current = h.slice(0, -2);
+    ask(question);
+  };
+
+  const clear = () => {
+    cancel();
+    historyRef.current = [];
+    setMessages([]);
+  };
+
   const voice = useRtsVoice({
-    onCommand: (question) => {
-      setOpen(true);
-      if (question) ask(question);
-    },
+    // null = wake word only → the listening pill / panel shows we're ready
+    onCommand: (question) => (question ? runCommand(question) : voiceRef.current?.stopSpeaking?.()),
   });
   voiceRef.current = voice;
 
+  const state = executing ? "executing" : busy ? "thinking" : voice.speaking ? "speaking" : voice.awake || voice.pttActive ? "listening" : "idle";
+
+  const close = () => {
+    voice.stopSpeaking?.();
+    setOpen(false);
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => e.key === "Escape" && close();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => () => { abortRef.current?.abort(); clearTimeout(execTimer.current); }, []);
+
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        title="RTS AI Assistant"
-        aria-label="Open RTS AI Assistant"
-        className="fixed z-40 flex items-center justify-center text-white transition rounded-full shadow-xl bottom-24 right-6 h-14 w-14 bg-gradient-to-br from-fuchsia-600 to-indigo-600 hover:scale-105 active:scale-95"
-      >
-        <Sparkles size={22} />
-        {voice.enabled && (
-          <span className="absolute flex items-center justify-center w-5 h-5 border-2 border-white rounded-full -right-0.5 -top-0.5 bg-emerald-500 animate-pulse">
-            <Mic size={10} />
-          </span>
+      <>
+        {state !== "idle" && (
+          <button
+            onClick={() => setOpen(true)}
+            aria-live="polite"
+            className="fixed z-40 flex items-center gap-2 py-2 pl-3 pr-4 text-sm text-white rounded-full shadow-2xl bottom-[10.5rem] right-6 max-w-[min(80vw,320px)] bg-slate-900/90 backdrop-blur"
+          >
+            <RtsWave state={state} light />
+            <span className="font-medium shrink-0">{executing || STATE_LABEL[state]}</span>
+            {state === "listening" && voice.heard && <span className="italic truncate text-slate-300">“{voice.heard}”</span>}
+          </button>
         )}
-      </button>
+        <button
+          onClick={() => setOpen(true)}
+          title="RTS AI Assistant"
+          aria-label="Open RTS AI Assistant"
+          className={`fixed z-40 flex items-center justify-center text-white transition rounded-full shadow-xl bottom-24 right-6 h-14 w-14 bg-gradient-to-br from-fuchsia-600 to-indigo-600 hover:scale-105 active:scale-95 ${
+            state === "listening" ? "ring-4 ring-fuchsia-300/70 animate-pulse" : ""
+          }`}
+        >
+          <Sparkles size={22} />
+          {voice.enabled && (
+            <span className="absolute flex items-center justify-center w-5 h-5 border-2 border-white rounded-full -right-0.5 -top-0.5 bg-emerald-500">
+              <Mic size={10} />
+            </span>
+          )}
+        </button>
+      </>
     );
   }
 
@@ -82,29 +204,38 @@ export default function RtsAssistantWidget() {
     <div
       role="dialog"
       aria-label="RTS AI Assistant"
-      className="fixed inset-0 z-[45] flex flex-col overflow-hidden bg-white shadow-2xl sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(600px,calc(100vh-8rem))] sm:w-[400px] sm:rounded-3xl sm:border sm:border-slate-200"
+      className="fixed inset-0 z-[45] flex flex-col overflow-hidden bg-white shadow-2xl sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(660px,calc(100vh-8rem))] sm:w-[420px] sm:rounded-3xl sm:border sm:border-slate-200"
     >
       <div className="flex items-center gap-3 px-4 py-3 text-white shrink-0 bg-gradient-to-r from-fuchsia-600 to-indigo-600">
         <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/15">
-          <Sparkles size={18} />
+          {state === "idle" ? <Sparkles size={18} /> : <RtsWave state={state} light />}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate">RTS AI Assistant</p>
-          <p className="text-xs text-indigo-100 truncate">CRM &amp; ERP help · guidance only</p>
+          <p className="text-xs text-indigo-100 truncate" aria-live="polite">
+            {state === "idle" ? "CRM & ERP · live data · read-only" : executing || STATE_LABEL[state]}
+          </p>
         </div>
-        <button
-          onClick={() => {
-            voice.stopSpeaking?.();
-            setOpen(false);
-          }}
-          aria-label="Close RTS AI Assistant"
-          className="p-2 transition rounded-lg hover:bg-white/15"
-        >
+        {messages.length > 0 && (
+          <button onClick={clear} aria-label="New conversation" title="New conversation" className="p-2 transition rounded-lg hover:bg-white/15">
+            <RotateCcw size={16} />
+          </button>
+        )}
+        <button onClick={close} aria-label="Close RTS AI Assistant" className="p-2 transition rounded-lg hover:bg-white/15">
           <X size={18} />
         </button>
       </div>
 
-      <RtsAssistantPanel messages={messages} busy={busy} onSend={ask} voice={voice} />
+      <RtsAssistantPanel
+        messages={messages}
+        busy={busy}
+        state={state}
+        onSend={runCommand}
+        onRetry={retry}
+        onCancel={cancel}
+        onNavigate={(path, label) => execute(path, label)}
+        voice={voice}
+      />
     </div>
   );
 }

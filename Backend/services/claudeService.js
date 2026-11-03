@@ -601,3 +601,10 @@ export const generateInventoryInsight = async ({ inventory, type }) => {
     model,
   };
 };
+
+/* =========================================================
+   RAW MESSAGE CALL (tool use) — used by the RTS AI Assistant
+   tool loop. Returns the SDK response unchanged.
+========================================================= */
+export const createClaudeMessage = (params) =>
+  getClient().messages.create({ model: DEFAULT_MODEL, ...params });

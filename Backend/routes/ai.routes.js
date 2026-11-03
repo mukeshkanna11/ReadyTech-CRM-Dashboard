@@ -1,5 +1,6 @@
 import express from "express";
 import Anthropic from "@anthropic-ai/sdk";
+import rateLimit from "express-rate-limit";
 import {
   leadInsight,
   clientInsight,
@@ -55,9 +56,14 @@ router.get("/health", (req, res) => {
    GENERAL CHAT
 ========================================== */
 
-/* RTS AI help widget — assistance only, no DB writes
-   POST /api/ai/help  { product, messages: [{ role, text }] } */
-router.post("/help", rtsHelp);
+/* RTS AI Assistant — guidance, navigation and read-only live data, no DB writes
+   POST /api/ai/help  { product, page, tzOffset, messages: [{ role, text }] } */
+const rtsHelpLimiter = rateLimit({
+  windowMs: 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: (req) => `rts:${req.user?._id || req.workspace}`,
+  message: { success: false, message: "Too many RTS AI requests. Please wait a minute and try again." },
+});
+router.post("/help", rtsHelpLimiter, rtsHelp);
 
 /* purpose "sales-recommendations" (AI Sales Recommendations page)
    is gated by AI Suggestions */

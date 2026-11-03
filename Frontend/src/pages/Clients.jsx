@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import API from "../services/api";
+import useAssistantFilters from "../hooks/useAssistantFilters";
 import EmailCustomerButton from "../components/EmailCustomerButton";
 import toast from "react-hot-toast";
 import {
@@ -274,6 +275,7 @@ export default function Clients() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  useAssistantFilters({ setSearch });
   const [statusFilter, setStatusFilter] = useState("All");
   const [typeFilter, setTypeFilter] = useState("All");
   const [drawerOpen, setDrawerOpen] = useState(false);

@@ -33,7 +33,7 @@ test("AI chat replies without creating/updating leads or enquiries", async () =>
   await import("../models/Chat.js");
   const trap = trapWrites();
   let call;
-  const handler = makeRtsHelp(async (args) => ((call = args), "Open Leads from the sidebar."));
+  const handler = makeRtsHelp(async (args) => ((call = args), { stop_reason: "end_turn", content: [{ type: "text", text: "Open Leads from the sidebar." }] }));
   const res = mockRes();
   try {
     await handler({ body: { product: "CRM", messages: [{ role: "user", text: "Create a lead for Ravi, 98765" }] } }, res);
@@ -42,18 +42,23 @@ test("AI chat replies without creating/updating leads or enquiries", async () =>
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.data.text, "Open Leads from the sidebar.");
   assert.deepEqual(trap.writes, []);
-  assert.match(call.system, /never create, update, convert or submit leads/);
+  assert.match(call.system, /never create, update, convert, delete or submit leads/);
 });
 
-test("help controller imports no data models", () => {
-  const src = fs.readFileSync(new URL("../controllers/rtsHelp.controller.js", import.meta.url), "utf8");
-  assert.doesNotMatch(src, /models\//);
+test("assistant tools are read-only (no write calls in source)", () => {
+  const src = fs.readFileSync(new URL("../services/rtsAssistant/rtsTools.js", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /\.(create|save|insertMany|update\w*|delete\w*|remove\w*|findOneAnd\w*|findByIdAnd\w*|bulkWrite|replaceOne)\(/);
+  const ctl = fs.readFileSync(new URL("../controllers/rtsHelp.controller.js", import.meta.url), "utf8");
+  assert.doesNotMatch(ctl, /models\//);
 });
 
 test("system prompt grounds answers and redirects off-topic questions", () => {
-  const s = buildSystemPrompt("ERP");
+  const s = buildSystemPrompt({ product: "ERP", page: "/leads" });
   assert.match(s, /Ready Tech ERP/);
-  assert.match(s, /Answer ONLY from the product guide/);
+  assert.match(s, /answer ONLY from the product guide/);
+  assert.match(s, /Never guess, estimate/);
+  assert.match(s, /current page = \/leads \(Leads\)/);
+  assert.match(s, /Tanglish/);
   assert.match(s, /unrelated to Ready Tech CRM\/ERP/);
 });
 
@@ -69,7 +74,7 @@ test("history sanitised: roles filtered, starts with user, capped", () => {
 
 test("rejects empty conversation; AI failure returns safe message", async () => {
   const res = mockRes();
-  await makeRtsHelp(async () => "")({ body: { messages: [] } }, res);
+  await makeRtsHelp(async () => ({ content: [] }))({ body: { messages: [] } }, res);
   assert.equal(res.statusCode, 400);
 
   const res2 = mockRes();

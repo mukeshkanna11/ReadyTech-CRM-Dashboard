@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import useAssistantFilters from "../hooks/useAssistantFilters";
 import {
   Plus,
   Eye,
@@ -28,6 +29,7 @@ export default function InvoiceList() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  useAssistantFilters({ setSearch, setStatus: setStatusFilter });
 
   /* ================= SAFE ARRAY ================= */
   const safeArray = (res) => {
