@@ -145,7 +145,10 @@ export default function RtsAssistantWidget() {
   };
 
   // Only real commands arrive here — the wake word itself never becomes a chat message
-  const voice = useRtsVoice({ onCommand: (command) => runCommand(command) });
+  const voice = useRtsVoice({
+    onCommand: (command) => runCommand(command),
+    onWake: () => setOpen(true), // "Hey RTS" activates the assistant panel on any page
+  });
   voiceRef.current = voice;
 
   const state = executing
@@ -177,10 +180,19 @@ export default function RtsAssistantWidget() {
 
   useEffect(() => () => { abortRef.current?.abort(); clearTimeout(execTimer.current); }, []);
 
+  // Voice errors (e.g. mic blocked) show in the pill for 6s, then only as the red launcher badge
+  const [errorHidden, setErrorHidden] = useState(false);
+  useEffect(() => {
+    setErrorHidden(false);
+    if (!voice.error) return undefined;
+    const t = setTimeout(() => setErrorHidden(true), 6000);
+    return () => clearTimeout(t);
+  }, [voice.error]);
+
   if (!open) {
     return (
       <>
-        {state !== "idle" && (
+        {state !== "idle" && !(state === "error" && errorHidden) && (
           <button
             onClick={() => setOpen(true)}
             aria-live="polite"
@@ -211,20 +223,7 @@ export default function RtsAssistantWidget() {
             </span>
           )}
         </button>
-        {/* Manual mic fallback: listen for a command right now, panel stays closed */}
-        {voice.supported && (
-          <button
-            onClick={voice.listenNow}
-            title={state === "listening" ? "Stop listening" : "Speak a command now"}
-            aria-label={state === "listening" ? "Stop listening" : "Speak a command now"}
-            aria-pressed={state === "listening"}
-            className={`fixed z-40 flex items-center justify-center w-10 h-10 transition bg-white border rounded-full shadow-lg bottom-[6.5rem] right-[5.5rem] hover:scale-105 ${
-              state === "listening" ? "border-rose-300 text-rose-600 animate-pulse" : "border-slate-200 text-indigo-600"
-            }`}
-          >
-            <Mic size={18} />
-          </button>
-        )}
+
       </>
     );
   }

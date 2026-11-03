@@ -115,6 +115,6 @@ export function parseNavigation(raw) {
 export const isTamil = (s) => /[஀-௿]/.test(s || "");
 
 export const STATE_LABEL = {
-  wake: "Wake listening — say \"Hey RTS\"", detected: "Wake word detected", listening: "Listening for command…",
+  wake: "Say \"Hey RTS\"", detected: "RTS Listening…", listening: "RTS Listening…",
   thinking: "Thinking…", speaking: "Speaking…", executing: "Opening page…", error: "Voice error", idle: "",
 };

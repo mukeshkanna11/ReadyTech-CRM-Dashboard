@@ -61,7 +61,7 @@ const errorText = (code) =>
     ? "This browser cannot recognise the selected language. Switch to EN or type your question."
     : "Voice input keeps stopping, so it was paused. Tap the mic or turn \"Hey RTS\" on again.";
 
-export default function useRtsVoice({ onCommand }) {
+export default function useRtsVoice({ onCommand, onWake }) {
   const [enabled, setEnabled] = useState(false); // "Hey RTS" wake listening on
   const [phase, setPhase] = useState("off");
   const [heard, setHeard] = useState("");
@@ -84,6 +84,8 @@ export default function useRtsVoice({ onCommand }) {
   const lastSpoken = useRef({ text: "", at: 0 });
   const onCommandRef = useRef(onCommand);
   onCommandRef.current = onCommand;
+  const onWakeRef = useRef(onWake);
+  onWakeRef.current = onWake;
   mutedRef.current = muted;
   langRef.current = lang;
 
@@ -169,10 +171,8 @@ export default function useRtsVoice({ onCommand }) {
     stopRec();
     setError(errorText(code));
     setPhase("error");
-    if (code === "not-allowed" || code === "service-not-allowed") {
-      micOkRef.current = false;
-      store.set("rts.voice", "off");
-    }
+    if (code === "not-allowed" || code === "service-not-allowed") micOkRef.current = false;
+    // not persisted: if permission is granted later, listening starts automatically
   };
 
   function startRec() {
@@ -200,7 +200,10 @@ export default function useRtsVoice({ onCommand }) {
         }
 
         if (!result.isFinal) {
-          if (wake && modeRef.current === "wake") setPhase(wake.rest ? "command" : "detected");
+          if (wake && modeRef.current === "wake") {
+            setPhase(wake.rest ? "command" : "detected");
+            onWakeRef.current?.(); // show the assistant + "RTS Listening" immediately
+          }
           if (modeRef.current === "command" || wake) {
             setHeard((wake ? wake.rest : text).trim());
             if (modeRef.current === "command") enterCommand(); // still talking → extend timeout
@@ -209,6 +212,7 @@ export default function useRtsVoice({ onCommand }) {
         }
 
         if (wake) {
+          onWakeRef.current?.();
           if (wake.rest) fireCommand(wake.rest); // "Hey RTS, go to invoice"
           else enterCommand(); // "Hey RTS" … wait for the next utterance
         } else if (modeRef.current === "command") {
@@ -356,17 +360,28 @@ export default function useRtsVoice({ onCommand }) {
   useEffect(() => {
     if (!Recognition || store.get("rts.voice") === "off") return undefined;
     let status;
+    let cancelled = false;
     const apply = () => {
-      if (status?.state === "granted" && !enabledRef.current && store.get("rts.voice") !== "off") {
+      if (cancelled || enabledRef.current || store.get("rts.voice") === "off") return;
+      if (status?.state === "granted") {
         micOkRef.current = true;
         startWakeListening();
+      } else if (status?.state === "denied") {
+        setError(errorText("not-allowed"));
+        setPhase("error");
+      } else {
+        enable(); // "prompt": the browser asks once, then listening starts
       }
     };
-    navigator.permissions
-      ?.query({ name: "microphone" })
-      .then((p) => { status = p; p.onchange = apply; apply(); })
-      .catch(() => { /* Permissions API unavailable (Safari): user enables manually */ });
-    return () => { if (status) status.onchange = null; };
+    if (navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: "microphone" })
+        .then((p) => { status = p; p.onchange = apply; apply(); })
+        .catch(() => enable()); // Permissions API without "microphone" (Safari/Firefox)
+    } else {
+      enable();
+    }
+    return () => { cancelled = true; if (status) status.onchange = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

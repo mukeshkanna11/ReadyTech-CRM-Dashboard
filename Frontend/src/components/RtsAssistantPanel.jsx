@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Brain, Mic, RotateCcw, Send, Square, Volume2, VolumeX, X } from "lucide-react";
+import { ArrowUpRight, Brain, RotateCcw, Send, Square, Volume2, VolumeX, X } from "lucide-react";
 
 import { VOICE_LANGS } from "../hooks/useRtsVoice";
 
@@ -284,14 +284,14 @@ export default function RtsAssistantPanel({ messages, busy, state = "idle", onSe
             {state !== "idle" && !voice.error && <span className="mr-1.5 inline-block align-middle"><RtsWave state={state} /></span>}
             {voice.error ||
               (voice.phase === "command"
-                ? "Listening for command… speak now"
+                ? "RTS Listening… say your command"
                 : voice.phase === "detected"
-                ? "Wake word detected"
+                ? "RTS Listening…"
                 : voice.phase === "wake"
-                ? 'Wake listening — say "Hey RTS, go to invoices"'
+                ? 'Say "Hey RTS, go to leads" or "Hey RTS, show today\'s sales"'
                 : voice.supported
-                ? 'Tap the mic to talk, or turn "Hey RTS" on'
-                : "Voice input needs Chrome or Edge — typing works everywhere")}
+                ? 'Turn "Hey RTS" on to use voice'
+                : "Voice needs Chrome or Edge — typing works everywhere")}
             {!voice.error && voice.heard && voice.listening && (
               <span className="ml-1 italic text-slate-500">“{voice.heard}”</span>
             )}
@@ -301,20 +301,6 @@ export default function RtsAssistantPanel({ messages, busy, state = "idle", onSe
 
       {/* Composer */}
       <form onSubmit={submit} className="flex items-center gap-2 px-3 py-3 bg-white border-t shrink-0 border-slate-200">
-        {voice.supported && (
-          <button
-            type="button"
-            onClick={voice.listenNow}
-            title={voice.phase === "command" ? "Stop listening" : "Speak a command now"}
-            aria-label={voice.phase === "command" ? "Stop listening" : "Speak a command now"}
-            aria-pressed={voice.phase === "command"}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition ${
-              voice.phase === "command" ? "animate-pulse border-rose-300 bg-rose-50 text-rose-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"
-            }`}
-          >
-            <Mic size={16} />
-          </button>
-        )}
 
         <input
           value={text}
