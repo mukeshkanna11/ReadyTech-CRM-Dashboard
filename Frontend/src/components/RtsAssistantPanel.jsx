@@ -238,7 +238,7 @@ export default function RtsAssistantPanel({ messages, busy, state = "idle", onSe
             <button
               type="button"
               onClick={voice.enabled ? voice.disable : voice.enable}
-              title={voice.enabled ? 'Turn off "Hey RTS"' : 'Turn on "Hey RTS" (always listening while this tab is open)'}
+              title={voice.enabled ? 'Turn off "Hey RTS" for this session (it turns back on at next login)' : 'Turn on "Hey RTS" (always listening while this tab is open)'}
               aria-pressed={voice.enabled}
               className={`shrink-0 rounded-lg border px-2 py-1 font-medium transition ${
                 voice.enabled ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"

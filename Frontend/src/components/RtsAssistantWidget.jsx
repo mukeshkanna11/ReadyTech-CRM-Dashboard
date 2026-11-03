@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Mic, MicOff, RotateCcw, Sparkles, X } from "lucide-react";
 
 import API from "../services/api";
-import useRtsVoice from "../hooks/useRtsVoice";
+import useRtsVoice, { rtsLog } from "../hooks/useRtsVoice";
 import RtsAssistantPanel, { RtsWave } from "./RtsAssistantPanel";
 import { STATE_LABEL, isTamil, parseNavigation } from "./rtsCommands";
 
@@ -35,6 +35,8 @@ export default function RtsAssistantWidget() {
   const abortRef = useRef(null);
   const reqId = useRef(0);
   const execTimer = useRef(null);
+  const [spoken, setSpoken] = useState(""); // last recognised voice command, shown on the launcher
+  const spokenTimer = useRef(null);
 
   const push = (...items) => {
     historyRef.current = [...historyRef.current, ...items];
@@ -42,7 +44,8 @@ export default function RtsAssistantWidget() {
   };
 
   const execute = (path, label) => {
-    if (!SAFE_PATH.test(path) || path.startsWith("//")) return;
+    if (!SAFE_PATH.test(path) || path.startsWith("//")) { rtsLog("navigation blocked (unsafe path):", path); return; }
+    rtsLog("navigate →", path);
     setExecuting(label || "Opening");
     clearTimeout(execTimer.current);
     execTimer.current = setTimeout(() => setExecuting(""), 1600);
@@ -107,6 +110,7 @@ export default function RtsAssistantWidget() {
     voiceRef.current?.stopSpeaking?.(); // new command interrupts speech
 
     const nav = parseNavigation(text);
+    rtsLog("parsed:", JSON.stringify(text), nav ? `→ page ${nav.path}` : "→ /ai/help (live data / help)");
     if (nav) {
       abortRef.current?.abort();
       reqId.current += 1;
@@ -146,8 +150,20 @@ export default function RtsAssistantWidget() {
 
   // Only real commands arrive here — the wake word itself never becomes a chat message
   const voice = useRtsVoice({
-    onCommand: (command) => runCommand(command),
-    onWake: () => setOpen(true), // "Hey RTS" activates the assistant panel on any page
+    onCommand: (command) => {
+      // Keep the recognised words visible on the launcher while the command runs
+      setSpoken(command);
+      clearTimeout(spokenTimer.current);
+      spokenTimer.current = setTimeout(() => setSpoken(""), 5000);
+      runCommand(command);
+    },
+    // "Hey RTS" animates the floating launcher (Siri-style) and shows the live
+    // transcript there — the panel is not forced open, so page commands run
+    // straight on the current page. Data answers open the panel (runCommand).
+    onWake: () => {
+      setSpoken("");
+      clearTimeout(spokenTimer.current);
+    },
   });
   voiceRef.current = voice;
 
@@ -178,7 +194,7 @@ export default function RtsAssistantWidget() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  useEffect(() => () => { abortRef.current?.abort(); clearTimeout(execTimer.current); }, []);
+  useEffect(() => () => { abortRef.current?.abort(); clearTimeout(execTimer.current); clearTimeout(spokenTimer.current); }, []);
 
   // Voice errors (e.g. mic blocked) show in the pill for 6s, then only as the red launcher badge
   const [errorHidden, setErrorHidden] = useState(false);
@@ -190,6 +206,9 @@ export default function RtsAssistantWidget() {
   }, [voice.error]);
 
   if (!open) {
+    const listening = state === "listening" || state === "detected";
+    const active = listening || state === "thinking" || state === "speaking" || state === "executing";
+    const transcript = listening ? voice.heard : spoken;
     return (
       <>
         {state !== "idle" && !(state === "error" && errorHidden) && (
@@ -201,18 +220,31 @@ export default function RtsAssistantWidget() {
             {state === "error" ? <MicOff size={16} className="text-rose-300 shrink-0" /> : <RtsWave state={state} light />}
             <span className="font-medium shrink-0">{state === "executing" ? `Opening ${executing}…` : STATE_LABEL[state]}</span>
             {state === "error" && <span className="truncate text-rose-200">{voice.error}</span>}
-            {(state === "listening" || state === "detected") && voice.heard && <span className="italic truncate text-slate-300">“{voice.heard}”</span>}
+            {state !== "error" && transcript && <span className="italic truncate text-slate-200">“{transcript}”</span>}
           </button>
         )}
         <button
           onClick={() => setOpen(true)}
           title={voice.phase === "wake" ? `RTS AI Assistant · ${STATE_LABEL.wake}` : "RTS AI Assistant"}
           aria-label="Open RTS AI Assistant"
-          className={`fixed z-40 flex items-center justify-center text-white transition rounded-full shadow-xl bottom-24 right-6 h-14 w-14 bg-gradient-to-br from-fuchsia-600 to-indigo-600 hover:scale-105 active:scale-95 ${
-            state === "listening" || state === "detected" ? "ring-4 ring-fuchsia-300/70 animate-pulse" : ""
+          className={`fixed z-40 flex items-center justify-center text-white transition rounded-full shadow-xl bottom-24 right-6 h-14 w-14 hover:scale-105 active:scale-95 ${
+            listening ? "scale-110" : ""
           }`}
         >
-          <Sparkles size={22} />
+          {/* Siri-style glow: spinning colour ring + pulse while listening, slower while working */}
+          {active && (
+            <>
+              {listening && <span className="absolute rounded-full -inset-2 bg-fuchsia-500/40 animate-ping" aria-hidden="true" />}
+              <span
+                className={`absolute rounded-full -inset-1 blur-[3px] animate-spin bg-[conic-gradient(from_0deg,#d946ef,#6366f1,#22d3ee,#f472b6,#d946ef)] ${
+                  listening ? "[animation-duration:1.4s]" : "[animation-duration:3s] opacity-70"
+                }`}
+                aria-hidden="true"
+              />
+            </>
+          )}
+          <span className="absolute inset-0 rounded-full bg-gradient-to-br from-fuchsia-600 to-indigo-600" aria-hidden="true" />
+          <span className="relative">{active ? <RtsWave state={state} light /> : <Sparkles size={22} />}</span>
           {(voice.enabled || voice.phase === "error") && (
             <span
               className={`absolute flex items-center justify-center w-5 h-5 border-2 border-white rounded-full -right-0.5 -top-0.5 ${
