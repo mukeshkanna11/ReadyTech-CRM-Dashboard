@@ -181,7 +181,7 @@ export default function ShopifyIntegration() {
   const active = conn?.status === "active";
 
   const disconnect = () => {
-    if (!window.confirm(`Disconnect ${conn.shopDomain}? The ReadyTech app will be removed from this Shopify store.`)) return;
+    if (!window.confirm(`Disconnect ${conn.shopDomain}? ReadyTech stops syncing with this store and deletes its access. To also remove the app from Shopify, uninstall it in Shopify admin → Apps.`)) return;
     run("disconnect", async () => {
       await API.post("/shopify/disconnect");
       toast.success("Shopify store disconnected");

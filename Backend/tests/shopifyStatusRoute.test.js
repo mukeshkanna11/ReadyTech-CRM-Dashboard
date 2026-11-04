@@ -280,3 +280,30 @@ test("complete: success returns only the store name and domain (never tokens)", 
     }
   });
 });
+
+test("POST /disconnect: admin only, scoped to the caller's workspace, no Shopify call", async () => {
+  const url = base.replace("/status", "/disconnect");
+  const token = jwt.sign({ id: String(WS) }, "test-jwt");
+
+  stub(User, "findById", () => chain({ _id: new mongoose.Types.ObjectId(), role: "employee", isActive: true, workspace: WS }));
+  assert.equal((await fetch(url, { method: "POST", headers: { authorization: `Bearer ${token}` } })).status, 403);
+
+  stub(User, "findById", () => chain({ _id: WS, role: "admin", isActive: true, workspace: null }));
+  const filters = [];
+  stub(models.ShopifyConnection, "findOne", async (f) => (filters.push(f), { _id: "c1", workspace: WS, shopDomain: "acme.myshopify.com", connectedBy: WS }));
+  stub(models.ShopifyConnection, "updateOne", async (f) => (filters.push(f), { modifiedCount: 1 }));
+  const AuditLog = (await import("../models/AuditLog.js")).default;
+  stub(AuditLog, "create", async (d) => d);
+  const origFetch = globalThis.fetch;
+  const shopifyCalls = [];
+  globalThis.fetch = (u, init) => (String(u).includes("myshopify.com") ? (shopifyCalls.push(String(u)), Promise.reject(new Error("no"))) : origFetch(u, init));
+  try {
+    const res = await origFetch(url, { method: "POST", headers: { authorization: `Bearer ${token}` } });
+    assert.equal(res.status, 200);
+    assert.match((await res.json()).message, /Disconnected acme\.myshopify\.com/);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+  assert.deepEqual(shopifyCalls, []);
+  assert.ok(filters.length === 2 && filters.every((f) => String(f.workspace) === String(WS)));
+});

@@ -455,3 +455,61 @@ test("reconnecting the same store in the same workspace refreshes its token (no 
   assert.equal(conn.status, "active");
   assert.equal(calls.some((c) => c.method === "DELETE"), false);
 });
+
+/* ---------------- disconnect (workspace-only) vs. merchant uninstall ---------------- */
+const noShopifyCalls = () => {
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    throw new Error("unexpected Shopify call");
+  };
+  return calls;
+};
+
+test("disconnect makes no Shopify call (app stays installed) and erases this workspace's tokens", async () => {
+  const calls = noShopifyCalls();
+  let findFilter, findProjection, filter, update;
+  stub(ShopifyConnection, "findOne", async (f, p) => ((findFilter = f), (findProjection = p), connDoc({ workspace: WS_A })));
+  stub(ShopifyConnection, "updateOne", async (f, u) => ((filter = f), (update = u), { modifiedCount: 1 }));
+
+  const removed = await svc.disconnect(WS_A);
+  assert.equal(removed.shopDomain, SHOP);
+  assert.deepEqual(calls, []); // no REST revoke, no appUninstall, no token refresh
+  assert.equal(findFilter.workspace, WS_A);
+  assert.doesNotMatch(String(findProjection), /accessToken|refreshToken/); // tokens are never even loaded
+  assert.deepEqual(filter, { _id: "c1", workspace: WS_A });
+  assert.equal(update.$set.status, "disconnected");
+  for (const k of ["accessToken", "accessTokenExpiresAt", "refreshToken", "refreshTokenExpiresAt"]) assert.equal(update.$set[k], null, k);
+  assert.deepEqual(update.$set["webhooks.registered"], []);
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].workspace, WS_A);
+});
+
+test("disconnect with nothing connected changes nothing", async () => {
+  const calls = noShopifyCalls();
+  let writes = 0;
+  stub(ShopifyConnection, "findOne", async () => null);
+  stub(ShopifyConnection, "updateOne", async () => (writes++, {}));
+  assert.equal(await svc.disconnect(WS_B), null);
+  assert.equal(writes + calls.length + audits.length, 0);
+});
+
+test("after disconnect, data webhooks from the still-installed app are ignored", async () => {
+  let recorded = 0;
+  stub(ShopifyConnection, "findOne", async () => connDoc({ status: "disconnected" }));
+  stub(ShopifyWebhookEvent, "create", async () => (recorded++, {}));
+  assert.deepEqual(await svc.handleWebhook({ topic: "orders/create", shop: SHOP, payload: { id: 1 } }), { ignored: "store not connected" });
+  assert.equal(recorded, 0);
+});
+
+test("merchant uninstall after a ReadyTech disconnect is still recorded", async () => {
+  let filter, update;
+  stub(ShopifyConnection, "findOne", async () => connDoc({ status: "disconnected" }));
+  stub(ShopifyConnection, "updateOne", async (f, u) => ((filter = f), (update = u), { modifiedCount: 1 }));
+  assert.deepEqual(await svc.handleWebhook({ topic: "app/uninstalled", shop: SHOP, webhookId: "w9" }), { handled: "app/uninstalled" });
+  assert.deepEqual(filter.status.$in.sort(), ["active", "disconnected", "error"]);
+  assert.equal(filter.workspace, WS_A);
+  assert.equal(update.$set.status, "uninstalled");
+  assert.equal(update.$set.accessToken, null);
+  assert.equal(audits.length, 1);
+});

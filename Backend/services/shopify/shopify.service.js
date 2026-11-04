@@ -403,22 +403,14 @@ export const getStatus = async (workspaceId) => {
 
 const CLEARED_TOKENS = { accessToken: null, accessTokenExpiresAt: null, refreshToken: null, refreshTokenExpiresAt: null };
 
-/* Uninstalls the app from the store (revokes the token at Shopify, best effort),
-   then forgets the token locally */
+/* Disconnects THIS workspace's integration only: no Shopify call (the app
+   stays installed on the store — uninstalling is the merchant's action in
+   Shopify admin, reported by app/uninstalled). The tokens are erased locally,
+   so ReadyTech can no longer call the store; data webhooks that still arrive
+   are ignored because the connection is no longer active. */
 export const disconnect = async (workspaceId) => {
-  const conn = await ShopifyConnection.findOne({ workspace: workspaceId, status: { $in: ["active", "error"] } }).select("+accessToken +refreshToken");
+  const conn = await ShopifyConnection.findOne({ workspace: workspaceId, status: { $in: ["active", "error"] } }, "_id workspace shopDomain connectedBy");
   if (!conn) return null;
-
-  try {
-    const res = await fetch(`https://${conn.shopDomain}/admin/api_permissions/current.json`, {
-      method: "DELETE",
-      headers: { "x-shopify-access-token": await getAccessToken(conn) },
-      signal: AbortSignal.timeout(TIMEOUT),
-    });
-    if (!res.ok && res.status !== 401) console.warn(`Shopify revoke for ${conn.shopDomain} returned ${res.status}`);
-  } catch (err) {
-    console.warn(`Shopify revoke for ${conn.shopDomain} failed:`, err.message);
-  }
 
   await ShopifyConnection.updateOne(
     { _id: conn._id, workspace: conn.workspace },
@@ -466,8 +458,9 @@ export const handleWebhook = async ({ topic, shop, webhookId, eventId, triggered
 
     switch (topic) {
       case "app/uninstalled": {
+        // Also after a ReadyTech Disconnect (the app stayed installed until now)
         const r = await ShopifyConnection.updateOne(
-          { ...scoped, status: { $in: ["active", "error"] } },
+          { ...scoped, status: { $in: ["active", "error", "disconnected"] } },
           { $set: { ...CLEARED_TOKENS, status: "uninstalled", uninstalledAt: new Date(), "webhooks.registered": [] } }
         );
         if (r.modifiedCount) await audit(conn, "UPDATE", `Shopify app uninstalled from ${conn.shopDomain}`, { webhookId });
