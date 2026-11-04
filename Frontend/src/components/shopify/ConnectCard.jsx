@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CheckCircle2, ExternalLink, Lock, ShieldCheck, ShoppingBag } from "lucide-react";
 import { Button } from "./ui";
 import { validateShopInput } from "./storeInput";
@@ -10,7 +10,7 @@ const STEPS = [
   RETURN_STEP,
 ];
 const MANUAL_STEPS = [
-  ["Find your store address", "In Shopify admin open Settings → Domains. Copy the address ending in .myshopify.com — or simply paste the URL of your Shopify admin."],
+  ["Find your store address", "Click “Find my store address”, log in to Shopify, then copy the address bar (admin.shopify.com/store/…) and paste it here."],
   ["Approve access in Shopify", "You'll be sent to Shopify to review exactly what ReadyTech can access, then approve with your Shopify login."],
   RETURN_STEP,
 ];
@@ -22,22 +22,35 @@ const ACCESS = [
   "Locations and fulfilments, to keep stock and deliveries in step",
 ];
 
-/* Shopify-branded connect card (authorization-code OAuth started from ReadyTech).
-   - The store address form: Connect is enabled only for a valid myshopify.com
-     store; the authenticated backend validates again and binds the attempt to
-     this admin + workspace.
-   - installUrl set: an optional "Sign in with Shopify" link (Shopify's install
-     page; the store comes back as ?shop=… and the same OAuth continues).
+const SHOPIFY_ADMIN = "https://admin.shopify.com";
+const EMPTY_MSG = "Enter your Shopify store address first. Not sure what it is? Use “Find my store address” below.";
+
+/* Shopify-branded connect card (authorization-code OAuth started from ReadyTech;
+   Shopify's authorize URL is per store, so the store must be known first).
+   - Store address form: Connect Shopify is always the primary action; an empty
+     or invalid address shows guidance instead of a disabled button. The
+     authenticated backend validates again and binds the attempt to this admin +
+     workspace. "Find my store address" opens Shopify admin, whose URL
+     (admin.shopify.com/store/…) the field accepts as-is.
+   - installUrl set (approved App Store listing / install link): Connect Shopify
+     goes through Shopify's own sign-in and store selection; the store returns as
+     ?shop=… and the same OAuth continues. Address entry stays as the fallback.
    - pendingShop: Shopify returned a store without a fresh click here → confirm it. */
 export default function ConnectCard({ shop, setShop, onConnect, onInstall, installUrl, pendingShop, onCancelPending, busy, reconnecting }) {
   const [touched, setTouched] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [manual, setManual] = useState(!installUrl);
+  const inputRef = useRef(null);
   const { shop: domain, error } = validateShopInput(shop);
-  const showError = touched && error;
+  const message = error || (submitted && !shop.trim() ? EMPTY_MSG : null);
+  const showError = (touched || submitted) && message;
 
   const submit = (e) => {
     e.preventDefault();
+    setSubmitted(true);
     setTouched(true);
     if (domain) onConnect(domain);
+    else inputRef.current?.focus();
   };
 
   return (
@@ -67,12 +80,23 @@ export default function ConnectCard({ shop, setShop, onConnect, onInstall, insta
                 <Button disabled={!!busy} onClick={onCancelPending}>Not now</Button>
               </div>
             </div>
+          ) : installUrl && !manual ? (
+            <div className="space-y-2">
+              <Button variant="shopify" icon={ExternalLink} loading={busy === "install"} disabled={!!busy} onClick={onInstall} className="w-full py-3 text-base sm:w-auto">
+                {busy === "install" ? "Opening Shopify…" : "Connect Shopify"}
+              </Button>
+              <p className="text-xs text-slate-500">
+                You'll sign in to Shopify and choose your store there.{" "}
+                <button type="button" onClick={() => setManual(true)} disabled={!!busy} className="font-semibold underline text-[#4A7330] disabled:opacity-50">Enter your store address instead</button>
+              </p>
+            </div>
           ) : (
             <div className="space-y-3">
             <form onSubmit={submit} noValidate className="space-y-2">
             <label htmlFor="shopify-store" className="text-sm font-medium text-slate-700">Shopify store address</label>
             <div className="flex flex-col gap-3 sm:flex-row">
               <input
+                ref={inputRef}
                 id="shopify-store"
                 value={shop}
                 onChange={(e) => setShop(e.target.value)}
@@ -84,23 +108,28 @@ export default function ConnectCard({ shop, setShop, onConnect, onInstall, insta
                 aria-describedby="shopify-store-help"
                 className={`flex-1 px-4 py-2.5 text-sm border rounded-xl focus:outline-none focus:ring-2 ${showError ? "border-red-300 focus:ring-red-400" : "border-slate-300 focus:ring-emerald-500"}`}
               />
-              <Button type="submit" variant="shopify" icon={ExternalLink} loading={busy === "connect"} disabled={!!busy || !domain}>
+              <Button type="submit" variant="shopify" icon={ExternalLink} loading={busy === "connect"} disabled={!!busy}>
                 {busy === "connect" ? "Opening Shopify…" : "Connect Shopify"}
               </Button>
             </div>
             <p id="shopify-store-help" className={`text-xs ${showError ? "text-red-600" : domain ? "text-emerald-700" : "text-slate-500"}`} aria-live="polite">
               {showError
-                ? error
+                ? message
                 : domain
                   ? <span className="inline-flex items-center gap-1"><CheckCircle2 size={13} /> Will connect <strong>{domain}</strong></span>
                   : "Example: your-store.myshopify.com, or https://admin.shopify.com/store/your-store"}
             </p>
           </form>
+            <div className="p-3 text-xs rounded-xl bg-slate-50 text-slate-600">
+              <a href={SHOPIFY_ADMIN} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-[#4A7330] underline">
+                Find my store address <ExternalLink size={12} />
+              </a>
+              <span className="block mt-1">Opens Shopify admin in a new tab. Log in, copy the address bar (it looks like admin.shopify.com/store/your-store) and paste it above.</span>
+            </div>
             {installUrl && (
               <p className="text-xs text-slate-500">
-                Don't know your store address?{" "}
                 <button type="button" onClick={onInstall} disabled={!!busy} className="font-semibold underline text-[#4A7330] disabled:opacity-50">
-                  {busy === "install" ? "Opening Shopify…" : "Sign in with Shopify and choose your store"}
+                  {busy === "install" ? "Opening Shopify…" : "Or sign in with Shopify and choose your store"}
                 </button>
               </p>
             )}
@@ -108,7 +137,7 @@ export default function ConnectCard({ shop, setShop, onConnect, onInstall, insta
           )}
 
           <ol className="grid gap-3 md:grid-cols-3">
-            {(pendingShop ? STEPS : MANUAL_STEPS).map(([title, text], i) => (
+            {(pendingShop || (installUrl && !manual) ? STEPS : MANUAL_STEPS).map(([title, text], i) => (
               <li key={title} className="p-3 rounded-xl bg-slate-50">
                 <span className="grid w-6 h-6 text-xs font-bold text-white rounded-full place-items-center bg-[#5E8E3E]">{i + 1}</span>
                 <p className="mt-2 text-sm font-semibold text-slate-800">{title}</p>
