@@ -10,13 +10,9 @@
 const KEY = "shopifyReturn";
 export const RETURN_TTL_MS = 5 * 60_000;
 
-/* Same rule as the backend normalizeShop: "acme", "acme.myshopify.com" or its admin URL */
-const SHOP_RE = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
-export const normalizeShopInput = (input) => {
-  let s = String(input || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[/?#].*$/, "");
-  if (s && !s.includes(".")) s = `${s}.myshopify.com`;
-  return SHOP_RE.test(s) ? s : null;
-};
+import { normalizeShopInput } from "./storeInput.js";
+
+export { normalizeShopInput };
 
 /* Only the params the Shopify page understands; anything else (hmac, host…) is dropped */
 export const pickReturnParams = (search) => {

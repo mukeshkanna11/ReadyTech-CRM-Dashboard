@@ -104,6 +104,7 @@ export function EmptyState({ icon, title, children }) {
 
 const BUTTON = {
   primary: "text-white bg-emerald-600 hover:bg-emerald-700",
+  shopify: "text-white bg-[#5E8E3E] hover:bg-[#4A7330]",
   secondary: "border border-slate-300 text-slate-700 bg-white hover:bg-slate-50",
   danger: "border border-red-200 text-red-600 bg-white hover:bg-red-50",
 };

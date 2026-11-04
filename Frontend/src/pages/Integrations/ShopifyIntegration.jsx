@@ -1,13 +1,16 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { ShoppingCart, ShieldCheck, KeyRound, Link2, Unplug, RefreshCw, Store, Receipt } from "lucide-react";
+import { ShoppingBag, ShieldCheck, RefreshCw, Receipt } from "lucide-react";
 import API from "../../services/api";
-import { Badge, Button, Card, Notice, SkeletonCard } from "../../components/shopify/ui";
-import { ago, errorText, fmt } from "../../components/shopify/format";
+import { Badge, Button, Card, ConfirmDialog, Notice, SkeletonCard } from "../../components/shopify/ui";
+import { ago, errorText } from "../../components/shopify/format";
 import WebhookEventsCard from "../../components/shopify/WebhookEventsCard";
 import InventoryCard from "../../components/shopify/InventoryCard";
-import { clearShopifyReturn, normalizeShopInput } from "../../components/shopify/shopifyReturn";
+import { clearShopifyReturn } from "../../components/shopify/shopifyReturn";
+import { normalizeShopInput } from "../../components/shopify/storeInput";
+import ConnectCard from "../../components/shopify/ConnectCard";
+import StoreOverview from "../../components/shopify/StoreOverview";
 
 /* =========================================================
    SHOPIFY INTEGRATION — this workspace's own Shopify store
@@ -33,23 +36,6 @@ const money = (minor, digits = 2, currency = "") => {
   return `${neg ? "-" : ""}${value} ${currency || ""}`.trim();
 };
 
-const STATUS = {
-  active: ["green", "Connected"],
-  error: ["amber", "Reconnect required"],
-  uninstalled: ["slate", "App uninstalled in Shopify"],
-  disconnected: ["slate", "Not connected"],
-};
-
-function HealthTile({ label, tone, value, detail }) {
-  return (
-    <div className="p-4 bg-white border shadow-sm rounded-2xl border-slate-200">
-      <p className="text-xs font-medium tracking-wide uppercase text-slate-500">{label}</p>
-      <div className="mt-2"><Badge tone={tone}>{value}</Badge></div>
-      <p className="mt-2 text-xs text-slate-500 break-words">{detail}</p>
-    </div>
-  );
-}
-
 export default function ShopifyIntegration() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState(null);
@@ -60,6 +46,7 @@ export default function ShopifyIntegration() {
   const [banner, setBanner] = useState(null); // { type: "success"|"error", text }
   const [refreshKey, setRefreshKey] = useState(0);
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const admin = isAdmin();
 
   /* silent = background refresh: keep the current view, no skeleton */
@@ -121,7 +108,7 @@ export default function ShopifyIntegration() {
     if (complete) {
       // Shopify approved: this signed-in admin finishes the connection
       // (run's synchronous guard also absorbs StrictMode's double effect)
-      run("connect", async () => {
+      run("complete", async () => {
         try {
           const res = await API.post("/shopify/oauth/complete", { id: complete }, { silent: true });
           clearShopifyReturn();
@@ -171,53 +158,45 @@ export default function ShopifyIntegration() {
       window.location.href = res.data.data.url;
     });
 
-  const connect = (e) => {
-    e.preventDefault();
-    // The server normalises and validates the address (422 with guidance)
-    startOAuth("connect", shop.trim());
-  };
 
   const conn = data?.connection;
   const active = conn?.status === "active";
 
-  const disconnect = () => {
-    if (!window.confirm(`Disconnect ${conn.shopDomain}? ReadyTech stops syncing with this store and deletes its access. To also remove the app from Shopify, uninstall it in Shopify admin → Apps.`)) return;
+  const disconnect = () =>
     run("disconnect", async () => {
-      await API.post("/shopify/disconnect");
-      toast.success("Shopify store disconnected");
-      load();
+      try {
+        await API.post("/shopify/disconnect");
+        toast.success("Shopify store disconnected");
+      } finally {
+        setConfirmDisconnect(false);
+        load();
+      }
     });
-  };
 
   const inbox = data?.inbox;
   const orders = data?.orders;
-  const [statusTone, statusLabel] = STATUS[conn?.status] || STATUS.disconnected;
-  const missing = conn?.missingScopes || [];
-  const webhookTone = !active ? "slate" : conn.webhooks?.lastError || inbox?.counts?.dead ? "amber" : conn.webhooks?.registered?.length ? "green" : "red";
-  const inv = conn?.inventory || {};
-  const syncTone = !inv.enabled ? "slate" : inv.lastError ? "red" : inv.lastSyncAt ? "green" : "amber";
 
   return (
     <div className="max-w-6xl pb-10 space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 p-5 bg-white border shadow-sm sm:p-6 sm:flex-row sm:items-start rounded-2xl border-slate-200">
-        <div className="grid w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 place-items-center shrink-0">
-          <ShoppingCart size={22} />
+      <div className="flex flex-col gap-4 p-5 bg-white border shadow-sm sm:p-6 sm:flex-row sm:items-center rounded-2xl border-slate-200">
+        <div className="grid w-12 h-12 text-white rounded-xl place-items-center shrink-0 bg-[#5E8E3E]">
+          <ShoppingBag size={22} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-bold text-slate-900">Shopify Integration</h1>
-            {state === "ready" && <Badge tone={conn ? statusTone : "slate"}>{conn ? statusLabel : "Not connected"}</Badge>}
+            <h1 className="text-xl font-bold text-slate-900">Shopify</h1>
+            {state === "ready" && <Badge tone={active ? "green" : conn?.status === "error" ? "amber" : "slate"}>{active ? "Connected" : conn?.status === "error" ? "Reconnect required" : "Not connected"}</Badge>}
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            Connect your workspace's Shopify store to bring its orders, customers and stock into ReadyTech CRM &amp; ERP.
+            Bring your store's orders and products into ReadyTech CRM &amp; ERP, and keep Shopify stock in step with your warehouse.
           </p>
           <p className="flex items-center gap-1.5 mt-2 text-xs text-slate-500">
             <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
-            You approve access in Shopify — ReadyTech never sees your Shopify password, and access keys are stored encrypted.
+            Connected through Shopify's secure approval — your Shopify password is never shared and access keys are stored encrypted.
           </p>
         </div>
-        {state === "ready" && (
+        {state === "ready" && conn && (
           <div className="flex items-center gap-2 sm:flex-col sm:items-end">
             <Button icon={RefreshCw} onClick={() => refreshAll()} disabled={!!busy} className="px-3 py-1.5 text-xs">Refresh</Button>
             <span className="text-xs text-slate-400">Updated {ago(updatedAt)} · auto every minute</span>
@@ -231,96 +210,41 @@ export default function ShopifyIntegration() {
         </Notice>
       )}
 
+      {busy === "complete" && (
+        <Notice type="info" title="Finishing your Shopify connection…">Shopify approved access. Linking the store to this workspace — this takes a few seconds.</Notice>
+      )}
+
       {state === "loading" && (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <SkeletonCard key={i} rows={0} />)}</div>
-          <SkeletonCard />
+          <SkeletonCard rows={4} />
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((i) => <SkeletonCard key={i} rows={0} />)}</div>
         </>
       )}
       {state === "error" && (
         <Notice type="error" action={<button onClick={() => load()} className="text-xs font-semibold underline">Retry</button>}>
-          Couldn't load the Shopify integration status.
+          Couldn't load the Shopify integration status. Check your connection and retry.
         </Notice>
       )}
 
-      {/* Health summary */}
+      {/* Connected (or previously connected) store */}
       {state === "ready" && conn && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <HealthTile label="Connection" tone={statusTone} value={statusLabel} detail={conn.lastError || `Since ${fmt(conn.connectedAt)}`} />
-          <HealthTile
-            label="Permissions"
-            tone={!active ? "slate" : missing.length ? "red" : "green"}
-            value={!active ? "—" : missing.length ? `${missing.length} missing` : "All granted"}
-            detail={missing.length ? missing.join(", ") : `${conn.scopes?.length || 0} scope(s) granted`}
-          />
-          <HealthTile
-            label="Webhooks"
-            tone={webhookTone}
-            value={`${conn.webhooks?.registered?.length || 0} topics`}
-            detail={inbox?.counts?.dead ? `${inbox.counts.dead} failed event(s)` : `Registered ${ago(conn.webhooks?.lastRegisteredAt)}`}
-          />
-          <HealthTile
-            label="Inventory sync"
-            tone={syncTone}
-            value={!inv.enabled ? "Off" : inv.lastError ? "Failing" : inv.lastSyncAt ? "Running" : "Waiting"}
-            detail={inv.enabled ? `Last sync ${ago(inv.lastSyncAt)}` : "Turn on below to push ERP stock"}
-          />
-        </div>
+        <StoreOverview
+          data={data}
+          admin={admin}
+          busy={busy}
+          onReconnect={() => startOAuth("reconnect", conn.shopDomain)}
+          onDisconnect={() => setConfirmDisconnect(true)}
+        />
       )}
 
-      {/* Connection details */}
-      {state === "ready" && conn && (
-        <Card
-          icon={Store}
-          title={conn.shop?.name || conn.shopDomain}
-          subtitle={conn.shopDomain}
-          actions={
-            admin && (
-              <>
-                {data?.available && (
-                  <Button variant={active && !missing.length ? "secondary" : "primary"} icon={Link2} loading={busy === "reconnect"} disabled={!!busy} onClick={() => startOAuth("reconnect", conn.shopDomain)}>
-                    {busy === "reconnect" ? "Opening Shopify…" : active ? "Reconnect (refresh access)" : "Reconnect store"}
-                  </Button>
-                )}
-                {(active || conn.status === "error") && (
-                  <Button variant="danger" icon={Unplug} loading={busy === "disconnect"} disabled={!!busy} onClick={disconnect}>
-                    {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
-                  </Button>
-                )}
-              </>
-            )
-          }
-        >
-          {active && missing.length > 0 && (
-            <Notice type="error" title="Shopify permissions missing">
-              This store hasn't granted: <strong>{missing.join(", ")}</strong>. Features that need them will fail.
-              {admin ? " Click Reconnect and approve the requested access in Shopify." : " Ask a workspace admin to reconnect the store."}
-            </Notice>
-          )}
-          {conn.status === "error" && (
-            <Notice type="warning" title="Shopify access expired or was revoked">
-              {conn.lastError || "ReadyTech can't reach this store."} {admin ? "Reconnect the store to restore syncing." : "Ask a workspace admin to reconnect it."}
-            </Notice>
-          )}
-          {conn.status === "uninstalled" && (
-            <Notice type="warning" title="The ReadyTech app was uninstalled in Shopify">
-              Uninstalled {fmt(conn.uninstalledAt)}. Nothing syncs until the store is connected again.
-            </Notice>
-          )}
-
-          <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-            <div><dt className="text-slate-500">Connected</dt><dd className="font-medium text-slate-900">{fmt(conn.connectedAt)}</dd></div>
-            <div><dt className="text-slate-500">Currency</dt><dd className="font-medium text-slate-900">{conn.shop?.currencyCode || "—"}</dd></div>
-            <div><dt className="text-slate-500">API version</dt><dd className="font-medium text-slate-900">{conn.apiVersion || "—"}</dd></div>
-            <div><dt className="text-slate-500">Access token</dt><dd className="font-medium text-slate-900">{conn.tokenExpiresAt ? `Renews ${fmt(conn.tokenExpiresAt)}` : active ? "Non-expiring" : "—"}</dd></div>
-          </dl>
-          <div className="text-sm">
-            <p className="flex items-center gap-1.5 text-slate-500"><KeyRound size={14} /> Granted permissions</p>
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {conn.scopes?.length ? conn.scopes.map((s) => <Badge key={s}>{s}</Badge>) : <span className="text-slate-500">—</span>}
-            </div>
-          </div>
-        </Card>
+      {state === "ready" && admin && !active && (
+        data?.available ? (
+          <ConnectCard shop={shop} setShop={setShop} busy={busy} reconnecting={Boolean(conn)} onConnect={(domain) => startOAuth("connect", domain)} />
+        ) : (
+          <Notice type="info" title="Shopify connection is almost ready">
+            ReadyTech is finishing a one-time Shopify setup for the platform. You don't need any Shopify API keys — please try again later or contact ReadyTech support.
+          </Notice>
+        )
       )}
 
       {state === "ready" && active && (
@@ -328,7 +252,9 @@ export default function ShopifyIntegration() {
       )}
 
       {state === "ready" && active && (
-        <WebhookEventsCard inbox={inbox} webhooks={conn.webhooks} admin={admin} busy={busy} run={run} onChanged={reloadStatus} refreshKey={refreshKey} />
+        <div id="shopify-history" className="scroll-mt-6">
+          <WebhookEventsCard inbox={inbox} webhooks={conn.webhooks} admin={admin} busy={busy} run={run} onChanged={reloadStatus} refreshKey={refreshKey} />
+        </div>
       )}
 
       {state === "ready" && orders?.recent?.length > 0 && (
@@ -391,32 +317,21 @@ export default function ShopifyIntegration() {
         </Card>
       )}
 
-      {state === "ready" && admin && !active && (
-        data?.available ? (
-          <Card icon={Link2} title={conn ? "Connect a different store" : "Connect your Shopify store"} subtitle="Enter your store's Shopify address. You'll approve access in Shopify, then return here.">
-            <form onSubmit={connect} className="flex flex-col gap-3 sm:flex-row" noValidate>
-              <input
-                value={shop}
-                onChange={(e) => setShop(e.target.value)}
-                placeholder="your-store.myshopify.com"
-                aria-label="Shopify store address"
-                className="flex-1 px-4 py-2.5 text-sm border rounded-xl border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              <Button type="submit" variant="primary" loading={busy === "connect"} disabled={!!busy || !shop.trim()}>
-                {busy === "connect" ? "Opening Shopify…" : "Connect with Shopify"}
-              </Button>
-            </form>
-          </Card>
-        ) : (
-          <Notice type="info">
-            Shopify connection isn't available yet: ReadyTech still has to finish the one-time Shopify platform setup. You don't need any Shopify API keys — please try again later or contact ReadyTech support.
-          </Notice>
-        )
+      {state === "ready" && !admin && !conn && (
+        <Notice type="info">No Shopify store is connected yet. Ask a workspace admin to connect your store.</Notice>
       )}
 
-      {state === "ready" && !admin && !conn && (
-        <Notice type="info">No Shopify store is connected. Ask a workspace admin to connect one.</Notice>
-      )}
+      <ConfirmDialog
+        open={confirmDisconnect && Boolean(conn)}
+        title={`Disconnect ${conn?.shopDomain || "this store"}?`}
+        confirmLabel="Disconnect"
+        busy={busy === "disconnect"}
+        onConfirm={disconnect}
+        onCancel={() => setConfirmDisconnect(false)}
+      >
+        <p>ReadyTech stops syncing products, orders and stock with this store and deletes its access key from this workspace.</p>
+        <p>Imported orders, customers and ERP records stay in ReadyTech. To also remove the app from Shopify, uninstall it in Shopify admin → Apps.</p>
+      </ConfirmDialog>
     </div>
   );
 }
