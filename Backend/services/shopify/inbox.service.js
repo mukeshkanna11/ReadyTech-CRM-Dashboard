@@ -4,6 +4,9 @@
 import crypto from "node:crypto";
 import mongoose from "mongoose";
 import ShopifyWebhookEvent from "../../models/ShopifyWebhookEvent.js";
+import ShopifyOrderLink from "../../models/ShopifyOrderLink.js";
+import ShopifyInventoryLink from "../../models/ShopifyInventoryLink.js";
+import ShopifyCustomerLink from "../../models/ShopifyCustomerLink.js";
 
 /* Data topics stored in the inbox (header form) */
 export const INBOX_TOPICS = [
@@ -90,10 +93,44 @@ export const countCustomerEvents = (conn, payload = {}) =>
 
 /* shop/redact: erase every stored event of the shop, in every workspace —
    or, when the store is active again, only in its former workspaces */
-export const deleteShopEvents = async (conn, { keepWorkspace = null } = {}) => {
+const shopScope = (conn, keepWorkspace) => {
   const filter = allWorkspaces(conn);
   if (keepWorkspace) filter.workspace = { $nin: [keepWorkspace, null] };
-  return (await ShopifyWebhookEvent.deleteMany(filter)).deletedCount || 0;
+  return filter;
+};
+
+export const deleteShopEvents = async (conn, { keepWorkspace = null } = {}) =>
+  (await ShopifyWebhookEvent.deleteMany(shopScope(conn, keepWorkspace))).deletedCount || 0;
+
+/* shop/redact: the shop's order / inventory / customer link records (ReadyTech's
+   Shopify mappings). CRM clients, ERP sales orders, deals and invoices are the
+   merchant's own records and are never touched here. */
+export const deleteShopLinks = async (conn, { keepWorkspace = null } = {}) => {
+  const filter = shopScope(conn, keepWorkspace);
+  const [orders, inventory, customers] = await Promise.all(
+    [ShopifyOrderLink, ShopifyInventoryLink, ShopifyCustomerLink].map((M) => M.deleteMany({ ...filter }))
+  );
+  return { orders: orders.deletedCount || 0, inventory: inventory.deletedCount || 0, customers: customers.deletedCount || 0 };
+};
+
+/* Same key orderSync.service.js stores: gid://shopify/Customer/<id> */
+const customerGidOf = (payload = {}) => (payload.customer?.id == null ? null : `gid://shopify/Customer/${payload.customer.id}`);
+
+/* customers/redact: drop the Shopify-customer → CRM-client mapping (the CRM client itself stays) */
+export const deleteCustomerLinks = async (conn, payload = {}) => {
+  const customerGid = customerGidOf(payload);
+  if (!customerGid) return 0;
+  return (await ShopifyCustomerLink.deleteMany({ ...allWorkspaces(conn), customerGid })).deletedCount || 0;
+};
+
+/* customers/data_request: CRM clients linked to the customer in the shop's
+   CURRENT workspace (the audit entry is written there; other workspaces' ids are
+   never disclosed) */
+export const linkedClientIds = async (conn, payload = {}) => {
+  const customerGid = customerGidOf(payload);
+  if (!customerGid) return [];
+  const links = await ShopifyCustomerLink.find({ workspace: conn.workspace, shopDomain: conn.shopDomain, customerGid }, "client", { lean: true });
+  return [...new Set(links.map((l) => String(l.client)))];
 };
 
 /* Dashboard: counts per status + recent failures (no payloads) */

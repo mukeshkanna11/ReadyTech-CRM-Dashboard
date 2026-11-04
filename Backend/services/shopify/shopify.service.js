@@ -9,7 +9,10 @@ import ShopifyOAuthState from "../../models/ShopifyOAuthState.js";
 import AuditLog from "../../models/AuditLog.js";
 import { runWithWorkspace } from "../../utils/workspaceContext.js";
 import { encrypt, decrypt } from "./crypto.js";
-import { INBOX_TOPICS, toSubscriptionTopic, recordEvent, redactCustomer, countCustomerEvents, deleteShopEvents } from "./inbox.service.js";
+import {
+  INBOX_TOPICS, toSubscriptionTopic, recordEvent, redactCustomer, countCustomerEvents, deleteShopEvents,
+  deleteShopLinks, deleteCustomerLinks, linkedClientIds,
+} from "./inbox.service.js";
 
 /* ---------------- Configuration ---------------- */
 const env = (k) => process.env[k]?.trim();
@@ -490,26 +493,34 @@ export const handleWebhook = async ({ topic, shop, webhookId, eventId, triggered
         if (conn.status === "active") {
           // Reinstalled (here or after moving workspaces): keep the live data,
           // erase what former workspaces still hold for this shop
-          const events = await deleteShopEvents(conn, { keepWorkspace: conn.workspace });
-          if (events) await audit(conn, "DELETE", `Shopify shop/redact: erased ${events} event(s) held by former workspaces for ${conn.shopDomain}`, { webhookId, events });
+          const keep = { keepWorkspace: conn.workspace };
+          const [events, links] = await Promise.all([deleteShopEvents(conn, keep), deleteShopLinks(conn, keep)]);
+          const total = events + links.orders + links.inventory + links.customers;
+          if (total) await audit(conn, "DELETE", `Shopify shop/redact: erased ${total} record(s) held by former workspaces for ${conn.shopDomain}`, { webhookId, events, links });
           return { ignored: "store reinstalled" };
         }
-        const events = await deleteShopEvents(conn);
+        const [events, links] = await Promise.all([deleteShopEvents(conn), deleteShopLinks(conn)]);
         await ShopifyConnection.deleteOne({ ...scoped, status: { $ne: "active" } });
-        await audit(conn, "DELETE", `Shopify shop/redact: erased data for ${conn.shopDomain}`, { webhookId, events });
+        await audit(conn, "DELETE", `Shopify shop/redact: erased data for ${conn.shopDomain}`, { webhookId, events, links });
         return { handled: topic };
       }
 
       // Customer data is held only in stored webhook payloads (customer sync is Phase 3)
       case "customers/data_request": {
-        const events = await countCustomerEvents(conn, payload);
-        await audit(conn, "EXPORT", `Shopify customers/data_request: customer ${payload?.customer?.id ?? "?"} appears in ${events} stored webhook event(s)`, { webhookId, events });
+        const [events, clients] = await Promise.all([countCustomerEvents(conn, payload), linkedClientIds(conn, payload)]);
+        await audit(
+          conn,
+          "EXPORT",
+          `Shopify customers/data_request: customer ${payload?.customer?.id ?? "?"} appears in ${events} stored webhook event(s)` +
+            (clients.length ? ` and is linked to CRM client(s) ${clients.join(", ")}` : " (no linked CRM client)"),
+          { webhookId, events, clients }
+        );
         return { handled: topic };
       }
 
       case "customers/redact": {
-        const events = await redactCustomer(conn, payload);
-        await audit(conn, "DELETE", `Shopify customers/redact: redacted ${events} stored webhook event(s)`, { webhookId, events });
+        const [events, links] = await Promise.all([redactCustomer(conn, payload), deleteCustomerLinks(conn, payload)]);
+        await audit(conn, "DELETE", `Shopify customers/redact: redacted ${events} stored webhook event(s), removed ${links} customer link(s)`, { webhookId, events, links });
         return { handled: topic };
       }
 

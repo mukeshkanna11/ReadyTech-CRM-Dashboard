@@ -22,6 +22,11 @@ const svc = await import("../services/shopify/shopify.service.js");
 const ShopifyConnection = (await import("../models/ShopifyConnection.js")).default;
 const ShopifyOAuthState = (await import("../models/ShopifyOAuthState.js")).default;
 const ShopifyWebhookEvent = (await import("../models/ShopifyWebhookEvent.js")).default;
+const LINK_MODELS = {
+  order: (await import("../models/ShopifyOrderLink.js")).default,
+  inventory: (await import("../models/ShopifyInventoryLink.js")).default,
+  customer: (await import("../models/ShopifyCustomerLink.js")).default,
+};
 const jwt = (await import("jsonwebtoken")).default;
 const AuditLog = (await import("../models/AuditLog.js")).default;
 const Product = (await import("../models/Product.model.js")).default;
@@ -40,10 +45,28 @@ const stub = (obj, name, fn) => {
 const origFetch = globalThis.fetch;
 const audits = [];
 
+/* In-memory link records (order / inventory / customer), keyed by kind */
+let links = [];
+const linkMatch = (doc, f) =>
+  Object.entries(f).every(([k, c]) => {
+    if (c && typeof c === "object" && "$nin" in c) return !c.$nin.some((x) => String(x ?? null) === String(doc[k] ?? null));
+    if (c && typeof c === "object" && "$ne" in c) return String(doc[k] ?? null) !== String(c.$ne);
+    return String(doc[k]) === String(c);
+  });
+
 beforeEach(() => {
   ctx.setDefaultWorkspaceId(DEFAULT_WS);
   audits.length = 0;
+  links = [];
   stub(AuditLog, "create", async (d) => (audits.push(d), d));
+  for (const [kind, M] of Object.entries(LINK_MODELS)) {
+    stub(M, "deleteMany", async (f) => {
+      const before = links.length;
+      links = links.filter((l) => !(l.kind === kind && linkMatch(l, f)));
+      return { deletedCount: before - links.length };
+    });
+    stub(M, "find", async (f) => links.filter((l) => l.kind === kind && linkMatch(l, f)));
+  }
 });
 afterEach(() => {
   while (restore.length) restore.pop()();
@@ -534,4 +557,69 @@ test("installUrl accepts only https Shopify-hosted install links (no open redire
     if (saved === undefined) delete process.env.SHOPIFY_INSTALL_URL;
     else process.env.SHOPIFY_INSTALL_URL = saved;
   }
+});
+
+
+/* ---------------- compliance: link records ---------------- */
+const SHOP_B = "other.myshopify.com";
+const seedLinks = () => {
+  links = [
+    // this shop, current workspace (A)
+    { id: "oA", kind: "order", workspace: WS_A, shopDomain: SHOP },
+    { id: "iA", kind: "inventory", workspace: WS_A, shopDomain: SHOP },
+    { id: "cA", kind: "customer", workspace: WS_A, shopDomain: SHOP, customerGid: "gid://shopify/Customer/9", client: "client-a" },
+    // this shop, former workspace (B)
+    { id: "oB", kind: "order", workspace: WS_B, shopDomain: SHOP },
+    { id: "iB", kind: "inventory", workspace: WS_B, shopDomain: SHOP },
+    { id: "cB", kind: "customer", workspace: WS_B, shopDomain: SHOP, customerGid: "gid://shopify/Customer/9", client: "client-b" },
+    // another shop, same workspaces
+    { id: "oX", kind: "order", workspace: WS_A, shopDomain: SHOP_B },
+    { id: "cX", kind: "customer", workspace: WS_B, shopDomain: SHOP_B, customerGid: "gid://shopify/Customer/9", client: "client-x" },
+  ];
+};
+const ids = () => links.map((l) => l.id).sort();
+const quietRedact = () => stub(ShopifyWebhookEvent, "deleteMany", async () => ({ deletedCount: 0 }));
+
+test("shop/redact after uninstall deletes the shop's links in every workspace, never another shop's", async () => {
+  seedLinks();
+  quietRedact();
+  stub(ShopifyConnection, "findOne", async () => connDoc({ status: "uninstalled" }));
+  stub(ShopifyConnection, "deleteOne", async () => ({}));
+  await svc.handleWebhook({ topic: "shop/redact", shop: SHOP, payload: { shop_domain: SHOP } });
+  assert.deepEqual(ids(), ["cX", "oX"]); // only other.myshopify.com remains
+  assert.deepEqual(audits.at(-1).meta.links, { orders: 2, inventory: 2, customers: 2 });
+});
+
+test("shop/redact for a reinstalled (active) store keeps the current workspace's links", async () => {
+  seedLinks();
+  quietRedact();
+  let connDeleted = 0;
+  stub(ShopifyConnection, "findOne", async () => connDoc({ status: "active", workspace: WS_A }));
+  stub(ShopifyConnection, "deleteOne", async () => (connDeleted++, {}));
+  assert.deepEqual(await svc.handleWebhook({ topic: "shop/redact", shop: SHOP, payload: { shop_domain: SHOP } }), { ignored: "store reinstalled" });
+  assert.deepEqual(ids(), ["cA", "cX", "iA", "oA", "oX"]); // former workspace B's copies gone; A's live sync data and other shop kept
+  assert.equal(connDeleted, 0);
+});
+
+test("customers/redact removes only that customer's link for this shop (all workspaces); CRM clients untouched", async () => {
+  seedLinks();
+  links.push({ id: "c8", kind: "customer", workspace: WS_A, shopDomain: SHOP, customerGid: "gid://shopify/Customer/8", client: "client-8" });
+  stub(ShopifyWebhookEvent, "updateMany", async () => ({ modifiedCount: 0 }));
+  stub(ShopifyConnection, "findOne", async () => connDoc());
+  await svc.handleWebhook({ topic: "customers/redact", shop: SHOP, payload: { shop_domain: SHOP, customer: { id: 9 }, orders_to_redact: [] } });
+  assert.deepEqual(ids(), ["c8", "cX", "iA", "iB", "oA", "oB", "oX"]); // cA + cB removed; other customer, other shop and non-customer links kept
+  assert.equal(audits.at(-1).meta.links, 2);
+});
+
+test("customers/data_request audits the linked CRM client ids of the current workspace only", async () => {
+  seedLinks();
+  stub(ShopifyWebhookEvent, "countDocuments", async () => 3);
+  stub(ShopifyConnection, "findOne", async () => connDoc({ workspace: WS_A }));
+  await svc.handleWebhook({ topic: "customers/data_request", shop: SHOP, payload: { shop_domain: SHOP, customer: { id: 9 } } });
+  const a = audits.at(-1);
+  assert.equal(a.action, "EXPORT");
+  assert.equal(String(a.workspace), WS_A);
+  assert.deepEqual(a.meta.clients, ["client-a"]); // not client-b (former workspace) nor client-x (other shop)
+  assert.match(a.description, /CRM client\(s\) client-a/);
+  assert.equal(links.length, 8); // a data request deletes nothing
 });

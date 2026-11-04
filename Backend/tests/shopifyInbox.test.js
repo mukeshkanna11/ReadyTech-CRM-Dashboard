@@ -25,6 +25,7 @@ const app = (await import("../app.js")).default;
 const ctx = await import("../utils/workspaceContext.js");
 const ShopifyConnection = (await import("../models/ShopifyConnection.js")).default;
 const ShopifyWebhookEvent = (await import("../models/ShopifyWebhookEvent.js")).default;
+const ShopifyCustomerLink = (await import("../models/ShopifyCustomerLink.js")).default;
 const AuditLog = (await import("../models/AuditLog.js")).default;
 const inbox = await import("../services/shopify/inbox.service.js");
 const worker = await import("../services/shopify/webhookWorker.js");
@@ -68,6 +69,7 @@ beforeEach(() => {
   conns = [conn("a.myshopify.com", WS_A), conn("b.myshopify.com", WS_B), conn("gone.myshopify.com", WS_A, "uninstalled")];
 
   stub(AuditLog, "create", async (d) => d);
+  stub(ShopifyCustomerLink, "deleteMany", async () => ({ deletedCount: 0 }));
   stub(ShopifyConnection, "findOne", async (f) => conns.find((c) => matches(c, f)) || null);
   stub(ShopifyWebhookEvent, "create", async (d) => {
     if (events.some((e) => e.shopDomain === d.shopDomain && e.webhookId === d.webhookId)) {
