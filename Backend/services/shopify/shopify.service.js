@@ -5,6 +5,7 @@
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import ShopifyConnection from "../../models/ShopifyConnection.js";
+import ShopifyOAuthState from "../../models/ShopifyOAuthState.js";
 import AuditLog from "../../models/AuditLog.js";
 import { runWithWorkspace } from "../../utils/workspaceContext.js";
 import { encrypt, decrypt } from "./crypto.js";
@@ -71,12 +72,29 @@ export const verifyWebhookHmac = (rawBody, header) => {
 
 /* ---------------- OAuth state (CSRF + workspace + shop binding) ---------------- */
 const STATE_PURPOSE = "shopify-oauth";
+const STATE_TTL_MS = 10 * 60_000;
+const COMPLETE_TTL_MS = 5 * 60_000;
 
-export const buildAuthUrl = ({ shop, userId, workspaceId }) => {
+/* Dedicated signing key for OAuth state — never the login JWT secret */
+const stateSecret = () => {
+  const s = env("SHOPIFY_STATE_SECRET");
+  return s && s.length >= 32 && s !== process.env.JWT_SECRET?.trim() ? s : null;
+};
+
+/* Connecting a store additionally needs the state secret. Kept out of
+   REQUIRED_ENV so existing connections, webhooks and the worker keep running
+   while it is being configured. */
+export const missingOAuthConfig = () => [...missingConfig(), ...(stateSecret() ? [] : ["SHOPIFY_STATE_SECRET"])];
+
+const sha256 = (v) => crypto.createHash("sha256").update(String(v)).digest("hex");
+
+export const buildAuthUrl = ({ shop, userId, workspaceId, nonce }) => {
+  const secret = stateSecret();
+  if (!secret) throw new Error("SHOPIFY_STATE_SECRET is not configured");
   const state = jwt.sign(
-    { purpose: STATE_PURPOSE, shop, uid: String(userId), ws: String(workspaceId), nonce: crypto.randomBytes(12).toString("hex") },
-    process.env.JWT_SECRET,
-    { expiresIn: "10m" }
+    { purpose: STATE_PURPOSE, shop, uid: String(userId), ws: String(workspaceId), nonce },
+    secret,
+    { expiresIn: Math.floor(STATE_TTL_MS / 1000) }
   );
   const url = new URL(`https://${shop}/admin/oauth/authorize`);
   url.searchParams.set("client_id", env("SHOPIFY_API_KEY"));
@@ -87,9 +105,51 @@ export const buildAuthUrl = ({ shop, userId, workspaceId }) => {
 };
 
 export const verifyState = (state, shop) => {
-  const d = jwt.verify(String(state || ""), process.env.JWT_SECRET);
-  if (d?.purpose !== STATE_PURPOSE || d.shop !== shop) throw new Error("Invalid OAuth state");
+  const secret = stateSecret();
+  if (!secret) throw new Error("SHOPIFY_STATE_SECRET is not configured");
+  const d = jwt.verify(String(state || ""), secret);
+  if (d?.purpose !== STATE_PURPOSE || d.shop !== shop || !d.nonce) throw new Error("Invalid OAuth state");
   return d;
+};
+
+/* GET /oauth/url: records a single-use attempt for this admin + workspace + shop */
+export const startOAuth = async ({ shop, userId, workspaceId }) => {
+  const nonce = crypto.randomBytes(24).toString("hex");
+  await ShopifyOAuthState.create({
+    workspace: workspaceId,
+    user: userId,
+    shop,
+    nonceHash: sha256(nonce),
+    expiresAt: new Date(Date.now() + STATE_TTL_MS),
+  });
+  return buildAuthUrl({ shop, userId, workspaceId, nonce });
+};
+
+/* OAuth callback (HMAC + signed state already verified): consumes the state
+   once and parks the code. Returns a one-time completion id that only the
+   initiating admin's signed-in session can redeem. */
+export const claimCallback = async (s, shop, code) => {
+  const now = new Date();
+  const completeId = crypto.randomBytes(24).toString("hex");
+  const claimed = await ShopifyOAuthState.findOneAndUpdate(
+    { nonceHash: sha256(s.nonce), workspace: s.ws, user: s.uid, shop, status: "pending", expiresAt: { $gt: now } },
+    { $set: { status: "callback", code: encrypt(code), completeHash: sha256(completeId), expiresAt: new Date(now.getTime() + COMPLETE_TTL_MS) } },
+    { returnDocument: "after" }
+  );
+  if (!claimed) throw new Error("Invalid OAuth state"); // unknown, expired or already used
+  return completeId;
+};
+
+/* POST /oauth/complete: only the admin who started it, in the same workspace */
+export const finishOAuth = async ({ completeId, workspaceId, userId }) => {
+  if (!/^[a-f0-9]{48}$/.test(String(completeId || ""))) throw httpError(422, "This connection link is invalid. Please click Connect again.");
+  const st = await ShopifyOAuthState.findOneAndUpdate(
+    { completeHash: sha256(completeId), workspace: workspaceId, user: userId, status: "callback", expiresAt: { $gt: new Date() } },
+    { $set: { status: "used", code: null } },
+    { returnDocument: "before" }
+  ).select("+code");
+  if (!st?.code) throw httpError(410, "The connection link expired or was already used — please click Connect again.");
+  return completeConnection({ shop: st.shop, code: decrypt(st.code), workspaceId, userId });
 };
 
 /* write_x implies read_x, and Shopify omits the implied scope from the grant */
@@ -361,12 +421,30 @@ export const disconnect = async (workspaceId) => {
 
 /* ---------------- Webhooks: lifecycle + privacy inline, data topics → inbox ---------------- */
 
+/* Shop identity carried in the body (compliance topics: shop_domain/shop_id;
+   app/uninstalled: the shop object). Topics without one (orders, products…)
+   pass; a field that is present must match the stored connection. */
+export const payloadMatchesShop = (topic, payload, conn) => {
+  const p = payload && typeof payload === "object" ? payload : {};
+  const domain = p.shop_domain ?? p.myshopify_domain;
+  if (domain != null && normalizeShop(domain) !== conn.shopDomain) return false;
+  const shopId = topic === "app/uninstalled" ? p.id : p.shop_id;
+  const storedId = String(conn.shop?.id || "").split("/").pop();
+  if (shopId != null && storedId && String(shopId) !== storedId) return false;
+  return true;
+};
+
 /* Caller must have verified the HMAC. The tenant comes ONLY from the stored
    connection of the shop; unknown shops are dropped, never defaulted. */
 export const handleWebhook = async ({ topic, shop, webhookId, eventId, triggeredAt, apiVersion, payload, rawBody }) => {
   const shopDomain = normalizeShop(shop);
   const conn = shopDomain && (await ShopifyConnection.findByShop(shopDomain));
   if (!conn) return { ignored: "unknown shop" };
+  // The HMAC covers the body, not the shop header: when the body names its shop, it must be this one
+  if (!payloadMatchesShop(topic, payload, conn)) {
+    console.warn(`Shopify webhook ${topic} for ${shopDomain} names a different shop — ignored`);
+    return { ignored: "shop mismatch" };
+  }
 
   return runWithWorkspace(conn.workspace, async () => {
     const scoped = { _id: conn._id, workspace: conn.workspace };
@@ -389,7 +467,13 @@ export const handleWebhook = async ({ topic, shop, webhookId, eventId, triggered
 
       // 48h after uninstall. Phase 1 stores no shop data beyond the connection.
       case "shop/redact": {
-        if (conn.status === "active") return { ignored: "store reinstalled" };
+        if (conn.status === "active") {
+          // Reinstalled (here or after moving workspaces): keep the live data,
+          // erase what former workspaces still hold for this shop
+          const events = await deleteShopEvents(conn, { keepWorkspace: conn.workspace });
+          if (events) await audit(conn, "DELETE", `Shopify shop/redact: erased ${events} event(s) held by former workspaces for ${conn.shopDomain}`, { webhookId, events });
+          return { ignored: "store reinstalled" };
+        }
         const events = await deleteShopEvents(conn);
         await ShopifyConnection.deleteOne({ ...scoped, status: { $ne: "active" } });
         await audit(conn, "DELETE", `Shopify shop/redact: erased data for ${conn.shopDomain}`, { webhookId, events });

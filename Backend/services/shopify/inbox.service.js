@@ -61,6 +61,12 @@ export const recordEvent = async ({ conn, topic, webhookId, eventId, triggeredAt
   }
 };
 
+/* Privacy topics act on every copy of THIS shop's data: a store that moved
+   between workspaces leaves events behind in its former workspace(s).
+   Strictly keyed by shopDomain; the explicit workspace key bypasses the
+   scope plugin (other shops are never touched). */
+const allWorkspaces = (conn) => ({ workspace: { $ne: null }, shopDomain: conn.shopDomain });
+
 /* customers/redact: drop stored payloads that mention the customer or their orders */
 export const redactCustomer = async (conn, payload = {}) => {
   const customerId = payload.customer?.id;
@@ -70,7 +76,7 @@ export const redactCustomer = async (conn, payload = {}) => {
   if (orderIds.length) or.push({ "payload.id": { $in: orderIds }, topic: /^orders\// }, { "payload.order_id": { $in: orderIds } });
   if (!or.length) return 0;
   const r = await ShopifyWebhookEvent.updateMany(
-    { workspace: conn.workspace, shopDomain: conn.shopDomain, payload: { $ne: null }, $or: or },
+    { ...allWorkspaces(conn), payload: { $ne: null }, $or: or },
     { $set: { payload: null, redactedAt: new Date() } }
   );
   return r.modifiedCount || 0;
@@ -80,11 +86,15 @@ export const redactCustomer = async (conn, payload = {}) => {
 export const countCustomerEvents = (conn, payload = {}) =>
   payload.customer?.id == null
     ? Promise.resolve(0)
-    : ShopifyWebhookEvent.countDocuments({ workspace: conn.workspace, shopDomain: conn.shopDomain, "payload.customer.id": payload.customer.id });
+    : ShopifyWebhookEvent.countDocuments({ ...allWorkspaces(conn), "payload.customer.id": payload.customer.id });
 
-/* shop/redact: erase every stored event of the shop in its workspace */
-export const deleteShopEvents = async (conn) =>
-  (await ShopifyWebhookEvent.deleteMany({ workspace: conn.workspace, shopDomain: conn.shopDomain })).deletedCount || 0;
+/* shop/redact: erase every stored event of the shop, in every workspace —
+   or, when the store is active again, only in its former workspaces */
+export const deleteShopEvents = async (conn, { keepWorkspace = null } = {}) => {
+  const filter = allWorkspaces(conn);
+  if (keepWorkspace) filter.workspace = { $nin: [keepWorkspace, null] };
+  return (await ShopifyWebhookEvent.deleteMany(filter)).deletedCount || 0;
+};
 
 /* Dashboard: counts per status + recent failures (no payloads) */
 export const inboxSummary = async (workspaceId) => {

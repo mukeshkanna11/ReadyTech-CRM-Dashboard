@@ -3,10 +3,9 @@ import express from "express";
 import auth from "../middlewares/auth.js";
 import role from "../middlewares/role.js";
 import User from "../models/User.js";
-import { runWithWorkspace } from "../utils/workspaceContext.js";
 import {
-  missingConfig, normalizeShop, buildAuthUrl, verifyState, verifyCallbackHmac,
-  verifyWebhookHmac, completeConnection, getStatus, disconnect, handleWebhook, refreshWebhooks, missingScopes,
+  missingConfig, missingOAuthConfig, normalizeShop, startOAuth, verifyState, verifyCallbackHmac,
+  verifyWebhookHmac, claimCallback, finishOAuth, getStatus, disconnect, handleWebhook, refreshWebhooks, missingScopes,
 } from "../services/shopify/shopify.service.js";
 import { inboxSummary, retryDeadEvent, listEvents } from "../services/shopify/inbox.service.js";
 import { orderSummary } from "../services/shopify/orderSync.service.js";
@@ -48,24 +47,32 @@ router.get("/status", auth, async (req, res) => {
   }
 });
 
-/* Start OAuth — admin only; state binds user + workspace + shop */
-router.get("/oauth/url", auth, role("admin"), (req, res) => {
-  const missing = missingConfig();
+/* Start OAuth — admin only; single-use state binds user + workspace + shop */
+router.get("/oauth/url", auth, role("admin"), async (req, res) => {
+  const missing = missingOAuthConfig();
   if (missing.length) {
     console.warn(`Shopify OAuth not configured — ReadyTech admin: set ${missing.join(", ")}`);
     return res.status(400).json({ success: false, code: "SHOPIFY_NOT_CONFIGURED", message: NOT_AVAILABLE });
   }
   const shop = normalizeShop(req.query.shop);
   if (!shop) return res.status(422).json({ success: false, message: "Enter your store's myshopify.com address, e.g. your-store.myshopify.com" });
-  res.json({ success: true, data: { url: buildAuthUrl({ shop, userId: req.user._id, workspaceId: req.workspace }) } });
+  try {
+    res.json({ success: true, data: { url: await startOAuth({ shop, userId: req.user._id, workspaceId: req.workspace }) } });
+  } catch (error) {
+    console.error("Shopify OAuth start error:", error.message);
+    res.status(500).json({ success: false, message: "Couldn't start the Shopify connection. Please try again." });
+  }
 });
 
-/* OAuth callback — public (Shopify redirects the browser), protected by HMAC + signed state */
+/* OAuth callback — public (Shopify redirects the browser), protected by HMAC +
+   signed single-use state. It does NOT connect the store: the code is parked
+   and only the initiating admin's signed-in session can finish (POST /oauth/complete),
+   so an authorize link forwarded to someone else can't attach their store. */
 router.get("/oauth/callback", async (req, res) => {
   const params = new URL(req.originalUrl, "http://localhost").searchParams;
   const shop = normalizeShop(params.get("shop"));
   try {
-    if (missingConfig().length) throw new Error("Shopify is not configured");
+    if (missingOAuthConfig().length) throw new Error("Shopify is not configured");
     if (!shop || !params.get("code") || !verifyCallbackHmac(params)) throw new Error("Invalid Shopify callback");
     if (!params.get("state")) throw new Error("NO_STATE");
 
@@ -76,11 +83,22 @@ router.get("/oauth/callback", async (req, res) => {
       throw Object.assign(new Error("You're not allowed to connect a Shopify store for this workspace."), { status: 403 });
     }
 
-    await runWithWorkspace(s.ws, () => completeConnection({ shop, code: params.get("code"), workspaceId: s.ws, userId: s.uid }));
-    return res.redirect(clientRedirect({ connected: "1", shop }));
+    const complete = await claimCallback(s, shop, params.get("code"));
+    return res.redirect(clientRedirect({ complete, shop }));
   } catch (err) {
     console.error(`Shopify OAuth callback failed (${shop || "invalid shop"}):`, err.message);
     return res.redirect(clientRedirect({ connected: "0", message: friendlyError(err).slice(0, 200) }));
+  }
+});
+
+/* Finish OAuth — the same admin, signed in to the same workspace that started it */
+router.post("/oauth/complete", auth, role("admin"), async (req, res) => {
+  try {
+    const conn = await finishOAuth({ completeId: req.body?.id, workspaceId: req.workspace, userId: req.user._id });
+    res.json({ success: true, message: "Shopify store connected", data: { shopDomain: conn.shopDomain } });
+  } catch (err) {
+    console.error("Shopify OAuth completion failed:", err.message);
+    res.status(err.status || 400).json({ success: false, message: friendlyError(err).slice(0, 200) });
   }
 });
 

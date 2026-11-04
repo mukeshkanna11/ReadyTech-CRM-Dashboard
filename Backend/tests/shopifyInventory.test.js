@@ -342,3 +342,38 @@ test("existing deliver API behaves as before the extraction", async () => {
   assert.equal(so.status, "DELIVERED");
   assert.equal(state.ledger.length, 1);
 });
+
+/* ---------------- connection-level isolation (store switched within a workspace) ---------------- */
+test("shopifyCommitted counts only the current connection's orders and events", async () => {
+  const filters = [];
+  stub(ShopifyOrderLink, "find", async (f) => (filters.push(["link", f]), []));
+  stub(ShopifyWebhookEvent, "find", async (f) => (filters.push(["event", f]), []));
+  await run(() => inv.shopifyCommitted(conn));
+  const [[, linkFilter], [, eventFilter]] = filters;
+  assert.equal(String(linkFilter.workspace), String(WS));
+  assert.equal(String(linkFilter.connection), String(conn._id));
+  assert.equal(String(eventFilter.connection), String(conn._id));
+  assert.equal(eventFilter.shopDomain, conn.shopDomain);
+});
+
+test("inventorySummary counts only the workspace's current store, never a previous one", async () => {
+  const filters = [];
+  stub(ShopifyConnection, "findOne", async (f) => (filters.push(["conn", f]), f.status === "active" ? { _id: conn._id } : null));
+  stub(ShopifyInventoryLink, "countDocuments", async (f) => (filters.push(["count", f]), 4));
+  stub(ShopifyInventoryLink, "find", (f) => {
+    filters.push(["find", f]);
+    const q = { sort: () => q, limit: () => Promise.resolve([]) };
+    return q;
+  });
+  assert.deepEqual(await inv.inventorySummary(WS), { mapped: 4, failing: [] });
+  for (const [kind, f] of filters) {
+    assert.equal(String(f.workspace), String(WS), kind);
+    if (kind !== "conn") assert.equal(String(f.connection), String(conn._id), kind);
+  }
+
+  // No connection at all → nothing counted (no link query runs)
+  filters.length = 0;
+  stub(ShopifyConnection, "findOne", async () => null);
+  assert.deepEqual(await inv.inventorySummary(WS), { mapped: 0, failing: [] });
+  assert.equal(filters.some(([k]) => k !== "conn"), false);
+});

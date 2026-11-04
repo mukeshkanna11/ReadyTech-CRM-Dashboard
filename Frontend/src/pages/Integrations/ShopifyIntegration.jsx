@@ -93,22 +93,6 @@ export default function ShopifyIntegration() {
     return () => clearInterval(id);
   }, [refreshAll]);
 
-  /* Result of the OAuth redirect, or a launch from Shopify admin (?shop=) */
-  useEffect(() => {
-    const connected = searchParams.get("connected");
-    const launchShop = searchParams.get("shop");
-    if (!connected && !launchShop) return;
-    if (connected === "1") {
-      toast.success("Shopify store connected");
-      setBanner({ type: "success", text: `${launchShop || "Your store"} is connected to this workspace.` });
-    } else if (connected === "0") {
-      setBanner({ type: "error", text: searchParams.get("message") || "We couldn't connect your Shopify store. Please try again." });
-    } else {
-      setShop(launchShop);
-    }
-    setSearchParams({}, { replace: true });
-  }, [searchParams, setSearchParams]);
-
   const run = useCallback(async (key, fn) => {
     if (busyRef.current) return;
     busyRef.current = key;
@@ -125,6 +109,36 @@ export default function ShopifyIntegration() {
       setBusy(null);
     }
   }, []);
+
+  /* Result of the OAuth redirect, or a launch from Shopify admin (?shop=) */
+  useEffect(() => {
+    const connected = searchParams.get("connected");
+    const complete = searchParams.get("complete");
+    const launchShop = searchParams.get("shop");
+    if (!connected && !complete && !launchShop) return;
+    if (complete) {
+      // Shopify approved: this signed-in admin finishes the connection
+      // (run's synchronous guard also absorbs StrictMode's double effect)
+      run("connect", async () => {
+        try {
+          const res = await API.post("/shopify/oauth/complete", { id: complete });
+          const connectedShop = res.data?.data?.shopDomain || launchShop;
+          toast.success("Shopify store connected");
+          setBanner({ type: "success", text: `${connectedShop || "Your store"} is connected to this workspace.` });
+        } finally {
+          load();
+        }
+      });
+    } else if (connected === "1") {
+      toast.success("Shopify store connected");
+      setBanner({ type: "success", text: `${launchShop || "Your store"} is connected to this workspace.` });
+    } else if (connected === "0") {
+      setBanner({ type: "error", text: searchParams.get("message") || "We couldn't connect your Shopify store. Please try again." });
+    } else {
+      setShop(launchShop);
+    }
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams, run, load]);
 
   /* Shopify OAuth for a store address; the platform app credentials stay on the server */
   const startOAuth = (key, shopDomain) =>

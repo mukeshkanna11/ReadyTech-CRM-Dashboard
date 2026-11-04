@@ -178,7 +178,7 @@ export const shopifyCommitted = async (conn) => {
   const bySku = new Map();
   const add = (m, k, q) => m.set(k, (m.get(k) || 0) + q);
 
-  const links = await ShopifyOrderLink.find({ workspace: conn.workspace, status: "imported", salesOrder: { $ne: null } }, "salesOrder", { lean: true });
+  const links = await ShopifyOrderLink.find({ workspace: conn.workspace, connection: conn._id, status: "imported", salesOrder: { $ne: null } }, "salesOrder", { lean: true });
   if (links.length) {
     const open = await SalesOrder.find(
       { _id: { $in: links.map((l) => l.salesOrder) }, $or: [{ status: "DRAFT" }, { status: "APPROVED", warehouse: null }] },
@@ -190,7 +190,7 @@ export const shopifyCommitted = async (conn) => {
 
   // Received but not imported (waiting, or failed e.g. on an unknown SKU)
   const events = await ShopifyWebhookEvent.find(
-    { workspace: conn.workspace, shopDomain: conn.shopDomain, topic: { $in: ["orders/create", "orders/updated"] }, status: { $in: ["pending", "processing", "dead"] } },
+    { workspace: conn.workspace, connection: conn._id, shopDomain: conn.shopDomain, topic: { $in: ["orders/create", "orders/updated"] }, status: { $in: ["pending", "processing", "dead"] } },
     "resource payload.line_items payload.cancelled_at",
     { lean: true }
   );
@@ -453,10 +453,17 @@ export const saveInventorySettings = async (workspaceId, userId, { enabled, ware
   return conn;
 };
 
+/* Counts only the workspace's current store (active, else the latest — same
+   choice as getStatus); links left by a previously connected store are excluded */
 export const inventorySummary = async (workspaceId) => {
+  const current =
+    (await ShopifyConnection.findOne({ workspace: workspaceId, status: "active" }, "_id", { lean: true })) ||
+    (await ShopifyConnection.findOne({ workspace: workspaceId }, "_id", { lean: true, sort: { updatedAt: -1 } }));
+  if (!current) return { mapped: 0, failing: [] };
+  const scope = { workspace: workspaceId, connection: current._id };
   const [mapped, failing] = await Promise.all([
-    ShopifyInventoryLink.countDocuments({ workspace: workspaceId }),
-    ShopifyInventoryLink.find({ workspace: workspaceId, lastError: { $ne: null } }, "sku lastError updatedAt", { lean: true }).sort({ updatedAt: -1 }).limit(10),
+    ShopifyInventoryLink.countDocuments(scope),
+    ShopifyInventoryLink.find({ ...scope, lastError: { $ne: null } }, "sku lastError updatedAt", { lean: true }).sort({ updatedAt: -1 }).limit(10),
   ]);
   return { mapped, failing };
 };

@@ -260,12 +260,30 @@ test("dead-letter retry only reaches the caller's own workspace", async () => {
   assert.equal(events[0].attempts, 0);
 });
 
-test("customers/redact only touches the shop's own workspace", async () => {
+test("customers/redact covers every workspace that holds this shop's events, and only this shop", async () => {
   let filter;
   stub(ShopifyWebhookEvent, "updateMany", async (f) => ((filter = f), { modifiedCount: 2 }));
   const res = await deliver("a.myshopify.com", "customers/redact", { customer: { id: 9 }, orders_to_redact: [101] });
   assert.equal(res.status, 200);
-  assert.equal(String(filter.workspace), WS_A);
+  // Explicit workspace key: a store that moved workspaces leaves copies in its former one
+  assert.deepEqual(filter.workspace, { $ne: null });
   assert.equal(filter.shopDomain, "a.myshopify.com");
   assert.deepEqual(filter.$or[0], { "payload.customer.id": 9 });
+});
+
+test("customers/redact reaches a former workspace's events after the store moved (other shops untouched)", async () => {
+  // a.myshopify.com was in WS_B, now active in WS_A; b.myshopify.com belongs to WS_B
+  events.push(
+    { _id: "old", workspace: WS_B, shopDomain: "a.myshopify.com", topic: "orders/create", payload: { customer: { id: 9 } } },
+    { _id: "cur", workspace: WS_A, shopDomain: "a.myshopify.com", topic: "orders/create", payload: { customer: { id: 9 } } },
+    { _id: "oth", workspace: WS_B, shopDomain: "b.myshopify.com", topic: "orders/create", payload: { customer: { id: 9 } } }
+  );
+  stub(ShopifyWebhookEvent, "updateMany", async (f, u) => {
+    const hit = events.filter((e) => matches(e, { workspace: f.workspace, shopDomain: f.shopDomain }) && f.$or.some((o) => matches(e, o)));
+    hit.forEach((e) => Object.assign(e, u.$set));
+    return { modifiedCount: hit.length };
+  });
+  const res = await deliver("a.myshopify.com", "customers/redact", { shop_domain: "a.myshopify.com", customer: { id: 9 } });
+  assert.equal(res.status, 200);
+  assert.deepEqual(events.map((e) => [e._id, e.payload === null]), [["old", true], ["cur", true], ["oth", false]]);
 });

@@ -3,6 +3,7 @@
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import jwt from "jsonwebtoken";
+import crypto from "node:crypto";
 import mongoose from "mongoose";
 
 Object.assign(process.env, {
@@ -19,6 +20,7 @@ const models = {
   ShopifyWebhookEvent: (await import("../models/ShopifyWebhookEvent.js")).default,
   ShopifyOrderLink: (await import("../models/ShopifyOrderLink.js")).default,
   ShopifyInventoryLink: (await import("../models/ShopifyInventoryLink.js")).default,
+  ShopifyOAuthState: (await import("../models/ShopifyOAuthState.js")).default,
 };
 
 const WS = new mongoose.Types.ObjectId();
@@ -95,12 +97,24 @@ test("connect URL: clear setup error when platform credentials are missing; neve
       SHOPIFY_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
     };
     Object.assign(process.env, env);
+    // Platform credentials alone are not enough: the dedicated state secret is required too
+    const noState = await fetch(url, { headers: auth });
+    assert.equal(noState.status, 400);
+    assert.equal((await noState.json()).code, "SHOPIFY_NOT_CONFIGURED");
+
+    env.SHOPIFY_STATE_SECRET = "route-test-state-secret-0123456789abcdef";
+    Object.assign(process.env, env);
+    const created = [];
+    stub(models.ShopifyOAuthState, "create", async (d) => (created.push(d), d));
     const ok = await fetch(url, { headers: auth });
     const text = await ok.text();
     assert.equal(ok.status, 200);
     assert.match(text, /https:\/\/acme\.myshopify\.com\/admin\/oauth\/authorize/);
     assert.doesNotMatch(text, /super-secret-value/);
     assert.doesNotMatch(text, new RegExp(env.SHOPIFY_TOKEN_ENCRYPTION_KEY.replace(/[+/=]/g, "\\$&")));
+    assert.doesNotMatch(text, /route-test-state-secret/);
+    assert.equal(created.length, 1);
+    assert.equal(String(created[0].workspace), String(WS));
 
     const bad = await fetch(base.replace("/status", "/oauth/url?shop=evil.com"), { headers: auth });
     assert.equal(bad.status, 422);
@@ -116,4 +130,79 @@ test("non-admin members cannot start a connection", async () => {
     headers: { authorization: `Bearer ${jwt.sign({ id: String(WS) }, "test-jwt")}` },
   });
   assert.equal(res.status, 403);
+});
+
+/* ---------------- OAuth callback + authenticated finish ---------------- */
+const OAUTH_ENV = {
+  SHOPIFY_API_KEY: "public-client-id", SHOPIFY_API_SECRET: "super-secret-value", SHOPIFY_SCOPES: "read_orders",
+  SHOPIFY_API_VERSION: "2026-07", SHOPIFY_OAUTH_REDIRECT_URI: "https://api.test/cb", SHOPIFY_WEBHOOK_URL: "https://api.test/wh",
+  SHOPIFY_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"), SHOPIFY_STATE_SECRET: "route-test-state-secret-0123456789abcdef",
+};
+const withOAuthEnv = async (fn) => {
+  Object.assign(process.env, OAUTH_ENV);
+  try {
+    return await fn();
+  } finally {
+    Object.keys(OAUTH_ENV).forEach((k) => delete process.env[k]);
+  }
+};
+const signedCallback = (params) => {
+  const q = new URLSearchParams(params);
+  const msg = [...q.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join("&");
+  q.set("hmac", crypto.createHmac("sha256", OAUTH_ENV.SHOPIFY_API_SECRET).update(msg).digest("hex"));
+  return `${base.replace("/status", "/oauth/callback")}?${q}`;
+};
+
+test("callback consumes the state and hands back a one-time id — it does not connect the store", async () => {
+  await withOAuthEnv(async () => {
+    const svc = await import("../services/shopify/shopify.service.js");
+    stub(User, "findById", () => chain({ _id: WS, role: "admin", isActive: true, workspace: null }));
+    let claims = 0;
+    stub(models.ShopifyOAuthState, "findOneAndUpdate", async () => (++claims === 1 ? { _id: "st" } : null));
+    let connected = 0;
+    stub(models.ShopifyConnection, "findOneAndUpdate", async () => (connected++, null));
+    const state = svc.buildAuthUrl({ shop: "acme.myshopify.com", userId: WS, workspaceId: WS, nonce: "n1" });
+    const url = signedCallback({ code: "c1", shop: "acme.myshopify.com", state: new URL(state).searchParams.get("state"), timestamp: "1" });
+    const err = console.error;
+    console.error = () => {};
+    try {
+      const first = await fetch(url, { redirect: "manual" });
+      const loc = new URL(first.headers.get("location"));
+      assert.equal(first.status, 302);
+      assert.match(loc.searchParams.get("complete"), /^[a-f0-9]{48}$/);
+      assert.equal(loc.searchParams.has("connected"), false);
+      assert.equal(connected, 0);
+
+      // Replaying the same callback is refused
+      const replay = new URL((await fetch(url, { redirect: "manual" })).headers.get("location"));
+      assert.equal(replay.searchParams.get("connected"), "0");
+      assert.match(replay.searchParams.get("message"), /expired/);
+    } finally {
+      console.error = err;
+    }
+  });
+});
+
+test("complete: requires a signed-in admin and is scoped to the caller's workspace and user", async () => {
+  await withOAuthEnv(async () => {
+    const completeUrl = base.replace("/status", "/oauth/complete");
+    const post = (headers) => fetch(completeUrl, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ id: "a".repeat(48) }) });
+    assert.equal((await post({})).status, 401);
+
+    stub(User, "findById", () => chain({ _id: WS, role: "admin", isActive: true, workspace: null }));
+    let filter;
+    stub(models.ShopifyOAuthState, "findOneAndUpdate", (f) => ((filter = f), { select: async () => null }));
+    const err = console.error;
+    console.error = () => {};
+    try {
+      const res = await post({ authorization: `Bearer ${jwt.sign({ id: String(WS) }, "test-jwt")}` });
+      assert.equal(res.status, 410);
+      assert.match((await res.json()).message, /expired or was already used/);
+    } finally {
+      console.error = err;
+    }
+    assert.equal(String(filter.workspace), String(WS));
+    assert.equal(String(filter.user), String(WS));
+    assert.equal(filter.status, "callback");
+  });
 });

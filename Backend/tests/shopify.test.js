@@ -12,6 +12,7 @@ process.env.SHOPIFY_API_VERSION = "2026-07";
 process.env.SHOPIFY_OAUTH_REDIRECT_URI = "https://api.test/api/shopify/oauth/callback";
 process.env.SHOPIFY_WEBHOOK_URL = "https://api.test/api/shopify/webhooks";
 process.env.SHOPIFY_TOKEN_ENCRYPTION_KEY = crypto.randomBytes(32).toString("base64");
+process.env.SHOPIFY_STATE_SECRET = "state-secret-for-tests-0123456789abcdef";
 
 await import("../utils/workspaceScope.js");
 const mongoose = (await import("mongoose")).default;
@@ -19,6 +20,9 @@ const ctx = await import("../utils/workspaceContext.js");
 const { encrypt, decrypt } = await import("../services/shopify/crypto.js");
 const svc = await import("../services/shopify/shopify.service.js");
 const ShopifyConnection = (await import("../models/ShopifyConnection.js")).default;
+const ShopifyOAuthState = (await import("../models/ShopifyOAuthState.js")).default;
+const ShopifyWebhookEvent = (await import("../models/ShopifyWebhookEvent.js")).default;
+const jwt = (await import("jsonwebtoken")).default;
 const AuditLog = (await import("../models/AuditLog.js")).default;
 const Product = (await import("../models/Product.model.js")).default;
 
@@ -104,12 +108,115 @@ test("webhook HMAC: valid passes, modified body or bad header fails", () => {
 
 /* ---------------- OAuth state ---------------- */
 test("OAuth state is bound to the shop and purpose", () => {
-  const url = new URL(svc.buildAuthUrl({ shop: SHOP, userId: WS_A, workspaceId: WS_A }));
+  const url = new URL(svc.buildAuthUrl({ shop: SHOP, userId: WS_A, workspaceId: WS_A, nonce: "n1" }));
   assert.equal(url.host, SHOP);
   assert.equal(url.searchParams.get("client_id"), "client-id");
   const state = url.searchParams.get("state");
   assert.equal(svc.verifyState(state, SHOP).ws, WS_A);
   assert.throws(() => svc.verifyState(state, "other.myshopify.com"), /Invalid OAuth state/);
+});
+
+test("OAuth state uses the dedicated SHOPIFY_STATE_SECRET, never JWT_SECRET", () => {
+  // A state signed with the login secret is rejected
+  const forged = jwt.sign({ purpose: "shopify-oauth", shop: SHOP, uid: WS_A, ws: WS_A, nonce: "n" }, process.env.JWT_SECRET);
+  assert.throws(() => svc.verifyState(forged, SHOP), /invalid signature/);
+  const nonceless = jwt.sign({ purpose: "shopify-oauth", shop: SHOP, uid: WS_A, ws: WS_A }, process.env.SHOPIFY_STATE_SECRET);
+  assert.throws(() => svc.verifyState(nonceless, SHOP), /Invalid OAuth state/);
+
+  const saved = process.env.SHOPIFY_STATE_SECRET;
+  try {
+    for (const bad of [undefined, "too-short", process.env.JWT_SECRET.padEnd(40, "x")]) {
+      if (bad === undefined) delete process.env.SHOPIFY_STATE_SECRET;
+      else process.env.SHOPIFY_STATE_SECRET = bad;
+      if (bad?.startsWith("test-jwt")) process.env.JWT_SECRET = bad; // same as the login secret
+      assert.deepEqual(svc.missingOAuthConfig(), ["SHOPIFY_STATE_SECRET"]);
+      assert.deepEqual(svc.missingConfig(), []); // webhooks / worker unaffected
+      assert.throws(() => svc.buildAuthUrl({ shop: SHOP, userId: WS_A, workspaceId: WS_A, nonce: "n" }), /SHOPIFY_STATE_SECRET/);
+    }
+  } finally {
+    process.env.SHOPIFY_STATE_SECRET = saved;
+    process.env.JWT_SECRET = "test-jwt";
+  }
+});
+
+/* ---------------- single-use state + authenticated finish ---------------- */
+const sha = (v) => crypto.createHash("sha256").update(v).digest("hex");
+
+test("startOAuth records a single-use attempt with only the nonce hash", async () => {
+  let doc;
+  stub(ShopifyOAuthState, "create", async (d) => ((doc = d), d));
+  const url = new URL(await svc.startOAuth({ shop: SHOP, userId: "u1", workspaceId: WS_A }));
+  const { nonce, ws, uid } = svc.verifyState(url.searchParams.get("state"), SHOP);
+  assert.equal(doc.nonceHash, sha(nonce));
+  assert.equal(JSON.stringify(doc).includes(nonce), false);
+  assert.deepEqual([String(doc.workspace), String(doc.user), doc.shop], [WS_A, "u1", SHOP]);
+  assert.deepEqual([ws, uid], [WS_A, "u1"]);
+  assert.ok(doc.expiresAt > new Date() && doc.expiresAt <= new Date(Date.now() + 10 * 60_000));
+});
+
+test("claimCallback consumes the state once, scoped to its workspace, user and shop", async () => {
+  let filter, update;
+  let used = false;
+  stub(ShopifyOAuthState, "findOneAndUpdate", async (f, u) => {
+    filter = f;
+    update = u;
+    if (used) return null; // already moved out of "pending"
+    used = true;
+    return { _id: "st1" };
+  });
+  const s = { nonce: "abc", ws: WS_A, uid: "u1" };
+  const id = await svc.claimCallback(s, SHOP, "auth-code");
+  assert.match(id, /^[a-f0-9]{48}$/);
+  assert.deepEqual(
+    [filter.nonceHash, filter.workspace, filter.user, filter.shop, filter.status],
+    [sha("abc"), WS_A, "u1", SHOP, "pending"]
+  );
+  assert.ok(filter.expiresAt.$gt instanceof Date);
+  assert.equal(update.$set.status, "callback");
+  assert.equal(update.$set.completeHash, sha(id));
+  assert.notEqual(update.$set.code, "auth-code");
+  assert.equal(decrypt(update.$set.code), "auth-code");
+  // Replay of the same state (and code) is refused
+  await assert.rejects(svc.claimCallback(s, SHOP, "auth-code"), /Invalid OAuth state/);
+});
+
+const finishStub = (st) => {
+  const seen = [];
+  stub(ShopifyOAuthState, "findOneAndUpdate", (f, u) => {
+    seen.push({ f, u });
+    const match = st && f.completeHash === st.completeHash && String(f.workspace) === String(st.workspace) && String(f.user) === String(st.user);
+    const result = match ? { ...st } : null;
+    return { select: () => Promise.resolve(result) };
+  });
+  return seen;
+};
+
+test("finishOAuth: only the initiating admin in the same workspace can redeem, once", async () => {
+  const id = "a".repeat(48);
+  const st = { completeHash: sha(id), workspace: WS_A, user: "u1", shop: SHOP, code: encrypt("auth-code") };
+
+  // Another workspace's admin, or another admin of the same workspace → refused, nothing connected
+  let tokenCalls = 0;
+  globalThis.fetch = async () => (tokenCalls++, json(500, {}));
+  finishStub(st);
+  await assert.rejects(svc.finishOAuth({ completeId: id, workspaceId: WS_B, userId: "u1" }), (e) => e.status === 410);
+  await assert.rejects(svc.finishOAuth({ completeId: id, workspaceId: WS_A, userId: "u2" }), (e) => e.status === 410);
+  await assert.rejects(svc.finishOAuth({ completeId: "not-an-id", workspaceId: WS_A, userId: "u1" }), (e) => e.status === 422);
+  assert.equal(tokenCalls, 0);
+
+  // The initiator: code exchanged for THIS workspace; the state is marked used and the code cleared
+  const calls = [];
+  globalThis.fetch = shopifyApi(calls);
+  const seen = finishStub(st);
+  let upsert;
+  stub(ShopifyConnection, "findOne", async () => null);
+  stub(ShopifyConnection, "findOneAndUpdate", async (f, u) => ((upsert = u), { _id: "c1", shopDomain: SHOP, workspace: WS_A, connectedBy: "u1" }));
+  const conn = await svc.finishOAuth({ completeId: id, workspaceId: WS_A, userId: "u1" });
+  assert.equal(conn.shopDomain, SHOP);
+  assert.equal(JSON.parse(calls[0].body).code, "auth-code");
+  assert.equal(upsert.$set.workspace, WS_A);
+  assert.deepEqual(seen[0].u.$set, { status: "used", code: null });
+  assert.equal(seen[0].f.status, "callback");
 });
 
 test("assertScopes accepts implied read scopes and rejects missing ones", () => {
@@ -178,12 +285,59 @@ test("duplicate app/uninstalled delivery is a no-op (no second audit entry)", as
   assert.equal(audits.length, 0);
 });
 
-test("shop/redact never deletes an active (reinstalled) connection", async () => {
+test("shop/redact never deletes an active (reinstalled) connection; erases former workspaces' events", async () => {
   let deleted = 0;
+  let eventFilter;
   stub(ShopifyConnection, "findOne", async () => connDoc());
   stub(ShopifyConnection, "deleteOne", async () => (deleted++, {}));
+  stub(ShopifyWebhookEvent, "deleteMany", async (f) => ((eventFilter = f), { deletedCount: 3 }));
   assert.deepEqual(await svc.handleWebhook({ topic: "shop/redact", shop: SHOP }), { ignored: "store reinstalled" });
   assert.equal(deleted, 0);
+  assert.equal(eventFilter.shopDomain, SHOP);
+  assert.deepEqual(eventFilter.workspace, { $nin: [WS_A, null] }); // the current workspace keeps its live data
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].workspace, WS_A);
+});
+
+test("shop/redact after uninstall erases the shop's events in every workspace (store moved)", async () => {
+  let eventFilter, connFilter;
+  stub(ShopifyConnection, "findOne", async () => connDoc({ status: "uninstalled", workspace: WS_B }));
+  stub(ShopifyConnection, "deleteOne", async (f) => ((connFilter = f), {}));
+  stub(ShopifyWebhookEvent, "deleteMany", async (f) => ((eventFilter = f), { deletedCount: 5 }));
+  await svc.handleWebhook({ topic: "shop/redact", shop: SHOP, payload: { shop_domain: SHOP } });
+  assert.deepEqual(eventFilter, { workspace: { $ne: null }, shopDomain: SHOP });
+  assert.equal(connFilter.workspace, WS_B);
+});
+
+/* ---------------- webhook body ↔ stored connection ---------------- */
+test("webhook whose body names a different shop is ignored (no writes)", async () => {
+  let writes = 0;
+  stub(ShopifyConnection, "findOne", async () => connDoc({ shop: { id: "gid://shopify/Shop/42" } }));
+  stub(ShopifyConnection, "updateOne", async () => (writes++, { modifiedCount: 1 }));
+  stub(ShopifyWebhookEvent, "updateMany", async () => (writes++, { modifiedCount: 1 }));
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const other = await svc.handleWebhook({ topic: "app/uninstalled", shop: SHOP, payload: { id: 42, myshopify_domain: "other.myshopify.com" } });
+    assert.deepEqual(other, { ignored: "shop mismatch" });
+    const wrongId = await svc.handleWebhook({ topic: "customers/redact", shop: SHOP, payload: { shop_id: 7, shop_domain: SHOP, customer: { id: 1 } } });
+    assert.deepEqual(wrongId, { ignored: "shop mismatch" });
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(writes, 0);
+
+  // Matching body (and bodies without shop fields) proceed as before
+  assert.deepEqual(await svc.handleWebhook({ topic: "app/uninstalled", shop: SHOP, payload: { id: 42, myshopify_domain: SHOP } }), { handled: "app/uninstalled" });
+  assert.equal(writes, 1);
+});
+
+test("payloadMatchesShop: legacy connections without a stored shop id still match by domain", () => {
+  const conn = connDoc();
+  assert.equal(svc.payloadMatchesShop("shop/redact", { shop_id: 9, shop_domain: SHOP }, conn), true);
+  assert.equal(svc.payloadMatchesShop("shop/redact", { shop_id: 9, shop_domain: "x.myshopify.com" }, conn), false);
+  assert.equal(svc.payloadMatchesShop("orders/create", { id: 123, line_items: [] }, conn), true);
+  assert.equal(svc.payloadMatchesShop("orders/create", null, conn), true);
 });
 
 /* ---------------- connect ---------------- */
