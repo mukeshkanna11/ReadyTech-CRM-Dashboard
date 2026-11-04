@@ -6,7 +6,7 @@ import User from "../models/User.js";
 import {
   missingConfig, missingOAuthConfig, installUrl, normalizeShop, startOAuth, verifyState, verifyCallbackHmac,
   verifyWebhookHmac, claimCallback, finishOAuth,
-  INSTALL_COOKIE, freshTimestamp, isInstallState, startInstall, completeInstall, linkInstallation, hasActiveConnection, getStatus, disconnect, handleWebhook, refreshWebhooks, missingScopes,
+  INSTALL_COOKIE, freshTimestamp, isInstallState, startInstall, completeInstall, linkInstallation, getStatus, disconnect, handleWebhook, refreshWebhooks, missingScopes,
 } from "../services/shopify/shopify.service.js";
 import { inboxSummary, retryDeadEvent, listEvents } from "../services/shopify/inbox.service.js";
 import { orderSummary } from "../services/shopify/orderSync.service.js";
@@ -82,9 +82,9 @@ const readCookie = (req, name) => {
   return null;
 };
 
-/* Public, signed by Shopify (hmac over the query, fresh timestamp). Starts OAuth
-   immediately — no ReadyTech login first — with a single-use install state bound
-   to this browser. A store already connected to a workspace just opens ReadyTech. */
+/* Public, signed by Shopify (hmac over the query, fresh timestamp). ALWAYS starts
+   OAuth immediately — install and reinstall alike, no ReadyTech login first — with
+   a single-use install state bound to this browser. */
 router.get("/install", async (req, res) => {
   const params = new URL(req.originalUrl, "http://localhost").searchParams;
   const shop = normalizeShop(params.get("shop"));
@@ -93,7 +93,6 @@ router.get("/install", async (req, res) => {
     if (!shop || !verifyCallbackHmac(params) || !freshTimestamp(params.get("timestamp"))) {
       throw Object.assign(new Error("This Shopify install link is invalid or has expired. Open the app from Shopify again."), { status: 400 });
     }
-    if (await hasActiveConnection(shop)) return res.redirect(clientRedirect({ shop }));
     const { url, binder } = await startInstall(shop);
     res.cookie(INSTALL_COOKIE, binder, installCookie);
     return res.redirect(url);
@@ -121,8 +120,10 @@ router.get("/oauth/callback", async (req, res) => {
     if (isInstallState(params.get("state"))) {
       const binder = readCookie(req, INSTALL_COOKIE);
       res.clearCookie(INSTALL_COOKIE, { ...installCookie, maxAge: undefined });
-      const installed = await completeInstall({ state: params.get("state"), shop, code: params.get("code"), timestamp: params.get("timestamp"), binder });
-      return res.redirect(`${clientRedirect({ shop })}#${new URLSearchParams({ installed })}`);
+      const result = await completeInstall({ state: params.get("state"), shop, code: params.get("code"), timestamp: params.get("timestamp"), binder });
+      // Straight to the ReadyTech app UI: already linked → connected; otherwise the link step
+      if (result.linked) return res.redirect(clientRedirect({ connected: "1", shop }));
+      return res.redirect(`${clientRedirect({ shop })}#${new URLSearchParams({ installed: result.linkCode })}`);
     }
 
     const s = verifyState(params.get("state"), shop);

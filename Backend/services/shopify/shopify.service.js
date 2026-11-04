@@ -229,8 +229,11 @@ export const startInstall = async (shop) => {
 };
 
 /* OAuth callback for an install state (HMAC already verified by the route).
-   Consumes the state once, in the same browser, exchanges the code and parks
-   the encrypted tokens in an UNBOUND installation. Returns a one-time link code. */
+   Consumes the state once, in the same browser, and exchanges the code.
+   - Store already actively connected to a workspace (reinstall / reopen before
+     Shopify's async app/uninstalled arrives): refresh THAT connection's tokens —
+     the workspace binding never changes here. → { linked: true }
+   - Otherwise: park the encrypted tokens in an UNBOUND installation → { linkCode } */
 export const completeInstall = async ({ state, shop, code, timestamp, binder }) => {
   const secret = stateSecret();
   if (!secret) throw new Error("SHOPIFY_STATE_SECRET is not configured");
@@ -251,6 +254,24 @@ export const completeInstall = async ({ state, shop, code, timestamp, binder }) 
   const info = (await graphql(shop, t.access_token, SHOP_QUERY))?.shop;
   if (String(info?.myshopifyDomain || "").toLowerCase() !== shop) throw new Error("Shopify returned a different store");
 
+  const active = await ShopifyConnection.findOne({ shopDomain: shop, workspace: { $ne: null }, status: "active" }, "workspace connectedBy", { lean: true });
+  if (active) {
+    await runWithWorkspace(active.workspace, () =>
+      attachStore({
+        shop,
+        accessToken: t.access_token,
+        accessTokenExpiresAt: inSeconds(t.expires_in),
+        refreshToken: t.refresh_token || null,
+        refreshTokenExpiresAt: inSeconds(t.refresh_token_expires_in),
+        scopes,
+        info,
+        workspaceId: active.workspace,
+        userId: active.connectedBy,
+      })
+    );
+    return { linked: true };
+  }
+
   const linkCode = crypto.randomBytes(24).toString("hex");
   await ShopifyInstallation.findOneAndUpdate(
     { shopDomain: shop, workspace: null },
@@ -268,7 +289,7 @@ export const completeInstall = async ({ state, shop, code, timestamp, binder }) 
     },
     { upsert: true, setDefaultsOnInsert: true }
   );
-  return linkCode;
+  return { linkCode };
 };
 
 /* POST /oauth/link: an authenticated admin explicitly links the installed store
@@ -300,9 +321,6 @@ export const linkInstallation = async ({ code, workspaceId, userId }) => {
   }
 };
 
-/* Is this store actively connected to some workspace? (install entry: already linked → open the app) */
-export const hasActiveConnection = async (shop) =>
-  Boolean(await ShopifyConnection.exists({ shopDomain: shop, workspace: { $ne: null }, status: "active" }));
 
 /* write_x implies read_x, and Shopify omits the implied scope from the grant */
 export const missingScopes = (grantedScopes) => {

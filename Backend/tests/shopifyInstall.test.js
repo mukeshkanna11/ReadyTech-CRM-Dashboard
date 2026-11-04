@@ -356,7 +356,7 @@ test("link: an expired code is refused", async () => {
   });
 });
 
-test("another workspace can't claim an actively connected store; that store's install just opens ReadyTech", async () => {
+test("another workspace can't claim an actively connected store", async () => {
   await quiet(async () => {
     const first = await installAndApprove(); // installed, not linked yet
     const { code } = first;
@@ -374,10 +374,32 @@ test("another workspace can't claim an actively connected store; that store's in
     assert.equal(conns[0].accessToken, tokenA);
     assert.equal(installations.length, 0); // refused installation's tokens discarded
 
-    // Opening the app from Shopify for an already-connected store: no OAuth, just ReadyTech
-    const again = await get302(`${api}/install?${sign({ shop: SHOP, timestamp: now() })}`);
-    assert.equal(`${again.location.origin}${again.location.pathname}`, "https://crm.test/shopify/return");
-    assert.equal(again.res.headers.get("set-cookie"), null);
+  });
+});
+
+test("reinstall while the store is still marked active: OAuth runs immediately, tokens refresh in the SAME workspace, straight back to the app UI", async () => {
+  await quiet(async () => {
+    // Workspace A is connected; Shopify's async app/uninstalled hasn't arrived yet
+    const { code } = await installAndApprove();
+    assert.equal((await link(code, WS_A)).status, 200);
+    const before = { id: String(conns[0]._id), token: conns[0].accessToken };
+
+    // Reinstall / reopen from Shopify: always authenticates first
+    const i = await install();
+    assert.equal(`${i.location.origin}${i.location.pathname}`, `https://${SHOP}/admin/oauth/authorize`);
+    assert.match(i.cookie, /^shopify_install=/);
+
+    const { location } = await get302(approve(i.location, "code-2"), { cookie: i.cookie });
+    assert.equal(`${location.origin}${location.pathname}`, "https://crm.test/shopify/return");
+    assert.equal(location.searchParams.get("connected"), "1");
+    assert.equal(location.hash, ""); // no link step needed
+    assert.equal(installations.length, 0);
+
+    assert.equal(conns.length, 1);
+    assert.equal(String(conns[0]._id), before.id);
+    assert.equal(String(conns[0].workspace), String(WS_A)); // binding unchanged
+    assert.notEqual(conns[0].accessToken, before.token);
+    assert.equal(decrypt(conns[0].accessToken), "shpat_2");
   });
 });
 
