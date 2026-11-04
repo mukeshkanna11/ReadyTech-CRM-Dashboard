@@ -148,7 +148,16 @@ export const finishOAuth = async ({ completeId, workspaceId, userId }) => {
     { $set: { status: "used", code: null } },
     { returnDocument: "before" }
   ).select("+code");
-  if (!st?.code) throw httpError(410, "The connection link expired or was already used — please click Connect again.");
+  if (!st?.code) {
+    // Still waiting, but started by another admin or workspace (nothing is revealed or consumed)
+    const other = await ShopifyOAuthState.findOne(
+      { completeHash: sha256(completeId), workspace: { $ne: null }, status: "callback", expiresAt: { $gt: new Date() } },
+      "_id",
+      { lean: true }
+    );
+    if (other) throw httpError(403, "This Shopify approval was started by a different ReadyTech admin or workspace. Sign in as the admin who clicked Connect, or start again here.");
+    throw httpError(410, "The connection link expired or was already used — please click Connect again.");
+  }
   return completeConnection({ shop: st.shop, code: decrypt(st.code), workspaceId, userId });
 };
 

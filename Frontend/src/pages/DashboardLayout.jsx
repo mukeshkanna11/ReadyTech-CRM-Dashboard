@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { Cloud, AtSign } from "lucide-react";
 import ChatSupportWidget from "../components/ChatSupportWidget";
+import { peekShopifyReturn } from "../components/shopify/shopifyReturn";
 import RtsAssistantWidget from "../components/RtsAssistantWidget";
 import {
   getMyProfile,
@@ -49,6 +50,15 @@ import { Zap } from "lucide-react";
 ========================================================= */
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const navigate = useNavigate();
+
+  /* A Shopify approval that arrived while signed out: resume it after login */
+  useEffect(() => {
+    const pending = peekShopifyReturn();
+    if (pending && window.location.pathname !== "/integrations/shopify") {
+      navigate(`/integrations/shopify?${pending}`, { replace: true });
+    }
+  }, [navigate]);
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200">

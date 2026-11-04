@@ -169,6 +169,7 @@ test("callback consumes the state and hands back a one-time id — it does not c
       const first = await fetch(url, { redirect: "manual" });
       const loc = new URL(first.headers.get("location"));
       assert.equal(first.status, 302);
+      assert.equal(loc.pathname, "/shopify/return"); // public landing page that survives a login
       assert.match(loc.searchParams.get("complete"), /^[a-f0-9]{48}$/);
       assert.equal(loc.searchParams.has("connected"), false);
       assert.equal(connected, 0);
@@ -192,6 +193,7 @@ test("complete: requires a signed-in admin and is scoped to the caller's workspa
     stub(User, "findById", () => chain({ _id: WS, role: "admin", isActive: true, workspace: null }));
     let filter;
     stub(models.ShopifyOAuthState, "findOneAndUpdate", (f) => ((filter = f), { select: async () => null }));
+    stub(models.ShopifyOAuthState, "findOne", async () => null); // not pending for anyone else either
     const err = console.error;
     console.error = () => {};
     try {
@@ -204,5 +206,77 @@ test("complete: requires a signed-in admin and is scoped to the caller's workspa
     assert.equal(String(filter.workspace), String(WS));
     assert.equal(String(filter.user), String(WS));
     assert.equal(filter.status, "callback");
+  });
+});
+
+test("callback: a cancelled / declined approval returns a friendly message and stores nothing", async () => {
+  await withOAuthEnv(async () => {
+    let claims = 0;
+    stub(models.ShopifyOAuthState, "findOneAndUpdate", async () => (claims++, null));
+    const err = console.error;
+    console.error = () => {};
+    try {
+      const res = await fetch(`${base.replace("/status", "/oauth/callback")}?error=access_denied&shop=acme.myshopify.com`, { redirect: "manual" });
+      const loc = new URL(res.headers.get("location"));
+      assert.equal(loc.pathname, "/shopify/return");
+      assert.equal(loc.searchParams.get("connected"), "0");
+      assert.match(loc.searchParams.get("message"), /cancelled/);
+      assert.equal(claims, 0);
+    } finally {
+      console.error = err;
+    }
+  });
+});
+
+test("status: 'available' is false until the OAuth state secret is configured (Connect hidden)", async () => {
+  stub(User, "findById", () => chain({ _id: WS, role: "admin", isActive: true, workspace: null }));
+  stub(models.ShopifyConnection, "findOne", () => chain(null));
+  stub(models.ShopifyWebhookEvent, "aggregate", async () => []);
+  stub(models.ShopifyWebhookEvent, "find", () => chain([]));
+  stub(models.ShopifyOrderLink, "find", () => chain([]));
+  stub(models.ShopifyOrderLink, "countDocuments", async () => 0);
+  const auth = { authorization: `Bearer ${jwt.sign({ id: String(WS) }, "test-jwt")}` };
+  await withOAuthEnv(async () => {
+    assert.equal((await (await fetch(base, { headers: auth })).json()).data.available, true);
+    delete process.env.SHOPIFY_STATE_SECRET;
+    assert.equal((await (await fetch(base, { headers: auth })).json()).data.available, false);
+  });
+});
+
+test("complete: success returns only the store name and domain (never tokens)", async () => {
+  await withOAuthEnv(async () => {
+    stub(User, "findById", () => chain({ _id: WS, role: "admin", isActive: true, workspace: null }));
+    const { encrypt } = await import("../services/shopify/crypto.js");
+    stub(models.ShopifyOAuthState, "findOneAndUpdate", () => ({ select: async () => ({ shop: "acme.myshopify.com", code: encrypt("c1") }) }));
+    stub(models.ShopifyConnection, "findOne", async () => null);
+    stub(models.ShopifyConnection, "findOneAndUpdate", async (f, u) => ({ _id: "c1", shopDomain: f.shopDomain, workspace: WS, connectedBy: WS, ...u.$set }));
+    const AuditLog = (await import("../models/AuditLog.js")).default;
+    stub(AuditLog, "create", async (d) => d);
+    const origFetch = globalThis.fetch;
+    const shopify = async (url, init) => {
+      if (!String(url).includes("myshopify.com")) return origFetch(url, init);
+      if (String(url).endsWith("/admin/oauth/access_token")) {
+        return { ok: true, status: 200, json: async () => ({ access_token: "shpat_SECRET_TOKEN", refresh_token: "shprt_SECRET", scope: "read_orders" }) };
+      }
+      const { query } = JSON.parse(init.body);
+      const data = query.includes("shop {")
+        ? { shop: { id: "gid://shopify/Shop/1", name: "Acme", email: "a@acme.test", myshopifyDomain: "acme.myshopify.com", currencyCode: "INR" } }
+        : { webhookSubscriptionCreate: { webhookSubscription: { id: "w" }, userErrors: [] } };
+      return { ok: true, status: 200, json: async () => ({ data }) };
+    };
+    globalThis.fetch = shopify;
+    try {
+      const res = await origFetch(base.replace("/status", "/oauth/complete"), {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${jwt.sign({ id: String(WS) }, "test-jwt")}` },
+        body: JSON.stringify({ id: "b".repeat(48) }),
+      });
+      const text = await res.text();
+      assert.equal(res.status, 200);
+      assert.deepEqual(JSON.parse(text).data, { shopDomain: "acme.myshopify.com", shopName: "Acme" });
+      assert.doesNotMatch(text, /SECRET|shpat|shprt|accessToken|refreshToken/);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
   });
 });

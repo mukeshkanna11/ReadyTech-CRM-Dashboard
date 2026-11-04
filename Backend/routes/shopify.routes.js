@@ -16,8 +16,10 @@ import ShopifyConnection from "../models/ShopifyConnection.js";
 
 const router = express.Router();
 
+/* Public frontend landing page: keeps the result across a login, then opens
+   the workspace's Shopify page (Frontend/src/pages/Integrations/ShopifyReturn.jsx) */
 const clientRedirect = (params) =>
-  `${(process.env.CLIENT_URL || "http://localhost:5173").replace(/\/+$/, "")}/integrations/shopify?${new URLSearchParams(params)}`;
+  `${(process.env.CLIENT_URL || "http://localhost:5173").replace(/\/+$/, "")}/shopify/return?${new URLSearchParams(params)}`;
 
 const NOT_AVAILABLE = "Shopify connection isn't available yet. ReadyTech is finishing a one-time setup — please try again later or contact support.";
 
@@ -28,6 +30,7 @@ const friendlyError = (err) => {
     return "The connection link expired — please click Connect again.";
   }
   if (err.message === "NO_STATE") return "Please start the Shopify connection from ReadyTech CRM → Integrations → Shopify.";
+  if (err.message === "CANCELLED") return "The Shopify connection was cancelled. Nothing was changed — click Connect with Shopify to try again.";
   return "We couldn't finish connecting your Shopify store. Please try again.";
 };
 
@@ -37,9 +40,10 @@ router.get("/status", auth, async (req, res) => {
     const [connection, inbox, orders, inventory] = await Promise.all([
       getStatus(req.workspace), inboxSummary(req.workspace), orderSummary(req.workspace), inventorySummary(req.workspace),
     ]);
-    const available = missingConfig().length === 0;
+    // Connect / Reconnect work only when OAuth (incl. the state secret) is configured
+    const available = missingOAuthConfig().length === 0;
     // Permissions the app needs but this store's grant lacks → reconnect to approve them
-    if (connection?.connected && available) connection.missingScopes = missingScopes(connection.scopes);
+    if (connection?.connected && !missingConfig().length) connection.missingScopes = missingScopes(connection.scopes);
     res.json({ success: true, data: { available, connection, inbox, orders, inventory } });
   } catch (error) {
     console.error("Shopify status error:", error.message);
@@ -73,6 +77,7 @@ router.get("/oauth/callback", async (req, res) => {
   const shop = normalizeShop(params.get("shop"));
   try {
     if (missingOAuthConfig().length) throw new Error("Shopify is not configured");
+    if (!params.get("code") && params.get("error")) throw new Error("CANCELLED"); // declined / cancelled in Shopify
     if (!shop || !params.get("code") || !verifyCallbackHmac(params)) throw new Error("Invalid Shopify callback");
     if (!params.get("state")) throw new Error("NO_STATE");
 
@@ -95,7 +100,7 @@ router.get("/oauth/callback", async (req, res) => {
 router.post("/oauth/complete", auth, role("admin"), async (req, res) => {
   try {
     const conn = await finishOAuth({ completeId: req.body?.id, workspaceId: req.workspace, userId: req.user._id });
-    res.json({ success: true, message: "Shopify store connected", data: { shopDomain: conn.shopDomain } });
+    res.json({ success: true, message: "Shopify store connected", data: { shopDomain: conn.shopDomain, shopName: conn.shop?.name || null } });
   } catch (err) {
     console.error("Shopify OAuth completion failed:", err.message);
     res.status(err.status || 400).json({ success: false, message: friendlyError(err).slice(0, 200) });

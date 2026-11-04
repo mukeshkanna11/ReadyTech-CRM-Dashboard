@@ -7,6 +7,7 @@ import { Badge, Button, Card, Notice, SkeletonCard } from "../../components/shop
 import { ago, errorText, fmt } from "../../components/shopify/format";
 import WebhookEventsCard from "../../components/shopify/WebhookEventsCard";
 import InventoryCard from "../../components/shopify/InventoryCard";
+import { clearShopifyReturn, normalizeShopInput } from "../../components/shopify/shopifyReturn";
 
 /* =========================================================
    SHOPIFY INTEGRATION — this workspace's own Shopify store
@@ -14,6 +15,7 @@ import InventoryCard from "../../components/shopify/InventoryCard";
    independently. Every number here comes from the API.
 ========================================================= */
 const REFRESH_MS = 60_000;
+const SHOP_HINT = "Enter your store's myshopify.com address (Shopify admin → Settings → Domains), e.g. your-store.myshopify.com";
 
 const isAdmin = () => {
   try {
@@ -121,10 +123,17 @@ export default function ShopifyIntegration() {
       // (run's synchronous guard also absorbs StrictMode's double effect)
       run("connect", async () => {
         try {
-          const res = await API.post("/shopify/oauth/complete", { id: complete });
-          const connectedShop = res.data?.data?.shopDomain || launchShop;
+          const res = await API.post("/shopify/oauth/complete", { id: complete }, { silent: true });
+          clearShopifyReturn();
+          const { shopName, shopDomain } = res.data?.data || {};
+          const label = shopName && shopDomain ? `${shopName} (${shopDomain})` : shopDomain || launchShop || "Your store";
           toast.success("Shopify store connected");
-          setBanner({ type: "success", text: `${connectedShop || "Your store"} is connected to this workspace.` });
+          setBanner({ type: "success", text: `${label} is connected to this workspace.` });
+        } catch (err) {
+          // 401: the session expired — the API client sends the user to login and
+          // the kept return resumes this step afterwards. Anything else is final.
+          if (err.response?.status !== 401) clearShopifyReturn();
+          throw err;
         } finally {
           load();
         }
@@ -135,15 +144,30 @@ export default function ShopifyIntegration() {
     } else if (connected === "0") {
       setBanner({ type: "error", text: searchParams.get("message") || "We couldn't connect your Shopify store. Please try again." });
     } else {
-      setShop(launchShop);
+      setShop(launchShop); // opened from Shopify admin: prefill, the admin still clicks Connect
     }
+    if (!complete) clearShopifyReturn();
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams, run, load]);
 
-  /* Shopify OAuth for a store address; the platform app credentials stay on the server */
+  /* Back from Shopify without approving (back button restores this page from cache) */
+  useEffect(() => {
+    const onShow = (e) => {
+      if (!e.persisted) return;
+      busyRef.current = null;
+      setBusy(null);
+    };
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+  }, []);
+
+  /* Shopify OAuth for a store address; the platform app credentials stay on the server.
+     The server validates again and binds the attempt to this admin + workspace. */
   const startOAuth = (key, shopDomain) =>
     run(key, async () => {
-      const res = await API.get("/shopify/oauth/url", { params: { shop: shopDomain } });
+      const normalized = normalizeShopInput(shopDomain);
+      if (!normalized) throw Object.assign(new Error("Invalid shop"), { userMessage: SHOP_HINT });
+      const res = await API.get("/shopify/oauth/url", { params: { shop: normalized }, silent: true });
       window.location.href = res.data.data.url;
     });
 
@@ -379,7 +403,7 @@ export default function ShopifyIntegration() {
                 className="flex-1 px-4 py-2.5 text-sm border rounded-xl border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
               <Button type="submit" variant="primary" loading={busy === "connect"} disabled={!!busy || !shop.trim()}>
-                Connect with Shopify
+                {busy === "connect" ? "Opening Shopify…" : "Connect with Shopify"}
               </Button>
             </form>
           </Card>

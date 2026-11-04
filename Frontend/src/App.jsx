@@ -76,6 +76,7 @@ const WhatsAppIntegration = lazy(() => import("./pages/Integrations/WhatsAppInte
 const InstagramInbox = lazy(() => import("./pages/Integrations/InstagramInbox"));
 const EmailIntegration = lazy(() => import("./pages/Integrations/EmailIntegration"));
 const ShopifyIntegration = lazy(() => import("./pages/Integrations/ShopifyIntegration"));
+const ShopifyReturn = lazy(() => import("./pages/Integrations/ShopifyReturn"));
 
 /* Public Legal Pages (no authentication required) */
 const PrivacyPolicy = lazy(() =>
@@ -117,6 +118,9 @@ export default function App() {
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfService />} />
           <Route path="/data-deletion" element={<DataDeletion />} />
+
+          {/* Shopify redirects land here (public); finishing still needs the admin's login */}
+          <Route path="/shopify/return" element={<ShopifyReturn />} />
 
           {/* ================= PROTECTED AREA ================= */}
           <Route

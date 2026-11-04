@@ -195,12 +195,17 @@ test("finishOAuth: only the initiating admin in the same workspace can redeem, o
   const id = "a".repeat(48);
   const st = { completeHash: sha(id), workspace: WS_A, user: "u1", shop: SHOP, code: encrypt("auth-code") };
 
-  // Another workspace's admin, or another admin of the same workspace → refused, nothing connected
+  // Another workspace's admin, or another admin of the same workspace → refused (403), nothing connected
   let tokenCalls = 0;
   globalThis.fetch = async () => (tokenCalls++, json(500, {}));
   finishStub(st);
+  let pending = true;
+  stub(ShopifyOAuthState, "findOne", async (f) => (pending && f.completeHash === st.completeHash && f.status === "callback" ? { _id: "st" } : null));
+  await assert.rejects(svc.finishOAuth({ completeId: id, workspaceId: WS_B, userId: "u1" }), (e) => e.status === 403 && /different ReadyTech admin/.test(e.message));
+  await assert.rejects(svc.finishOAuth({ completeId: id, workspaceId: WS_A, userId: "u2" }), (e) => e.status === 403);
+  // Expired / already used / unknown → 410
+  pending = false;
   await assert.rejects(svc.finishOAuth({ completeId: id, workspaceId: WS_B, userId: "u1" }), (e) => e.status === 410);
-  await assert.rejects(svc.finishOAuth({ completeId: id, workspaceId: WS_A, userId: "u2" }), (e) => e.status === 410);
   await assert.rejects(svc.finishOAuth({ completeId: "not-an-id", workspaceId: WS_A, userId: "u1" }), (e) => e.status === 422);
   assert.equal(tokenCalls, 0);
 
