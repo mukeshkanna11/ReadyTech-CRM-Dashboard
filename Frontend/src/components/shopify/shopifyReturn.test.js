@@ -1,7 +1,7 @@
 // Shopify return kept across a login. Run: node --test src/components/shopify/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeShopInput, pickReturnParams, saveShopifyReturn, peekShopifyReturn, clearShopifyReturn, RETURN_TTL_MS } from "./shopifyReturn.js";
+import { normalizeShopInput, pickReturnParams, saveShopifyReturn, peekShopifyReturn, clearShopifyReturn, RETURN_TTL_MS, markConnectIntent, takeConnectIntent, INTENT_TTL_MS } from "./shopifyReturn.js";
 
 const memory = () => {
   const m = new Map();
@@ -39,4 +39,16 @@ test("kept for 5 minutes in this tab, then discarded", () => {
   assert.equal(peekShopifyReturn(store, 1000), "");
   saveShopifyReturn("", store, 1000); // nothing to keep
   assert.equal(store.getItem("shopifyReturn"), null);
+});
+
+test("connect intent: only a fresh click here auto-continues, and only once", () => {
+  const store = memory();
+  assert.equal(takeConnectIntent(store, 1000), false); // opened from Shopify admin: no intent
+  markConnectIntent(store, 1000);
+  assert.equal(takeConnectIntent(store, 1000 + INTENT_TTL_MS - 1), true);
+  assert.equal(takeConnectIntent(store, 1000 + 1), false); // single use
+  markConnectIntent(store, 1000);
+  assert.equal(takeConnectIntent(store, 1000 + INTENT_TTL_MS), false); // expired
+  store.setItem("shopifyConnectIntent", "junk");
+  assert.equal(takeConnectIntent(store, 1000), false);
 });

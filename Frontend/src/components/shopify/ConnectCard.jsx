@@ -3,10 +3,16 @@ import { CheckCircle2, ExternalLink, Lock, ShieldCheck, ShoppingBag } from "luci
 import { Button } from "./ui";
 import { validateShopInput } from "./storeInput";
 
+const RETURN_STEP = ["Return here automatically", "Shopify brings you back to this workspace. New orders and product changes then sync automatically; choose a warehouse to also sync stock."];
 const STEPS = [
+  ["Click Connect Shopify", "You'll go to Shopify's own secure page."],
+  ["Sign in and pick your store", "Log in to Shopify, choose the store (if you have several) and approve ReadyTech's access."],
+  RETURN_STEP,
+];
+const MANUAL_STEPS = [
   ["Find your store address", "In Shopify admin open Settings → Domains. Copy the address ending in .myshopify.com — or simply paste the URL of your Shopify admin."],
   ["Approve access in Shopify", "You'll be sent to Shopify to review exactly what ReadyTech can access, then approve with your Shopify login."],
-  ["Return here automatically", "Shopify brings you back to this workspace. New orders and product changes then sync automatically; choose a warehouse to also sync stock."],
+  RETURN_STEP,
 ];
 
 const ACCESS = [
@@ -16,9 +22,12 @@ const ACCESS = [
   "Locations and fulfilments, to keep stock and deliveries in step",
 ];
 
-/* Shopify-branded connect form: validates as you type, sends only the canonical
-   myshopify.com domain to the authenticated backend (which validates again). */
-export default function ConnectCard({ shop, setShop, onConnect, busy, reconnecting }) {
+/* Shopify-branded connect card.
+   - installUrl set: one "Connect Shopify" button → Shopify's install page (sign in,
+     pick the store, approve). The store comes back as ?shop=… and OAuth continues.
+   - pendingShop: Shopify returned a store without a fresh click here → confirm it.
+   - otherwise (install link not configured): the store address form (fallback). */
+export default function ConnectCard({ shop, setShop, onConnect, onInstall, installUrl, pendingShop, onCancelPending, busy, reconnecting }) {
   const [touched, setTouched] = useState(false);
   const { shop: domain, error } = validateShopInput(shop);
   const showError = touched && error;
@@ -44,7 +53,27 @@ export default function ConnectCard({ shop, setShop, onConnect, busy, reconnecti
             </div>
           </div>
 
-          <form onSubmit={submit} noValidate className="space-y-2">
+          {pendingShop ? (
+            <div className="p-4 space-y-3 border rounded-xl border-emerald-200 bg-emerald-50/60">
+              <p className="text-sm text-slate-700">
+                Shopify returned the store <strong className="break-all">{pendingShop}</strong>. Connect it to this ReadyTech workspace?
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button variant="shopify" icon={ExternalLink} loading={busy === "connect"} disabled={!!busy} onClick={() => onConnect(pendingShop)}>
+                  {busy === "connect" ? "Connecting…" : "Connect this store"}
+                </Button>
+                <Button disabled={!!busy} onClick={onCancelPending}>Not now</Button>
+              </div>
+            </div>
+          ) : installUrl ? (
+            <div className="space-y-2">
+              <Button variant="shopify" icon={ExternalLink} loading={busy === "install"} disabled={!!busy} onClick={onInstall} className="w-full py-3 text-base sm:w-auto">
+                {busy === "install" ? "Opening Shopify…" : "Connect Shopify"}
+              </Button>
+              <p className="text-xs text-slate-500">No store address needed — you'll sign in to Shopify and choose your store there.</p>
+            </div>
+          ) : (
+                      <form onSubmit={submit} noValidate className="space-y-2">
             <label htmlFor="shopify-store" className="text-sm font-medium text-slate-700">Shopify store address</label>
             <div className="flex flex-col gap-3 sm:flex-row">
               <input
@@ -71,9 +100,10 @@ export default function ConnectCard({ shop, setShop, onConnect, busy, reconnecti
                   : "Example: your-store.myshopify.com, or https://admin.shopify.com/store/your-store"}
             </p>
           </form>
+          )}
 
           <ol className="grid gap-3 md:grid-cols-3">
-            {STEPS.map(([title, text], i) => (
+            {(installUrl || pendingShop ? STEPS : MANUAL_STEPS).map(([title, text], i) => (
               <li key={title} className="p-3 rounded-xl bg-slate-50">
                 <span className="grid w-6 h-6 text-xs font-bold text-white rounded-full place-items-center bg-[#5E8E3E]">{i + 1}</span>
                 <p className="mt-2 text-sm font-semibold text-slate-800">{title}</p>

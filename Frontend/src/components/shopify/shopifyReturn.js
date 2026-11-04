@@ -48,3 +48,18 @@ export const peekShopifyReturn = (store = storage(), now = Date.now()) => {
 };
 
 export const clearShopifyReturn = (store = storage()) => store?.removeItem(KEY);
+
+/* "Connect Shopify" intent: set when this admin clicks Connect here, so the
+   Shopify install link's return (?shop=…) may start OAuth automatically.
+   Without a fresh intent (e.g. the app was opened from Shopify admin) the page
+   asks the admin to confirm instead. Single use; same 10 minutes as the OAuth state. */
+const INTENT_KEY = "shopifyConnectIntent";
+export const INTENT_TTL_MS = 10 * 60_000;
+
+export const markConnectIntent = (store = storage(), now = Date.now()) => store?.setItem(INTENT_KEY, String(now));
+
+export const takeConnectIntent = (store = storage(), now = Date.now()) => {
+  const at = Number(store?.getItem(INTENT_KEY));
+  store?.removeItem(INTENT_KEY);
+  return Number.isFinite(at) && at > 0 && now - at >= 0 && now - at < INTENT_TTL_MS;
+};

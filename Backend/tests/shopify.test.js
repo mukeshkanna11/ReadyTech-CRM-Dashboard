@@ -513,3 +513,23 @@ test("merchant uninstall after a ReadyTech disconnect is still recorded", async 
   assert.equal(update.$set.accessToken, null);
   assert.equal(audits.length, 1);
 });
+
+/* ---------------- one-button connect: Shopify install link ---------------- */
+test("installUrl accepts only https Shopify-hosted install links (no open redirect)", () => {
+  const saved = process.env.SHOPIFY_INSTALL_URL;
+  try {
+    delete process.env.SHOPIFY_INSTALL_URL;
+    assert.equal(svc.installUrl(), null);
+    process.env.SHOPIFY_INSTALL_URL = "https://admin.shopify.com/oauth/install?client_id=client-id";
+    assert.equal(svc.installUrl(), "https://admin.shopify.com/oauth/install?client_id=client-id");
+    process.env.SHOPIFY_INSTALL_URL = "https://apps.shopify.com/readytech";
+    assert.equal(svc.installUrl(), "https://apps.shopify.com/readytech");
+    for (const bad of ["http://admin.shopify.com/oauth/install", "https://evil.com/?admin.shopify.com", "https://admin.shopify.com.evil.com/x", "javascript:alert(1)", "not a url"]) {
+      process.env.SHOPIFY_INSTALL_URL = bad;
+      assert.equal(svc.installUrl(), null, bad);
+    }
+  } finally {
+    if (saved === undefined) delete process.env.SHOPIFY_INSTALL_URL;
+    else process.env.SHOPIFY_INSTALL_URL = saved;
+  }
+});

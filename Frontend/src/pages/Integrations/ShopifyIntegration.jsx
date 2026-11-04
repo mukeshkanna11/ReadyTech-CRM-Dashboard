@@ -7,7 +7,7 @@ import { Badge, Button, Card, ConfirmDialog, Notice, SkeletonCard } from "../../
 import { ago, errorText } from "../../components/shopify/format";
 import WebhookEventsCard from "../../components/shopify/WebhookEventsCard";
 import InventoryCard from "../../components/shopify/InventoryCard";
-import { clearShopifyReturn } from "../../components/shopify/shopifyReturn";
+import { clearShopifyReturn, markConnectIntent, takeConnectIntent } from "../../components/shopify/shopifyReturn";
 import { normalizeShopInput } from "../../components/shopify/storeInput";
 import ConnectCard from "../../components/shopify/ConnectCard";
 import StoreOverview from "../../components/shopify/StoreOverview";
@@ -47,6 +47,7 @@ export default function ShopifyIntegration() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [pendingShop, setPendingShop] = useState(null); // store returned by Shopify, awaiting confirmation
   const admin = isAdmin();
 
   /* silent = background refresh: keep the current view, no skeleton */
@@ -99,7 +100,25 @@ export default function ShopifyIntegration() {
     }
   }, []);
 
-  /* Result of the OAuth redirect, or a launch from Shopify admin (?shop=) */
+  /* Shopify OAuth for a store; the platform app credentials stay on the server.
+     The server validates again and binds the attempt to this admin + workspace. */
+  const startOAuth = useCallback((key, shopDomain) =>
+    run(key, async () => {
+      const normalized = normalizeShopInput(shopDomain);
+      if (!normalized) throw Object.assign(new Error("Invalid shop"), { userMessage: SHOP_HINT });
+      const res = await API.get("/shopify/oauth/url", { params: { shop: normalized }, silent: true });
+      window.location.href = res.data.data.url;
+    }), [run]);
+
+  /* One-button connect: Shopify's install page signs the merchant in and lets them
+     pick the store; it returns here with ?shop=… (via /shopify/return) */
+  const install = () =>
+    run("install", async () => {
+      markConnectIntent();
+      window.location.href = data.installUrl;
+    });
+
+  /* Result of the OAuth redirect, or a store returned by Shopify (?shop=) */
   useEffect(() => {
     const connected = searchParams.get("connected");
     const complete = searchParams.get("complete");
@@ -131,11 +150,18 @@ export default function ShopifyIntegration() {
     } else if (connected === "0") {
       setBanner({ type: "error", text: searchParams.get("message") || "We couldn't connect your Shopify store. Please try again." });
     } else {
-      setShop(launchShop); // opened from Shopify admin: prefill, the admin still clicks Connect
+      const shopDomain = normalizeShopInput(launchShop);
+      if (shopDomain) {
+        setShop(shopDomain);
+        setPendingShop(shopDomain); // shown for confirmation (and for retry if starting fails)
+        // This admin clicked Connect Shopify here moments ago → continue straight to Shopify approval.
+        // Otherwise (e.g. opened from Shopify admin) wait for an explicit confirmation.
+        if (takeConnectIntent()) startOAuth("connect", shopDomain);
+      }
     }
     if (!complete) clearShopifyReturn();
     setSearchParams({}, { replace: true });
-  }, [searchParams, setSearchParams, run, load]);
+  }, [searchParams, setSearchParams, run, load, startOAuth]);
 
   /* Back from Shopify without approving (back button restores this page from cache) */
   useEffect(() => {
@@ -148,15 +174,6 @@ export default function ShopifyIntegration() {
     return () => window.removeEventListener("pageshow", onShow);
   }, []);
 
-  /* Shopify OAuth for a store address; the platform app credentials stay on the server.
-     The server validates again and binds the attempt to this admin + workspace. */
-  const startOAuth = (key, shopDomain) =>
-    run(key, async () => {
-      const normalized = normalizeShopInput(shopDomain);
-      if (!normalized) throw Object.assign(new Error("Invalid shop"), { userMessage: SHOP_HINT });
-      const res = await API.get("/shopify/oauth/url", { params: { shop: normalized }, silent: true });
-      window.location.href = res.data.data.url;
-    });
 
 
   const conn = data?.connection;
@@ -210,6 +227,9 @@ export default function ShopifyIntegration() {
         </Notice>
       )}
 
+      {busy === "connect" && (
+        <Notice type="info" title="Connecting to Shopify…">Taking you to Shopify to approve ReadyTech's access{pendingShop ? ` for ${pendingShop}` : ""}.</Notice>
+      )}
       {busy === "complete" && (
         <Notice type="info" title="Finishing your Shopify connection…">Shopify approved access. Linking the store to this workspace — this takes a few seconds.</Notice>
       )}
@@ -239,7 +259,17 @@ export default function ShopifyIntegration() {
 
       {state === "ready" && admin && !active && (
         data?.available ? (
-          <ConnectCard shop={shop} setShop={setShop} busy={busy} reconnecting={Boolean(conn)} onConnect={(domain) => startOAuth("connect", domain)} />
+          <ConnectCard
+            shop={shop}
+            setShop={setShop}
+            busy={busy}
+            reconnecting={Boolean(conn)}
+            installUrl={data.installUrl}
+            pendingShop={pendingShop}
+            onCancelPending={() => setPendingShop(null)}
+            onInstall={install}
+            onConnect={(domain) => startOAuth("connect", domain)}
+          />
         ) : (
           <Notice type="info" title="Shopify connection is almost ready">
             ReadyTech is finishing a one-time Shopify setup for the platform. You don't need any Shopify API keys — please try again later or contact ReadyTech support.

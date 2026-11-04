@@ -86,6 +86,20 @@ const stateSecret = () => {
    while it is being configured. */
 export const missingOAuthConfig = () => [...missingConfig(), ...(stateSecret() ? [] : ["SHOPIFY_STATE_SECRET"])];
 
+/* Shopify-hosted install link (Dev Dashboard → Distribution). Shopify signs the
+   merchant in, lets them pick a store, then opens the App URL with ?shop=… —
+   from there the normal authenticated OAuth below runs. Only Shopify hosts are
+   accepted, so a misconfiguration can't turn Connect into an open redirect. */
+const INSTALL_HOSTS = new Set(["admin.shopify.com", "apps.shopify.com"]);
+export const installUrl = () => {
+  try {
+    const u = new URL(env("SHOPIFY_INSTALL_URL"));
+    return u.protocol === "https:" && INSTALL_HOSTS.has(u.hostname) ? u.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
 const sha256 = (v) => crypto.createHash("sha256").update(String(v)).digest("hex");
 
 export const buildAuthUrl = ({ shop, userId, workspaceId, nonce }) => {

@@ -4,7 +4,7 @@ import auth from "../middlewares/auth.js";
 import role from "../middlewares/role.js";
 import User from "../models/User.js";
 import {
-  missingConfig, missingOAuthConfig, normalizeShop, startOAuth, verifyState, verifyCallbackHmac,
+  missingConfig, missingOAuthConfig, installUrl, normalizeShop, startOAuth, verifyState, verifyCallbackHmac,
   verifyWebhookHmac, claimCallback, finishOAuth, getStatus, disconnect, handleWebhook, refreshWebhooks, missingScopes,
 } from "../services/shopify/shopify.service.js";
 import { inboxSummary, retryDeadEvent, listEvents } from "../services/shopify/inbox.service.js";
@@ -44,7 +44,7 @@ router.get("/status", auth, async (req, res) => {
     const available = missingOAuthConfig().length === 0;
     // Permissions the app needs but this store's grant lacks → reconnect to approve them
     if (connection?.connected && !missingConfig().length) connection.missingScopes = missingScopes(connection.scopes);
-    res.json({ success: true, data: { available, connection, inbox, orders, inventory } });
+    res.json({ success: true, data: { available, installUrl: available ? installUrl() : null, connection, inbox, orders, inventory } });
   } catch (error) {
     console.error("Shopify status error:", error.message);
     res.status(500).json({ success: false, message: "Failed to load Shopify integration status" });

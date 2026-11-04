@@ -238,8 +238,17 @@ test("status: 'available' is false until the OAuth state secret is configured (C
   const auth = { authorization: `Bearer ${jwt.sign({ id: String(WS) }, "test-jwt")}` };
   await withOAuthEnv(async () => {
     assert.equal((await (await fetch(base, { headers: auth })).json()).data.available, true);
+    // Install link: exposed when configured (Shopify host only), null otherwise
+    assert.equal((await (await fetch(base, { headers: auth })).json()).data.installUrl, null);
+    process.env.SHOPIFY_INSTALL_URL = "https://admin.shopify.com/oauth/install?client_id=public-client-id";
+    try {
+      assert.equal((await (await fetch(base, { headers: auth })).json()).data.installUrl, process.env.SHOPIFY_INSTALL_URL);
+    } finally {
+      delete process.env.SHOPIFY_INSTALL_URL;
+    }
     delete process.env.SHOPIFY_STATE_SECRET;
-    assert.equal((await (await fetch(base, { headers: auth })).json()).data.available, false);
+    const off = (await (await fetch(base, { headers: auth })).json()).data;
+    assert.deepEqual([off.available, off.installUrl], [false, null]);
   });
 });
 
