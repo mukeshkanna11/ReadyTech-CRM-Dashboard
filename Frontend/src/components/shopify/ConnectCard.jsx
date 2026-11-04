@@ -22,11 +22,13 @@ const ACCESS = [
   "Locations and fulfilments, to keep stock and deliveries in step",
 ];
 
-/* Shopify-branded connect card.
-   - installUrl set: one "Connect Shopify" button → Shopify's install page (sign in,
-     pick the store, approve). The store comes back as ?shop=… and OAuth continues.
-   - pendingShop: Shopify returned a store without a fresh click here → confirm it.
-   - otherwise (install link not configured): the store address form (fallback). */
+/* Shopify-branded connect card (authorization-code OAuth started from ReadyTech).
+   - The store address form: Connect is enabled only for a valid myshopify.com
+     store; the authenticated backend validates again and binds the attempt to
+     this admin + workspace.
+   - installUrl set: an optional "Sign in with Shopify" link (Shopify's install
+     page; the store comes back as ?shop=… and the same OAuth continues).
+   - pendingShop: Shopify returned a store without a fresh click here → confirm it. */
 export default function ConnectCard({ shop, setShop, onConnect, onInstall, installUrl, pendingShop, onCancelPending, busy, reconnecting }) {
   const [touched, setTouched] = useState(false);
   const { shop: domain, error } = validateShopInput(shop);
@@ -65,15 +67,9 @@ export default function ConnectCard({ shop, setShop, onConnect, onInstall, insta
                 <Button disabled={!!busy} onClick={onCancelPending}>Not now</Button>
               </div>
             </div>
-          ) : installUrl ? (
-            <div className="space-y-2">
-              <Button variant="shopify" icon={ExternalLink} loading={busy === "install"} disabled={!!busy} onClick={onInstall} className="w-full py-3 text-base sm:w-auto">
-                {busy === "install" ? "Opening Shopify…" : "Connect Shopify"}
-              </Button>
-              <p className="text-xs text-slate-500">No store address needed — you'll sign in to Shopify and choose your store there.</p>
-            </div>
           ) : (
-                      <form onSubmit={submit} noValidate className="space-y-2">
+            <div className="space-y-3">
+            <form onSubmit={submit} noValidate className="space-y-2">
             <label htmlFor="shopify-store" className="text-sm font-medium text-slate-700">Shopify store address</label>
             <div className="flex flex-col gap-3 sm:flex-row">
               <input
@@ -88,7 +84,7 @@ export default function ConnectCard({ shop, setShop, onConnect, onInstall, insta
                 aria-describedby="shopify-store-help"
                 className={`flex-1 px-4 py-2.5 text-sm border rounded-xl focus:outline-none focus:ring-2 ${showError ? "border-red-300 focus:ring-red-400" : "border-slate-300 focus:ring-emerald-500"}`}
               />
-              <Button type="submit" variant="shopify" icon={ExternalLink} loading={busy === "connect"} disabled={!!busy || !shop.trim()}>
+              <Button type="submit" variant="shopify" icon={ExternalLink} loading={busy === "connect"} disabled={!!busy || !domain}>
                 {busy === "connect" ? "Opening Shopify…" : "Connect Shopify"}
               </Button>
             </div>
@@ -100,10 +96,19 @@ export default function ConnectCard({ shop, setShop, onConnect, onInstall, insta
                   : "Example: your-store.myshopify.com, or https://admin.shopify.com/store/your-store"}
             </p>
           </form>
+            {installUrl && (
+              <p className="text-xs text-slate-500">
+                Don't know your store address?{" "}
+                <button type="button" onClick={onInstall} disabled={!!busy} className="font-semibold underline text-[#4A7330] disabled:opacity-50">
+                  {busy === "install" ? "Opening Shopify…" : "Sign in with Shopify and choose your store"}
+                </button>
+              </p>
+            )}
+            </div>
           )}
 
           <ol className="grid gap-3 md:grid-cols-3">
-            {(installUrl || pendingShop ? STEPS : MANUAL_STEPS).map(([title, text], i) => (
+            {(pendingShop ? STEPS : MANUAL_STEPS).map(([title, text], i) => (
               <li key={title} className="p-3 rounded-xl bg-slate-50">
                 <span className="grid w-6 h-6 text-xs font-bold text-white rounded-full place-items-center bg-[#5E8E3E]">{i + 1}</span>
                 <p className="mt-2 text-sm font-semibold text-slate-800">{title}</p>

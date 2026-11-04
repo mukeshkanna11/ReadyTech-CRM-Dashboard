@@ -94,7 +94,11 @@ const INSTALL_HOSTS = new Set(["admin.shopify.com", "apps.shopify.com"]);
 export const installUrl = () => {
   try {
     const u = new URL(env("SHOPIFY_INSTALL_URL"));
-    return u.protocol === "https:" && INSTALL_HOSTS.has(u.hostname) ? u.toString() : null;
+    if (u.protocol !== "https:" || !INSTALL_HOSTS.has(u.hostname)) return null;
+    // A client_id that isn't this app's (e.g. a copied placeholder) would send merchants to a broken install
+    const clientId = u.searchParams.get("client_id");
+    if (clientId !== null && clientId !== env("SHOPIFY_API_KEY")) return null;
+    return u.toString();
   } catch {
     return null;
   }
