@@ -48,6 +48,7 @@ export default function ShopifyIntegration() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [pendingShop, setPendingShop] = useState(null); // store returned by Shopify, awaiting confirmation
+  const [pendingInstall, setPendingInstall] = useState(null); // { code, shop }: installed from Shopify, awaiting link
   const admin = isAdmin();
 
   /* silent = background refresh: keep the current view, no skeleton */
@@ -123,8 +124,12 @@ export default function ShopifyIntegration() {
     const connected = searchParams.get("connected");
     const complete = searchParams.get("complete");
     const launchShop = searchParams.get("shop");
-    if (!connected && !complete && !launchShop) return;
-    if (complete) {
+    const installed = searchParams.get("installed");
+    if (!connected && !complete && !launchShop && !installed) return;
+    if (installed) {
+      // Installed from Shopify: link only after this admin explicitly confirms
+      setPendingInstall({ code: installed, shop: normalizeShopInput(launchShop) });
+    } else if (complete) {
       // Shopify approved: this signed-in admin finishes the connection
       // (run's synchronous guard also absorbs StrictMode's double effect)
       run("complete", async () => {
@@ -159,9 +164,31 @@ export default function ShopifyIntegration() {
         if (takeConnectIntent()) startOAuth("connect", shopDomain);
       }
     }
-    if (!complete) clearShopifyReturn();
+    if (!complete && !installed) clearShopifyReturn();
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams, run, load, startOAuth]);
+
+  /* Link the Shopify-installed store to THIS workspace (explicit confirmation) */
+  const linkInstall = () =>
+    run("link", async () => {
+      try {
+        const res = await API.post("/shopify/oauth/link", { code: pendingInstall.code }, { silent: true });
+        clearShopifyReturn();
+        setPendingInstall(null);
+        const { shopName, shopDomain } = res.data?.data || {};
+        toast.success("Shopify store connected");
+        setBanner({ type: "success", text: `${shopName && shopDomain ? `${shopName} (${shopDomain})` : shopDomain || "Your store"} is connected to this workspace.` });
+      } catch (err) {
+        // 401: session expired — login, then the kept return resumes this step. Otherwise final.
+        if (err.response?.status !== 401) {
+          clearShopifyReturn();
+          setPendingInstall(null);
+        }
+        throw err;
+      } finally {
+        load();
+      }
+    });
 
   /* Back from Shopify without approving (back button restores this page from cache) */
   useEffect(() => {
@@ -227,6 +254,24 @@ export default function ShopifyIntegration() {
         </Notice>
       )}
 
+      {pendingInstall && (
+        <Notice
+          type="info"
+          title="ReadyTech was installed on your Shopify store"
+          action={
+            admin && (
+              <div className="flex flex-col gap-2 sm:flex-row shrink-0">
+                <Button variant="shopify" loading={busy === "link"} disabled={!!busy} onClick={linkInstall}>Link to this workspace</Button>
+                <Button disabled={!!busy} onClick={() => (clearShopifyReturn(), setPendingInstall(null))}>Not now</Button>
+              </div>
+            )
+          }
+        >
+          {admin
+            ? <>Link <strong className="break-all">{pendingInstall.shop || "the store"}</strong> to this ReadyTech workspace to start syncing. This link is valid for 10 minutes.</>
+            : "Only a workspace admin can link the store. Ask an admin to open the app from Shopify again."}
+        </Notice>
+      )}
       {busy === "connect" && (
         <Notice type="info" title="Connecting to Shopify…">Taking you to Shopify to approve ReadyTech's access{pendingShop ? ` for ${pendingShop}` : ""}.</Notice>
       )}

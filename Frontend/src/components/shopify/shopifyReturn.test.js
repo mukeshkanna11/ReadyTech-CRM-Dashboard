@@ -52,3 +52,12 @@ test("connect intent: only a fresh click here auto-continues, and only once", ()
   store.setItem("shopifyConnectIntent", "junk");
   assert.equal(takeConnectIntent(store, 1000), false);
 });
+
+test("install link code: kept only when well-formed (it arrives in the URL fragment)", () => {
+  const code = "b".repeat(48);
+  assert.equal(pickReturnParams(`?shop=acme.myshopify.com&installed=${code}`), `installed=${code}&shop=acme.myshopify.com`);
+  assert.equal(pickReturnParams("?installed=not-a-code"), "");
+  const store = memory();
+  saveShopifyReturn(`installed=${code}`, store, 1000);
+  assert.equal(peekShopifyReturn(store, 1000 + 60_000), `installed=${code}`); // survives a login
+});

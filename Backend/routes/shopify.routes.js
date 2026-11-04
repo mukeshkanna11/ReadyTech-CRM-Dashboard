@@ -5,7 +5,8 @@ import role from "../middlewares/role.js";
 import User from "../models/User.js";
 import {
   missingConfig, missingOAuthConfig, installUrl, normalizeShop, startOAuth, verifyState, verifyCallbackHmac,
-  verifyWebhookHmac, claimCallback, finishOAuth, getStatus, disconnect, handleWebhook, refreshWebhooks, missingScopes,
+  verifyWebhookHmac, claimCallback, finishOAuth,
+  INSTALL_COOKIE, freshTimestamp, isInstallState, startInstall, completeInstall, linkInstallation, hasActiveConnection, getStatus, disconnect, handleWebhook, refreshWebhooks, missingScopes,
 } from "../services/shopify/shopify.service.js";
 import { inboxSummary, retryDeadEvent, listEvents } from "../services/shopify/inbox.service.js";
 import { orderSummary } from "../services/shopify/orderSync.service.js";
@@ -30,6 +31,7 @@ const friendlyError = (err) => {
     return "The connection link expired — please click Connect again.";
   }
   if (err.message === "NO_STATE") return "Please start the Shopify connection from ReadyTech CRM → Integrations → Shopify.";
+  if (err.message === "INSTALL_BROWSER") return "Please finish installing in the same browser window you started in — open the app from Shopify again.";
   if (err.message === "CANCELLED") return "The Shopify connection was cancelled. Nothing was changed — click Connect with Shopify to try again.";
   return "We couldn't finish connecting your Shopify store. Please try again.";
 };
@@ -68,6 +70,39 @@ router.get("/oauth/url", auth, role("admin"), async (req, res) => {
   }
 });
 
+/* ---------------- Shopify-started install (App URL) ---------------- */
+/* Install cookie: set and read only on Shopify's top-level redirects to this API
+   (SameSite=Lax is sent on those), never readable by scripts */
+const installCookie = { httpOnly: true, secure: true, sameSite: "lax", path: "/api/shopify", maxAge: 10 * 60_000 };
+const readCookie = (req, name) => {
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return null;
+};
+
+/* Public, signed by Shopify (hmac over the query, fresh timestamp). Starts OAuth
+   immediately — no ReadyTech login first — with a single-use install state bound
+   to this browser. A store already connected to a workspace just opens ReadyTech. */
+router.get("/install", async (req, res) => {
+  const params = new URL(req.originalUrl, "http://localhost").searchParams;
+  const shop = normalizeShop(params.get("shop"));
+  try {
+    if (missingOAuthConfig().length) throw Object.assign(new Error(NOT_AVAILABLE), { status: 503 });
+    if (!shop || !verifyCallbackHmac(params) || !freshTimestamp(params.get("timestamp"))) {
+      throw Object.assign(new Error("This Shopify install link is invalid or has expired. Open the app from Shopify again."), { status: 400 });
+    }
+    if (await hasActiveConnection(shop)) return res.redirect(clientRedirect({ shop }));
+    const { url, binder } = await startInstall(shop);
+    res.cookie(INSTALL_COOKIE, binder, installCookie);
+    return res.redirect(url);
+  } catch (err) {
+    console.error(`Shopify install start failed (${shop || "invalid shop"}):`, err.message);
+    return res.redirect(clientRedirect({ connected: "0", message: friendlyError(err).slice(0, 200) }));
+  }
+});
+
 /* OAuth callback — public (Shopify redirects the browser), protected by HMAC +
    signed single-use state. It does NOT connect the store: the code is parked
    and only the initiating admin's signed-in session can finish (POST /oauth/complete),
@@ -80,6 +115,15 @@ router.get("/oauth/callback", async (req, res) => {
     if (!params.get("code") && params.get("error")) throw new Error("CANCELLED"); // declined / cancelled in Shopify
     if (!shop || !params.get("code") || !verifyCallbackHmac(params)) throw new Error("Invalid Shopify callback");
     if (!params.get("state")) throw new Error("NO_STATE");
+
+    // Shopify-started install: unbound installation + one-time link code (in the
+    // URL fragment, which browsers never send to servers or in Referer headers)
+    if (isInstallState(params.get("state"))) {
+      const binder = readCookie(req, INSTALL_COOKIE);
+      res.clearCookie(INSTALL_COOKIE, { ...installCookie, maxAge: undefined });
+      const installed = await completeInstall({ state: params.get("state"), shop, code: params.get("code"), timestamp: params.get("timestamp"), binder });
+      return res.redirect(`${clientRedirect({ shop })}#${new URLSearchParams({ installed })}`);
+    }
 
     const s = verifyState(params.get("state"), shop);
     // The initiating admin must still belong to (and administer) that workspace
@@ -103,6 +147,17 @@ router.post("/oauth/complete", auth, role("admin"), async (req, res) => {
     res.json({ success: true, message: "Shopify store connected", data: { shopDomain: conn.shopDomain, shopName: conn.shop?.name || null } });
   } catch (err) {
     console.error("Shopify OAuth completion failed:", err.message);
+    res.status(err.status || 400).json({ success: false, message: friendlyError(err).slice(0, 200) });
+  }
+});
+
+/* Link a Shopify-started installation to the signed-in admin's workspace (explicit confirmation in the UI) */
+router.post("/oauth/link", auth, role("admin"), async (req, res) => {
+  try {
+    const conn = await linkInstallation({ code: req.body?.code, workspaceId: req.workspace, userId: req.user._id });
+    res.json({ success: true, message: "Shopify store connected", data: { shopDomain: conn.shopDomain, shopName: conn.shop?.name || null } });
+  } catch (err) {
+    console.error("Shopify install link failed:", err.message);
     res.status(err.status || 400).json({ success: false, message: friendlyError(err).slice(0, 200) });
   }
 });

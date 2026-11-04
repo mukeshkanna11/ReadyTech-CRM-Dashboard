@@ -20,6 +20,8 @@ export const pickReturnParams = (search) => {
   const out = new URLSearchParams();
   const complete = q.get("complete");
   if (complete && /^[a-f0-9]{48}$/.test(complete)) out.set("complete", complete);
+  const installed = q.get("installed"); // Shopify-started install: one-time link code
+  if (installed && /^[a-f0-9]{48}$/.test(installed)) out.set("installed", installed);
   const shop = normalizeShopInput(q.get("shop"));
   if (shop) out.set("shop", shop);
   const connected = q.get("connected");

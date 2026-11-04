@@ -7,11 +7,14 @@ import { pickReturnParams, saveShopifyReturn } from "../../components/shopify/sh
    App URL launch from Shopify admin). Keeps the result across a login, then
    opens the workspace's Shopify page. It never connects anything itself. */
 export default function ShopifyReturn() {
-  const { search } = useLocation();
+  const { search, hash } = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
-    const params = pickReturnParams(search);
+    // The install link code arrives in the fragment (never sent to servers)
+    const all = new URLSearchParams(search);
+    new URLSearchParams(hash.replace(/^#/, "")).forEach((v, k) => all.set(k, v));
+    const params = pickReturnParams(all.toString());
     saveShopifyReturn(params);
     if (!localStorage.getItem("token")) {
       toast("Log in to ReadyTech to finish connecting your Shopify store.");
@@ -19,7 +22,7 @@ export default function ShopifyReturn() {
       return;
     }
     navigate(`/integrations/shopify${params ? `?${params}` : ""}`, { replace: true });
-  }, [search, navigate]);
+  }, [search, hash, navigate]);
 
   return null;
 }

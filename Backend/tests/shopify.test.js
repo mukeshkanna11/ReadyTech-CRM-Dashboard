@@ -22,6 +22,7 @@ const svc = await import("../services/shopify/shopify.service.js");
 const ShopifyConnection = (await import("../models/ShopifyConnection.js")).default;
 const ShopifyOAuthState = (await import("../models/ShopifyOAuthState.js")).default;
 const ShopifyWebhookEvent = (await import("../models/ShopifyWebhookEvent.js")).default;
+const ShopifyInstallation = (await import("../models/ShopifyInstallation.js")).default;
 const LINK_MODELS = {
   order: (await import("../models/ShopifyOrderLink.js")).default,
   inventory: (await import("../models/ShopifyInventoryLink.js")).default,
@@ -59,6 +60,7 @@ beforeEach(() => {
   audits.length = 0;
   links = [];
   stub(AuditLog, "create", async (d) => (audits.push(d), d));
+  stub(ShopifyInstallation, "deleteMany", async () => ({ deletedCount: 0 }));
   for (const [kind, M] of Object.entries(LINK_MODELS)) {
     stub(M, "deleteMany", async (f) => {
       const before = links.length;

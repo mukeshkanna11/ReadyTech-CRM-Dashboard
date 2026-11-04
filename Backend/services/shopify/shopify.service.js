@@ -6,6 +6,8 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import ShopifyConnection from "../../models/ShopifyConnection.js";
 import ShopifyOAuthState from "../../models/ShopifyOAuthState.js";
+import ShopifyInstallState from "../../models/ShopifyInstallState.js";
+import ShopifyInstallation from "../../models/ShopifyInstallation.js";
 import AuditLog from "../../models/AuditLog.js";
 import { runWithWorkspace } from "../../utils/workspaceContext.js";
 import { encrypt, decrypt } from "./crypto.js";
@@ -117,6 +119,10 @@ export const buildAuthUrl = ({ shop, userId, workspaceId, nonce }) => {
     secret,
     { expiresIn: Math.floor(STATE_TTL_MS / 1000) }
   );
+  return authorizeUrl(shop, state);
+};
+
+const authorizeUrl = (shop, state) => {
   const url = new URL(`https://${shop}/admin/oauth/authorize`);
   url.searchParams.set("client_id", env("SHOPIFY_API_KEY"));
   url.searchParams.set("scope", env("SHOPIFY_SCOPES"));
@@ -181,6 +187,122 @@ export const finishOAuth = async ({ completeId, workspaceId, userId }) => {
   }
   return completeConnection({ shop: st.shop, code: decrypt(st.code), workspaceId, userId });
 };
+
+/* ---------------- Shopify-started install (App URL → OAuth → link) ----------------
+   Shopify opens GET /api/shopify/install (signed with the app secret). OAuth
+   starts immediately — no ReadyTech login first (App Store requirement) — but
+   no workspace gets the store until an authenticated ReadyTech admin links it. */
+const INSTALL_PURPOSE = "shopify-install";
+const INSTALL_TTL_MS = 10 * 60_000;
+const LINK_TTL_MS = 10 * 60_000;
+export const INSTALL_COOKIE = "shopify_install";
+export const TIMESTAMP_TOLERANCE_S = 300;
+
+/* Shopify's `timestamp` (seconds) must be recent: a captured signed URL can't be replayed later */
+export const freshTimestamp = (ts, now = Date.now()) => {
+  const t = Number(ts);
+  return Number.isFinite(t) && t > 0 && Math.abs(now / 1000 - t) <= TIMESTAMP_TOLERANCE_S;
+};
+
+/* Routing only (unverified decode); completeInstall verifies the signature */
+export const isInstallState = (state) => {
+  try {
+    return jwt.decode(String(state || ""))?.purpose === INSTALL_PURPOSE;
+  } catch {
+    return false;
+  }
+};
+
+/* → { url, binder }: binder goes in the HttpOnly cookie; only its hash is stored */
+export const startInstall = async (shop) => {
+  const secret = stateSecret();
+  if (!secret) throw new Error("SHOPIFY_STATE_SECRET is not configured");
+  const nonce = crypto.randomBytes(24).toString("hex");
+  const binder = crypto.randomBytes(32).toString("base64url");
+  await ShopifyInstallState.updateOne(
+    { nonceHash: sha256(nonce), workspace: null },
+    { $setOnInsert: { shop, bindingHash: sha256(binder), status: "pending", expiresAt: new Date(Date.now() + INSTALL_TTL_MS) } },
+    { upsert: true }
+  );
+  const state = jwt.sign({ purpose: INSTALL_PURPOSE, shop, nonce }, secret, { expiresIn: Math.floor(INSTALL_TTL_MS / 1000) });
+  return { url: authorizeUrl(shop, state), binder };
+};
+
+/* OAuth callback for an install state (HMAC already verified by the route).
+   Consumes the state once, in the same browser, exchanges the code and parks
+   the encrypted tokens in an UNBOUND installation. Returns a one-time link code. */
+export const completeInstall = async ({ state, shop, code, timestamp, binder }) => {
+  const secret = stateSecret();
+  if (!secret) throw new Error("SHOPIFY_STATE_SECRET is not configured");
+  const d = jwt.verify(String(state || ""), secret);
+  if (d?.purpose !== INSTALL_PURPOSE || d.shop !== shop || !d.nonce) throw new Error("Invalid OAuth state");
+  if (!freshTimestamp(timestamp)) throw new Error("Invalid OAuth state");
+  if (!binder) throw new Error("INSTALL_BROWSER");
+
+  const claimed = await ShopifyInstallState.findOneAndUpdate(
+    { nonceHash: sha256(d.nonce), workspace: null, shop, status: "pending", bindingHash: sha256(binder), expiresAt: { $gt: new Date() } },
+    { $set: { status: "used" } },
+    { returnDocument: "after" }
+  );
+  if (!claimed) throw new Error("Invalid OAuth state"); // unknown, expired, reused, or another browser
+
+  const t = await tokenRequest(shop, { code, ...(wantsExpiringTokens() && { expiring: 1 }) });
+  const scopes = assertScopes(t.scope);
+  const info = (await graphql(shop, t.access_token, SHOP_QUERY))?.shop;
+  if (String(info?.myshopifyDomain || "").toLowerCase() !== shop) throw new Error("Shopify returned a different store");
+
+  const linkCode = crypto.randomBytes(24).toString("hex");
+  await ShopifyInstallation.findOneAndUpdate(
+    { shopDomain: shop, workspace: null },
+    {
+      $set: {
+        accessToken: encrypt(t.access_token),
+        accessTokenExpiresAt: inSeconds(t.expires_in),
+        refreshToken: t.refresh_token ? encrypt(t.refresh_token) : null,
+        refreshTokenExpiresAt: inSeconds(t.refresh_token_expires_in),
+        scopes,
+        shop: { id: info.id, name: info.name, email: info.email, currencyCode: info.currencyCode },
+        linkCodeHash: sha256(linkCode),
+        expiresAt: new Date(Date.now() + LINK_TTL_MS),
+      },
+    },
+    { upsert: true, setDefaultsOnInsert: true }
+  );
+  return linkCode;
+};
+
+/* POST /oauth/link: an authenticated admin explicitly links the installed store
+   to THEIR workspace. The code is consumed atomically (a concurrent second
+   request finds nothing); the installation is deleted whatever the outcome,
+   so its tokens never outlive the link attempt. */
+export const linkInstallation = async ({ code, workspaceId, userId }) => {
+  if (!/^[a-f0-9]{48}$/.test(String(code || ""))) throw httpError(422, "This Shopify link is invalid. Open the app from Shopify again, or use Connect Shopify.");
+  const inst = await ShopifyInstallation.findOneAndUpdate(
+    { linkCodeHash: sha256(code), workspace: null, expiresAt: { $gt: new Date() } },
+    { $set: { linkCodeHash: null } },
+    { returnDocument: "before" }
+  ).select("+accessToken +refreshToken");
+  if (!inst?.accessToken) throw httpError(410, "This Shopify link expired or was already used. Open the app from Shopify again, or use Connect Shopify.");
+  try {
+    return await attachStore({
+      shop: inst.shopDomain,
+      accessToken: decrypt(inst.accessToken),
+      accessTokenExpiresAt: inst.accessTokenExpiresAt,
+      refreshToken: inst.refreshToken ? decrypt(inst.refreshToken) : null,
+      refreshTokenExpiresAt: inst.refreshTokenExpiresAt,
+      scopes: inst.scopes,
+      info: inst.shop || {},
+      workspaceId,
+      userId,
+    });
+  } finally {
+    await ShopifyInstallation.deleteOne({ _id: inst._id, workspace: null });
+  }
+};
+
+/* Is this store actively connected to some workspace? (install entry: already linked → open the app) */
+export const hasActiveConnection = async (shop) =>
+  Boolean(await ShopifyConnection.exists({ shopDomain: shop, workspace: { $ne: null }, status: "active" }));
 
 /* write_x implies read_x, and Shopify omits the implied scope from the grant */
 export const missingScopes = (grantedScopes) => {
@@ -352,6 +474,23 @@ export const completeConnection = async ({ shop, code, workspaceId, userId }) =>
   const info = (await graphql(shop, t.access_token, SHOP_QUERY))?.shop;
   if (String(info?.myshopifyDomain || "").toLowerCase() !== shop) throw new Error("Shopify returned a different store");
 
+  return attachStore({
+    shop,
+    accessToken: t.access_token,
+    accessTokenExpiresAt: inSeconds(t.expires_in),
+    refreshToken: t.refresh_token || null,
+    refreshTokenExpiresAt: inSeconds(t.refresh_token_expires_in),
+    scopes,
+    info,
+    workspaceId,
+    userId,
+  });
+};
+
+/* Claims a verified store for ONE workspace (shared by the ReadyTech-started
+   Connect flow and by linking a Shopify-started installation). Tokens are
+   plain here and encrypted before they are stored. */
+export const attachStore = async ({ shop, accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt, scopes, info, workspaceId, userId }) => {
   const current = await ShopifyConnection.findOne(
     { workspace: workspaceId, status: "active", shopDomain: { $ne: shop } },
     "shopDomain",
@@ -359,7 +498,7 @@ export const completeConnection = async ({ shop, code, workspaceId, userId }) =>
   );
   if (current) throw httpError(409, `This workspace is already connected to ${current.shopDomain}. Disconnect it first.`);
 
-  const webhooks = await registerWebhooks(shop, t.access_token);
+  const webhooks = await registerWebhooks(shop, accessToken);
   const now = new Date();
 
   let conn;
@@ -374,10 +513,10 @@ export const completeConnection = async ({ shop, code, workspaceId, userId }) =>
         $set: {
           workspace: workspaceId,
           status: "active",
-          accessToken: encrypt(t.access_token),
-          accessTokenExpiresAt: inSeconds(t.expires_in),
-          refreshToken: t.refresh_token ? encrypt(t.refresh_token) : null,
-          refreshTokenExpiresAt: inSeconds(t.refresh_token_expires_in),
+          accessToken: encrypt(accessToken),
+          accessTokenExpiresAt: accessTokenExpiresAt || null,
+          refreshToken: refreshToken ? encrypt(refreshToken) : null,
+          refreshTokenExpiresAt: refreshTokenExpiresAt || null,
           scopes,
           apiVersion: env("SHOPIFY_API_VERSION"),
           shop: { id: info.id, name: info.name, email: info.email, currencyCode: info.currencyCode },
@@ -460,6 +599,11 @@ export const payloadMatchesShop = (topic, payload, conn) => {
    connection of the shop; unknown shops are dropped, never defaulted. */
 export const handleWebhook = async ({ topic, shop, webhookId, eventId, triggeredAt, apiVersion, payload, rawBody }) => {
   const shopDomain = normalizeShop(shop);
+  // Uninstall / shop erasure also drop a not-yet-linked installation (and its tokens)
+  if (shopDomain && (topic === "app/uninstalled" || topic === "shop/redact")) {
+    const named = payload?.shop_domain ?? payload?.myshopify_domain;
+    if (named == null || normalizeShop(named) === shopDomain) await ShopifyInstallation.deleteMany({ shopDomain, workspace: null });
+  }
   const conn = shopDomain && (await ShopifyConnection.findByShop(shopDomain));
   if (!conn) return { ignored: "unknown shop" };
   // The HMAC covers the body, not the shop header: when the body names its shop, it must be this one
