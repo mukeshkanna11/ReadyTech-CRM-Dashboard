@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
+import { motion as Motion, AnimatePresence } from "framer-motion";
 import { toast } from "react-hot-toast";
 import {
   Mail, ShieldCheck, Loader2, CheckCircle2, AlertTriangle, ArrowRight, Server, Star,
-  Send, Pencil, RefreshCw, Trash2, Plus, X, Eye, EyeOff, Lock, Settings,
+  Send, Pencil, RefreshCw, Trash2, Plus, X, Eye, EyeOff, Lock, Settings, Unplug, Info,
 } from "lucide-react";
 import API from "../../services/api";
 import MailWorkspace from "./mail/MailWorkspace";
@@ -98,6 +100,104 @@ const btn = {
   dangerSm: "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50",
 };
 const input = "w-full px-3.5 py-2.5 text-sm border rounded-xl border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50";
+
+/* ---------------- Disconnect confirmation ----------------
+   Custom modal (no native confirm). Stays open while the request runs and
+   only reports success once the backend has removed the account. */
+function DisconnectDialog({ account, isLast, onCancel, onConfirm }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const Icon = ICONS[account.provider] || SmtpIcon;
+
+  const cancel = useCallback(() => !busy && onCancel(), [busy, onCancel]);
+  const confirm = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && cancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [cancel]);
+
+  const consequences = [
+    "ReadyTech deletes the saved sign-in access for this mailbox right away.",
+    isLast
+      ? "Compose, send, reply and forward are disabled until you connect a mailbox again."
+      : account.isDefault
+      ? "Another connected account becomes the default sender."
+      : "Your default sender stays the same.",
+    "Sent emails, drafts and record links stay in ReadyTech.",
+  ];
+
+  return createPortal(
+    <Motion.div
+      className="fixed inset-0 z-[70] flex items-end justify-center p-0 sm:items-center sm:p-4 bg-slate-900/50 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
+      onMouseDown={(e) => e.target === e.currentTarget && cancel()}
+    >
+      <Motion.div
+        role="alertdialog" aria-modal="true" aria-labelledby="disconnect-title" aria-describedby="disconnect-desc"
+        initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 16, scale: 0.98 }}
+        transition={{ type: "spring", stiffness: 420, damping: 32 }}
+        className="relative w-full overflow-hidden bg-white shadow-2xl sm:max-w-md rounded-t-3xl sm:rounded-3xl ring-1 ring-slate-900/5"
+      >
+        {/* Accent header */}
+        <div className="relative px-6 pt-7 pb-5 text-center bg-gradient-to-b from-red-50 via-white to-white">
+          <button type="button" onClick={cancel} disabled={busy} aria-label="Close"
+            className="absolute p-1.5 rounded-lg top-3 right-3 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40">
+            <X size={18} />
+          </button>
+          <div className="relative w-16 h-16 mx-auto">
+            <div className="grid w-16 h-16 bg-white border shadow-sm rounded-2xl border-slate-200 place-items-center"><Icon size={34} /></div>
+            <span className="absolute grid text-white bg-red-500 rounded-full shadow -right-1.5 -bottom-1.5 w-7 h-7 place-items-center ring-4 ring-white"><Unplug size={14} /></span>
+          </div>
+          <h2 id="disconnect-title" className="mt-4 text-lg font-bold text-slate-900">Disconnect this email account?</h2>
+          <div className="inline-flex items-center max-w-full gap-2 px-3 py-1 mt-2 text-sm rounded-full bg-slate-100 text-slate-700">
+            <span className="font-semibold truncate">{account.email}</span>
+            <span className="text-xs text-slate-500 shrink-0">· {account.providerName}</span>
+          </div>
+        </div>
+
+        <div className="px-6 pb-2">
+          <ul id="disconnect-desc" className="space-y-2.5 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+            {consequences.map((c, i) => (
+              <li key={c} className="flex gap-2.5 text-sm text-slate-600">
+                {i === 1 && isLast ? <AlertTriangle size={16} className="mt-0.5 text-amber-500 shrink-0" /> : <Info size={16} className="mt-0.5 text-slate-400 shrink-0" />}
+                <span>{c}</span>
+              </li>
+            ))}
+          </ul>
+          {error && (
+            <p className="flex items-start gap-2 p-3 mt-3 text-sm text-red-700 border border-red-100 rounded-xl bg-red-50" role="alert">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" /> {error}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 px-6 pt-4 pb-6 sm:flex-row">
+          <button type="button" onClick={cancel} disabled={busy} autoFocus
+            className="flex-1 px-4 py-2.5 text-sm font-semibold bg-white border rounded-xl border-slate-300 text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50">
+            Keep Connected
+          </button>
+          <button type="button" onClick={confirm} disabled={busy} aria-busy={busy}
+            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-red-600 shadow-sm shadow-red-600/20 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-70 disabled:cursor-wait">
+            {busy ? <><Loader2 size={16} className="animate-spin" /> Disconnecting…</> : <><Unplug size={16} /> Disconnect Account</>}
+          </button>
+        </div>
+      </Motion.div>
+    </Motion.div>,
+    document.body
+  );
+}
 
 /* ---------------- SMTP setup / update dialog ---------------- */
 function SmtpDialog({ account, initialEmail, onClose, onSaved }) {
@@ -248,6 +348,7 @@ function MailSettings({ onChanged, capabilities = [] }) {
   const [banner, setBanner] = useState(null); // { type: "success"|"error", text }
   const [smtpDialog, setSmtpDialog] = useState(null); // { account?, email? }
   const [addOpen, setAddOpen] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(null); // account pending confirmation
   const admin = isAdmin();
 
   const load = useCallback((quiet) => {
@@ -316,16 +417,33 @@ function MailSettings({ onChanged, capabilities = [] }) {
   };
 
   const disconnect = (a) => {
-    if (!window.confirm(`Disconnect ${a.email}? ReadyTech will delete its saved access for this mailbox.`)) return;
-    run(`del:${a.id}`, async () => {
-      const res = await API.delete(`/email/accounts/${a.id}`);
-      toast.success("Email account disconnected");
+    if (busy) return;
+    setConfirmDisconnect(a);
+  };
+
+  /* Runs from the confirmation modal. Connection state changes only after the
+     backend confirms; errors keep the modal open (and are thrown back to it). */
+  const performDisconnect = async () => {
+    const a = confirmDisconnect;
+    if (!a || busy) return;
+    setBusy(`del:${a.id}`);
+    try {
+      const res = await API.delete(`/email/accounts/${a.id}`, { silent: true });
       const revoke = res.data?.data?.revokeUrl;
+      toast.success(`${a.email} disconnected`);
       setBanner({ type: "success", text: `${a.email} disconnected.${revoke ? " You can also remove ReadyTech's access from your account settings." : ""}` });
-      // Lock email actions right away; they return only once the backend confirms a connection
+      setConfirmDisconnect(null);
+      // Lock email actions now; they return only once the backend confirms a connection
       onChanged?.({ disconnected: a.id });
       await load(true);
-    });
+    } catch (err) {
+      const message = err.response?.data?.message || (err.response ? "We couldn't disconnect this account. Please try again." : "Can't reach the server. Check your connection and try again.");
+      toast.error(message);
+      load(true);
+      throw new Error(message);
+    } finally {
+      setBusy(null);
+    }
   };
 
   const sendTest = (a) =>
@@ -517,6 +635,18 @@ function MailSettings({ onChanged, capabilities = [] }) {
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {confirmDisconnect && (
+          <DisconnectDialog
+            key={confirmDisconnect.id}
+            account={confirmDisconnect}
+            isLast={accounts.filter((x) => x.id !== confirmDisconnect.id && x.status === "connected").length === 0}
+            onCancel={() => setConfirmDisconnect(null)}
+            onConfirm={performDisconnect}
+          />
+        )}
+      </AnimatePresence>
 
       {smtpDialog && (
         <SmtpDialog
