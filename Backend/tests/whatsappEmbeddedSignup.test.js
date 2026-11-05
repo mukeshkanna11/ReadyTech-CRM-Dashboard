@@ -190,6 +190,12 @@ test("disconnect: clears secrets, unsubscribes WABA, frees the number", async ()
   assert.equal(doc.encryptedToken, null);
   assert.equal(doc.encryptedPin, null);
   assert.equal(doc.phoneNumberId, null);
+  // No connected-account details survive (UI must show "Connect WhatsApp")
+  for (const k of ["wabaId", "displayPhoneNumber", "verifiedName", "qualityRating"]) assert.equal(doc[k], null, k);
+  const account = await ctx.runWithWorkspace(SARA, () => wa.resolveWhatsAppAccount());
+  assert.equal(account.accessToken, null);
+  assert.equal(account.phoneNumberId, null);
+  // SARA's own WABA is unsubscribed at Meta
   assert.ok(calls.some((c) => c.method === "DELETE" && c.path.endsWith("/222/subscribed_apps")));
   // Another workspace may now connect it
   await signup(BOB, "u9");

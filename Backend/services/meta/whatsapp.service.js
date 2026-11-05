@@ -828,6 +828,14 @@ export const disconnectWhatsAppAccount = async () => {
     onboardingType: null,
     connectedAt: null,
     lastError: null,
+    // No connected-account details may survive a disconnect (UI shows "Connect WhatsApp")
+    wabaId: null,
+    displayPhoneNumber: null,
+    verifiedName: null,
+    qualityRating: null,
+    lastInboundAt: null,
+    lastSyncedAt: null,
+    lastTestedAt: null,
   });
   // Default workspace disconnecting the platform (.env) number: switch it
   // off for this workspace so it never reappears on its own.

@@ -15,6 +15,7 @@ import {
   listAssignees,
   connectAccount,
   disconnectAccount,
+  requireWhatsAppForConversation,
   embeddedSignupConfig,
   embeddedSignupComplete,
 } from "../controllers/whatsapp.controller.js";
@@ -32,13 +33,13 @@ router.post("/webhook", receiveWebhook);
 
 /* Authenticated CRM inbox */
 router.get("/conversations", auth, listConversations);
-router.get("/conversations/:id/messages", auth, listMessages);
-router.post("/conversations/:id/messages", auth, sendMessage);
-router.patch("/conversations/:id/read", auth, markConversationRead);
-router.patch("/conversations/:id", auth, updateConversation);
-router.post("/conversations/:id/notes", auth, addNote);
-router.post("/conversations/:id/lead", auth, convertToLead);
-router.get("/conversations/:id/messages/:messageId/media", auth, getMessageMedia);
+router.get("/conversations/:id/messages", auth, requireWhatsAppForConversation, listMessages);
+router.post("/conversations/:id/messages", auth, requireWhatsAppForConversation, sendMessage);
+router.patch("/conversations/:id/read", auth, requireWhatsAppForConversation, markConversationRead);
+router.patch("/conversations/:id", auth, requireWhatsAppForConversation, updateConversation);
+router.post("/conversations/:id/notes", auth, requireWhatsAppForConversation, addNote);
+router.post("/conversations/:id/lead", auth, requireWhatsAppForConversation, convertToLead);
+router.get("/conversations/:id/messages/:messageId/media", auth, requireWhatsAppForConversation, getMessageMedia);
 router.get("/assignees", auth, listAssignees);
 
 /* Admin — connect / disconnect this workspace's own WhatsApp number */

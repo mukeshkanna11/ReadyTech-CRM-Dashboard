@@ -15,7 +15,31 @@ import {
   completeEmbeddedSignup,
   disconnectWhatsAppAccount,
   fetchWhatsAppMedia,
+  resolveWhatsAppAccount,
 } from "../services/meta/whatsapp.service.js";
+import mongoose from "mongoose";
+
+/* WhatsApp is usable only while this workspace has a number + token
+   (its own, or the default workspace's enabled platform number) */
+const whatsappLinked = async () => {
+  const { phoneNumberId, accessToken } = await resolveWhatsAppAccount();
+  return !!(phoneNumberId && accessToken);
+};
+const isWhatsAppChannel = (c) => !c?.channel || c.channel === "whatsapp"; // legacy rows = WhatsApp
+const DISCONNECTED = { success: false, code: "WHATSAPP_DISCONNECTED", message: "WhatsApp is disconnected for this workspace. Connect WhatsApp to continue." };
+
+/* Route guard for /conversations/:id/* — WhatsApp threads are unavailable
+   while disconnected; Instagram / Messenger threads are unaffected */
+export const requireWhatsAppForConversation = async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return next();
+    const conv = await WhatsAppConversation.findById(req.params.id).select("channel").lean();
+    if (conv && isWhatsAppChannel(conv) && !(await whatsappLinked())) return res.status(409).json(DISCONNECTED);
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
 import {
   sendSocialMessage,
   convertConversationToLead,
@@ -106,6 +130,15 @@ export const listConversations = async (req, res) => {
 
     if (["Open", "Pending", "Closed"].includes(status)) filter.status = status;
 
+    // Disconnected: no WhatsApp conversations at all (other channels stay)
+    const whatsappConnected = await whatsappLinked();
+    if (!whatsappConnected) {
+      if (channel === "whatsapp") {
+        return res.json({ success: true, whatsappConnected, data: [], pagination: { page, limit, total: 0, pages: 0 } });
+      }
+      if (!filter.channel) filter.channel = { $nin: ["whatsapp", null] };
+    }
+
     const [items, total] = await Promise.all([
       WhatsAppConversation.find(filter)
         .sort({ lastMessageAt: -1, createdAt: -1 })
@@ -119,6 +152,7 @@ export const listConversations = async (req, res) => {
 
     res.json({
       success: true,
+      whatsappConnected,
       data: items.map((c) => c.toInboxJSON()),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });

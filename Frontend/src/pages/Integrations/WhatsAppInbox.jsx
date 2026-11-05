@@ -82,7 +82,7 @@ const readFile = (file) =>
 /* `channel` locks the inbox to one channel (WhatsApp / Instagram Inbox
    pages); `banner` renders a connection strip under the header,
    `headerActions` extra buttons beside Refresh. */
-export default function WhatsAppInbox({ channel: lockedChannel = "", banner = null, headerActions = null }) {
+export default function WhatsAppInbox({ channel: lockedChannel = "", banner = null, headerActions = null, refreshKey = 0 }) {
   const [conversations, setConversations] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
@@ -91,6 +91,8 @@ export default function WhatsAppInbox({ channel: lockedChannel = "", banner = nu
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [channel, setChannel] = useState(lockedChannel);
   const [status, setStatus] = useState("Open");
+  // Backend-reported: false → no WhatsApp data/actions anywhere in this inbox
+  const [waConnected, setWaConnected] = useState(true);
 
   const [activeId, setActiveId] = useState(null);
   const [thread, setThread] = useState({ conversation: null, messages: [] });
@@ -124,7 +126,7 @@ export default function WhatsAppInbox({ channel: lockedChannel = "", banner = nu
       try {
         if (!opts.silent) setListLoading(true);
         setListError("");
-        const { items, pagination: p } = await getConversations({
+        const { items, pagination: p, whatsappConnected } = await getConversations({
           page,
           limit: 20,
           search: debouncedSearch,
@@ -134,14 +136,30 @@ export default function WhatsAppInbox({ channel: lockedChannel = "", banner = nu
         });
         setConversations(items);
         setPagination(p);
+        setWaConnected(whatsappConnected);
       } catch {
         setListError("Could not load conversations.");
       } finally {
         setListLoading(false);
       }
     },
-    [page, debouncedSearch, unreadOnly, channel, status]
+    // refreshKey: parent signals a connect / disconnect → reload from the server
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [page, debouncedSearch, unreadOnly, channel, status, refreshKey]
   );
+
+  /* Disconnected: drop any open WhatsApp thread (stale data never stays on screen) */
+  const waView = lockedChannel === "whatsapp" || channel === "whatsapp";
+  useEffect(() => {
+    if (waConnected) return;
+    const c = thread.conversation;
+    if (c && (!c.channel || c.channel === "whatsapp")) {
+      setActiveId(null);
+      setThread({ conversation: null, messages: [] });
+      setText("");
+      setFile(null);
+    }
+  }, [waConnected, thread.conversation]);
 
   useEffect(() => {
     loadList();
@@ -306,6 +324,25 @@ export default function WhatsAppInbox({ channel: lockedChannel = "", banner = nu
 
       {banner}
 
+      {!waConnected && !waView && (
+        <p className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm border rounded-xl border-amber-200 bg-amber-50 text-amber-800">
+          WhatsApp is disconnected — WhatsApp conversations are hidden.
+          <Link to="/integrations/whatsapp" className="font-semibold underline">Connect WhatsApp</Link>
+        </p>
+      )}
+
+      {!waConnected && waView ? (
+        <div className="grid flex-1 min-h-0 p-8 text-center bg-white border border-dashed place-items-center rounded-2xl border-slate-300">
+          <div className="max-w-md">
+            <div className="grid mx-auto mb-4 text-white w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 place-items-center"><FaWhatsapp size={26} /></div>
+            <h2 className="text-lg font-semibold text-slate-900">Connect WhatsApp</h2>
+            <p className="mt-2 text-sm text-slate-500">WhatsApp is not connected for this workspace. Connect your WhatsApp Business number to view conversations and send messages.</p>
+            {lockedChannel !== "whatsapp" && (
+              <Link to="/integrations/whatsapp" className="inline-flex items-center gap-2 px-5 py-2.5 mt-5 text-sm font-semibold text-white rounded-xl bg-emerald-600 hover:bg-emerald-700">Connect WhatsApp</Link>
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="grid flex-1 min-h-0 gap-4 lg:grid-cols-[340px_minmax(0,1fr)_300px]">
         {/* ===== Conversation list ===== */}
         <aside className={`${activeId ? "hidden lg:flex" : "flex"} flex-col min-h-0 bg-white border shadow-sm rounded-2xl border-slate-200`}>
@@ -532,6 +569,7 @@ export default function WhatsAppInbox({ channel: lockedChannel = "", banner = nu
           />
         )}
       </div>
+      )}
     </div>
   );
 }

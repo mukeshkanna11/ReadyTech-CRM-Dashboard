@@ -18,7 +18,7 @@ export const getConversations = async ({ page = 1, limit = 20, search = "", unre
     },
   });
 
-  return { items: data?.data || [], pagination: data?.pagination };
+  return { items: data?.data || [], pagination: data?.pagination, whatsappConnected: data?.whatsappConnected !== false };
 };
 
 export const getMessages = async (conversationId, { page = 1, limit = 30 } = {}) => {
