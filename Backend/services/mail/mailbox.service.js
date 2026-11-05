@@ -17,6 +17,7 @@ import PurchaseOrder from "../../models/PurchaseOrder.model.js";
 import { getDefaultWorkspaceId } from "../../utils/workspaceContext.js";
 import { sendViaConnectedAccount, resolveSendingAccount, listAccounts, verifyConnection } from "../emailOAuth.service.js";
 import { inboxStatus } from "./gmailSync.service.js";
+import { sanitizeEmailHtml } from "./htmlSanitizer.js";
 
 /* ---------------- Limits ---------------- */
 export const LIMITS = {
@@ -112,16 +113,10 @@ export const parseAddresses = (value, label) => {
   return out;
 };
 
-/* Defence in depth only — the UI renders email HTML in a sandboxed iframe
-   (no scripts, no same-origin), and recipients' mail clients sanitise too. */
-export const sanitizeHtml = (html) =>
-  String(html || "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<(script|style|iframe|object|embed|frame|frameset|applet|noscript|template|svg|math)\b[\s\S]*?<\/\1\s*>/gi, "")
-    .replace(/<\/?(script|iframe|object|embed|frame|frameset|applet|form|input|button|textarea|select|option|link|meta|base|svg|math)\b[^>]*>/gi, "")
-    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/\s(href|src|action|formaction|xlink:href)\s*=\s*("|')?\s*(javascript:|vbscript:|data:(?!image\/(png|gif|jpe?g|webp);))[^"'\s>]*\2?/gi, "")
-    .replace(/expression\s*\(/gi, "");
+/* Allowlist sanitiser (services/mail/htmlSanitizer.js): every stored or sent
+   email body passes through it. The UI additionally re-sanitises with
+   DOMPurify and renders bodies in a sandboxed, script-less iframe. */
+export const sanitizeHtml = sanitizeEmailHtml;
 
 const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'", nbsp: " " };
 export const htmlToText = (html) =>

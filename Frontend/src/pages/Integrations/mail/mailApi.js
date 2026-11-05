@@ -1,6 +1,7 @@
 // Mail workspace helpers — API calls (silent: errors are shown in the UI),
 // formatting and attachment encoding. All data comes from /api/email/mailbox.
 import API from "../../../services/api";
+import { sanitizeForView } from "./sanitize";
 
 const BASE = "/email/mailbox";
 const opts = (extra = {}) => ({ silent: true, ...extra });
@@ -83,8 +84,10 @@ export const quoteBlock = (m, mode) => {
   return `<p><br></p><div>${meta}<blockquote style="margin:0 0 0 .8ex;border-left:2px solid #cbd5e1;padding-left:1ex">${body}</blockquote></div>`;
 };
 
-/* Email HTML is rendered inside a sandboxed iframe (no scripts, no same-origin) */
+/* Email HTML is re-sanitised with DOMPurify and rendered inside a sandboxed
+   iframe without allow-scripts; the CSP below blocks scripts, forms and any
+   network access except images */
 export const emailDocument = (m) => `<!doctype html><html><head><meta charset="utf-8"><base target="_blank">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; font-src data: https:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; font-src data: https:; form-action 'none'; base-uri 'none'">
 <style>body{margin:0;padding:4px 2px;font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#0f172a;word-wrap:break-word}img{max-width:100%;height:auto}blockquote{color:#475569}a{color:#4f46e5}pre{white-space:pre-wrap}</style>
-</head><body>${m.html || `<pre style="font:inherit">${esc(m.text)}</pre>`}</body></html>`;
+</head><body>${m.html ? sanitizeForView(m.html) : `<pre style="font:inherit">${esc(m.text)}</pre>`}</body></html>`;

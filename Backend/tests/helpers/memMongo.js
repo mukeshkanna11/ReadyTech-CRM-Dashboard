@@ -117,6 +117,64 @@ export const memModel = (Model, { unique = [], defaults = {} } = {}) => {
   });
   Model.deleteOne = async (f) => { const i = rows.findIndex((x) => match(x, f)); if (i >= 0) rows.splice(i, 1); };
   Model.deleteMany = async (f) => { for (let i = rows.length - 1; i >= 0; i--) if (match(rows[i], f)) rows.splice(i, 1); };
+  Model.aggregate = async (pipeline) => runPipeline(rows.map(clone), pipeline);
   rows.seq = () => ++seq;
   return rows;
+};
+
+/* ---------- minimal aggregation: $match $addFields $sort $group $facet $skip $limit $count ---------- */
+const expr = (doc, e) => {
+  if (typeof e === "string" && e === "$$ROOT") return doc;
+  if (typeof e === "string" && e.startsWith("$")) return get(doc, e.slice(1))[0];
+  if (e && typeof e === "object" && !Array.isArray(e)) {
+    if ("$ifNull" in e) { const [a, b] = e.$ifNull; const v = expr(doc, a); return v == null ? expr(doc, b) : v; }
+    if ("$cond" in e) { const [c, t, f] = e.$cond; return expr(doc, c) ? expr(doc, t) : expr(doc, f); }
+  }
+  return e;
+};
+const sortBy = (docs, spec) =>
+  [...docs].sort((x, y) => {
+    for (const [k, dir] of Object.entries(spec)) {
+      const a = get(x, k)[0];
+      const b = get(y, k)[0];
+      const c = a == null && b == null ? 0 : a == null ? -1 : b == null ? 1 : cmp(a, b);
+      if (c) return c * dir;
+    }
+    return 0;
+  });
+const ACC = {
+  $first: (vals) => vals[0],
+  $sum: (vals) => vals.reduce((n, v) => n + (Number(v) || 0), 0),
+  $max: (vals) => vals.reduce((m, v) => (m == null || (v != null && v > m) ? v : m), null),
+  $addToSet: (vals) => [...new Set(vals.map((v) => (typeof v === "object" ? JSON.stringify(v) : v)))].map((v) => { try { return JSON.parse(v); } catch { return v; } }),
+  $push: (vals) => vals,
+};
+const runPipeline = (docs, pipeline) => {
+  let out = docs;
+  for (const stage of pipeline) {
+    const [op, arg] = Object.entries(stage)[0];
+    if (op === "$match") out = out.filter((d) => match(d, arg));
+    else if (op === "$addFields") out = out.map((d) => ({ ...d, ...Object.fromEntries(Object.entries(arg).map(([k, e]) => [k, expr(d, e)])) }));
+    else if (op === "$sort") out = sortBy(out, arg);
+    else if (op === "$skip") out = out.slice(arg);
+    else if (op === "$limit") out = out.slice(0, arg);
+    else if (op === "$count") out = [{ [arg]: out.length }];
+    else if (op === "$facet") out = [Object.fromEntries(Object.entries(arg).map(([k, p]) => [k, runPipeline(out, p)]))];
+    else if (op === "$group") {
+      const groups = new Map();
+      for (const d of out) {
+        const key = String(expr(d, arg._id));
+        if (!groups.has(key)) groups.set(key, { _id: expr(d, arg._id), docs: [] });
+        groups.get(key).docs.push(d);
+      }
+      out = [...groups.values()].map(({ _id, docs: g }) => ({
+        _id,
+        ...Object.fromEntries(Object.entries(arg).filter(([k]) => k !== "_id").map(([k, spec]) => {
+          const [acc, e] = Object.entries(spec)[0];
+          return [k, ACC[acc](g.map((d) => expr(d, e)))];
+        })),
+      }));
+    } else throw new Error(`memMongo: unsupported stage ${op}`);
+  }
+  return out;
 };

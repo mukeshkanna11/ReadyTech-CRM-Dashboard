@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Bold, Italic, Underline, List, ListOrdered, Link2, Quote, RemoveFormatting } from "lucide-react";
+import { sanitizeForCompose } from "./sanitize";
 
 /* Lightweight rich-text editor (contentEditable). The server sanitises the
    HTML again before storing / sending it. */
@@ -19,7 +20,8 @@ export default function RichTextEditor({ initialHtml, onChange, disabled, autoFo
 
   // Uncontrolled after mount: the caret must not jump on every keystroke
   useEffect(() => {
-    if (ref.current) ref.current.innerHTML = initialHtml || "";
+    // The only place email HTML enters the CRM page DOM: always DOMPurify first
+    if (ref.current) ref.current.innerHTML = sanitizeForCompose(initialHtml);
     if (autoFocus) ref.current?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

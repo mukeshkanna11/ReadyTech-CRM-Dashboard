@@ -131,6 +131,9 @@ const Recipients = ({ m }) => (
   </div>
 );
 
+/* Stable, unique list keys: conversations by thread, everything else by message id */
+const rowKey = (folder, row) => (folder === "conversations" ? `t:${row.threadKey}` : `m:${row.id}`);
+
 const UNAVAILABLE = { too_large: "Too large — open in Gmail", blocked: "Blocked file type", limit: "Open in Gmail" };
 const Sender = ({ m, className = "" }) => (
   <p className={`text-sm font-semibold text-slate-800 break-all ${className}`}>
@@ -337,7 +340,12 @@ export default function MailWorkspace({ renderSettings }) {
         ? await mailApi.conversations({ q: query, page })
         : await mailApi.list({ folder, q: query, page, unread: filters.unread ? "1" : undefined, attachments: filters.attachments ? "1" : undefined });
       if (req !== listReq.current) return;
-      setList((l) => ({ loading: false, error: null, page: data.page, total: data.total, items: append ? [...l.items, ...data.items] : data.items }));
+      // Items are tagged with their folder so a folder switch never renders rows of another shape
+      setList((l) => {
+        const prev = append && l.folder === folder ? l.items : [];
+        const seen = new Set(prev.map((x) => rowKey(folder, x)));
+        return { folder, loading: false, error: null, page: data.page, total: data.total, items: [...prev, ...data.items.filter((x) => !seen.has(rowKey(folder, x)))] };
+      });
       setRefreshedAt(new Date());
     } catch (err) {
       if (req === listReq.current) setList((l) => ({ ...l, loading: false, error: errorText(err, "Couldn't load emails.") }));
@@ -557,7 +565,7 @@ export default function MailWorkspace({ renderSettings }) {
                   <div className="flex-1 min-h-0 overflow-y-auto">
                     {list.error ? (
                       <div className="p-6 text-sm text-center text-red-600">{list.error} <button onClick={() => loadList()} className="font-semibold underline">Retry</button></div>
-                    ) : list.loading && !list.items.length ? (
+                    ) : list.folder !== folder || (list.loading && !list.items.length) ? (
                       <ul className="divide-y divide-slate-100" aria-busy="true">
                         {[0, 1, 2, 3, 4].map((i) => (
                           <li key={i} className="flex gap-3 p-4 animate-pulse"><div className="rounded-full w-9 h-9 bg-slate-100" /><div className="flex-1 space-y-2"><div className="w-1/2 h-3 rounded bg-slate-100" /><div className="w-3/4 h-3 rounded bg-slate-100" /></div></li>
@@ -572,8 +580,8 @@ export default function MailWorkspace({ renderSettings }) {
                       <ul className="divide-y divide-slate-100">
                         {list.items.map((raw) => {
                           const item = folder === "conversations" ? { ...raw.latest, threadKey: raw.threadKey, count: raw.count, read: !raw.unread, starred: raw.starred } : raw;
-                          const key = folder === "conversations" ? raw.threadKey : item.id;
-                          const active = selected && selected.id === key;
+                          const key = rowKey(folder, raw);
+                          const active = selected && selected.id === (folder === "conversations" ? raw.threadKey : item.id);
                           const who = item.direction === "outbound" ? `To: ${(item.to || []).join(", ") || "(no recipients)"}` : item.fromName || item.from;
                           return (
                             <li key={key}>
@@ -608,7 +616,7 @@ export default function MailWorkspace({ renderSettings }) {
                         })}
                       </ul>
                     )}
-                    {list.items.length > 0 && list.items.length < list.total && (
+                    {list.folder === folder && list.items.length > 0 && list.items.length < list.total && (
                       <div className="p-3 text-center">
                         <button onClick={() => loadList({ page: list.page + 1, append: true })} disabled={list.loading} className="text-sm font-semibold text-indigo-600 hover:underline disabled:opacity-50">
                           {list.loading ? "Loading…" : `Load more (${list.total - list.items.length})`}
