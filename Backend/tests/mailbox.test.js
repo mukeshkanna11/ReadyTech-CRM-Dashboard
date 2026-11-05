@@ -361,3 +361,43 @@ test("SMTP: cc/bcc/html/attachments/threading headers are passed to Nodemailer",
   assert.equal(sent[0].attachments[0].content.toString(), "a");
   assert.match(sent[0].messageId, /@a\.com>$/);
 });
+
+/* ================= Connection gate (backend-enforced) ================= */
+test("gate: no connected mailbox → compose, draft, reply and forward are refused with MAIL_NOT_CONNECTED", async () => {
+  gmailOk();
+  const { message } = await mb.sendMessage(ctxA, { to: "x@y.com", subject: "Before", html: "<p>b</p>" });
+  conns = conns.filter((c) => c.workspace !== WS_A); // disconnected
+  calls = [];
+  for (const body of [{ to: "x@y.com", subject: "S" }, { to: "x@y.com", replyTo: message.id, mode: "reply" }, { to: "x@y.com", replyTo: message.id, mode: "forward" }]) {
+    await assert.rejects(mb.sendMessage(ctxA, body), (e) => e.status === 409 && e.code === mb.NOT_CONNECTED);
+  }
+  await assert.rejects(mb.saveDraft(ctxA, { to: "x@y.com" }), (e) => e.code === mb.NOT_CONNECTED);
+  assert.equal(calls.length, 0); // nothing reached any provider (no Resend / shared-sender fallback)
+  const s = await mb.summary(ctxA);
+  assert.deepEqual([s.connection.state, s.connection.connected], ["none", false]);
+  // History stays readable
+  assert.equal((await mb.listMessages(ctxA, { folder: "sent" })).total, 1);
+});
+
+test("gate: an account in error state can't send until it is reconnected", async () => {
+  conns[0].status = "error";
+  conns[0].lastError = "Access was revoked";
+  gmailOk();
+  await assert.rejects(mb.sendMessage(ctxA, { to: "x@y.com", subject: "S" }), (e) => e.code === mb.RECONNECT_REQUIRED);
+  await assert.rejects(mb.saveDraft(ctxA, { to: "x@y.com" }), (e) => e.code === mb.RECONNECT_REQUIRED);
+  assert.equal(calls.length, 0);
+  assert.equal((await mb.summary(ctxA)).connection.state, "error");
+  conns[0].status = "connected"; // backend confirmed reconnect
+  const { message } = await mb.sendMessage(ctxA, { to: "x@y.com", subject: "S", html: "<p>ok</p>" });
+  assert.equal(message.status, "sent");
+  assert.equal((await mb.summary(ctxA)).connection.state, "connected");
+});
+
+test("gate: another workspace's connection never unlocks this one", async () => {
+  conns = conns.filter((c) => c.workspace !== WS_A);
+  gmailOk();
+  await assert.rejects(mb.sendMessage(ctxA, { to: "x@y.com", subject: "S", accountId: ACC_B }), (e) => e.code === mb.NOT_CONNECTED);
+  assert.equal(calls.length, 0);
+  assert.equal((await mb.summary(ctxA)).connection.connected, false);
+  assert.equal((await mb.summary(ctxB)).connection.connected, true);
+});

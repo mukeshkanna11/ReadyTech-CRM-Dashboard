@@ -15,7 +15,7 @@ import Vendor from "../../models/Vendor.model.js";
 import SalesOrder from "../../models/SalesOrder.model.js";
 import PurchaseOrder from "../../models/PurchaseOrder.model.js";
 import { getDefaultWorkspaceId } from "../../utils/workspaceContext.js";
-import { sendViaConnectedAccount, resolveSendingAccount, listAccounts } from "../emailOAuth.service.js";
+import { sendViaConnectedAccount, resolveSendingAccount, listAccounts, verifyConnection } from "../emailOAuth.service.js";
 
 /* ---------------- Limits ---------------- */
 export const LIMITS = {
@@ -47,6 +47,41 @@ const toBuffer = (d) => (Buffer.isBuffer(d) ? d : d?._bsontype === "Binary" ? Bu
 const fail = (message, status = 422) => Object.assign(new Error(message), { status });
 const isId = (v) => mongoose.isValidObjectId(v) && String(v).length === 24;
 const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/* ---------------- Connection gate ----------------
+   Every sending / composing action needs a mailbox of THIS workspace whose
+   connection the backend currently considers valid. There is deliberately no
+   fallback to Resend or any shared ReadyTech sender here. */
+export const NOT_CONNECTED = "MAIL_NOT_CONNECTED";
+export const RECONNECT_REQUIRED = "MAIL_RECONNECT_REQUIRED";
+const gate = (message, code) => Object.assign(new Error(message), { status: 409, code });
+
+export const connectionState = (accounts) => {
+  const def = accounts.find((a) => a.isDefault) || accounts[0] || null;
+  const usable = accounts.filter((a) => a.status === "connected");
+  return {
+    state: !accounts.length ? "none" : usable.length ? "connected" : "error",
+    connected: usable.length > 0,
+    canSendFromDefault: def?.status === "connected",
+    defaultAccountId: def?.id || null,
+  };
+};
+
+const assertConnectedAccount = (account, { explicit } = {}) => {
+  if (!account) {
+    throw explicit ? fail("Email account not found", 404) : gate("Connect an email account in Email Settings to start sending", NOT_CONNECTED);
+  }
+  if (account.status !== "connected") {
+    throw gate(`${account.email} needs to be reconnected in Email Settings before it can send`, RECONNECT_REQUIRED);
+  }
+  return account;
+};
+
+const requireAnyConnected = async (ctx) => {
+  const c = connectionState(await listAccounts(ctx.workspaceId));
+  if (c.state === "none") throw gate("Connect an email account in Email Settings to start", NOT_CONNECTED);
+  if (!c.connected) throw gate("Your email account needs to be reconnected in Email Settings", RECONNECT_REQUIRED);
+};
 
 /* ---------------- Access scope ---------------- */
 export const mailCtx = (req) => ({
@@ -299,6 +334,8 @@ export const getMessage = async (ctx, id, { markRead = true } = {}) => {
 
 export const summary = async (ctx) => {
   const count = (folder, extra = {}) => EmailMessage.countDocuments(scoped(ctx, { ...FOLDERS[folder], ...extra }));
+  // Refresh-checks expired OAuth tokens first so the reported status is real
+  await verifyConnection(ctx.workspaceId).catch(() => {});
   const [accounts, drafts, starred, archived, trash, sent, failed, inboxUnread] = await Promise.all([
     listAccounts(ctx.workspaceId),
     count("drafts"), count("starred"), count("archived"), count("trash"), count("sent"),
@@ -310,6 +347,7 @@ export const summary = async (ctx) => {
   const inboxAvailable = caps.some((c) => c.inbox);
   return {
     accounts,
+    connection: connectionState(accounts),
     defaultAccount: def,
     capabilities: caps,
     inbox: {
@@ -449,6 +487,7 @@ const applyReply = (fields, reply) => {
 };
 
 export const saveDraft = async (ctx, body = {}, draftId) => {
+  await requireAnyConnected(ctx);
   const existing = draftId ? await loadOwn(ctx, draftId, { status: { $in: ["draft", "failed"] } }) : null;
   const fields = composeFields(body, { strict: false });
   const reply = await replyContext(ctx, body);
@@ -459,7 +498,7 @@ export const saveDraft = async (ctx, body = {}, draftId) => {
   const threading = existing && !reply ? {} : applyReply(fields, reply);
   const attachments = [...kept, ...(await storeUploads(ctx, uploads))];
   const account = body.accountId ? await resolveSendingAccount(ctx.workspaceId, body.accountId) : null;
-  if (body.accountId && !account) throw fail("Email account not found", 404);
+  if (body.accountId) assertConnectedAccount(account, { explicit: true });
 
   const doc = {
     ...fields, ...threading, subject: threading.subject || fields.subject, attachments, links,
@@ -489,6 +528,7 @@ export const sendMessage = async (ctx, body = {}) => {
     if (prior && ["sending", "sent"].includes(prior.status)) return { duplicate: true, message: fullView(prior) };
   }
 
+  await requireAnyConnected(ctx);
   const draft = body.draftId ? await loadOwn(ctx, body.draftId, { status: { $in: ["draft", "failed"] } }) : null;
   const fields = composeFields(body, { strict: true });
   const reply = await replyContext(ctx, body);
@@ -502,8 +542,12 @@ export const sendMessage = async (ctx, body = {}) => {
 
   const account = body.accountId
     ? await resolveSendingAccount(ctx.workspaceId, body.accountId)
-    : (draft?.account && (await resolveSendingAccount(ctx.workspaceId, draft.account))) || (await resolveSendingAccount(ctx.workspaceId));
-  if (!account) throw fail(body.accountId ? "Email account not found" : "Connect a mailbox in Email Settings before sending", body.accountId ? 404 : 409);
+    : await (async () => {
+      // A draft keeps its mailbox while that one is usable; otherwise the default sender
+      const saved = draft?.account ? await resolveSendingAccount(ctx.workspaceId, draft.account) : null;
+      return saved?.status === "connected" ? saved : resolveSendingAccount(ctx.workspaceId);
+    })();
+  assertConnectedAccount(account, { explicit: !!body.accountId });
   if (uploads.length + kept.length && CAPABILITIES[account.provider]?.attachments === false) {
     throw fail(`Attachments aren't supported for ${account.providerName} yet — remove them or choose another mailbox`);
   }

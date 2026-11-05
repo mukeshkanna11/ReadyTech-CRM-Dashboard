@@ -39,7 +39,7 @@ const initialState = ({ mode, source, draft }, accounts) => {
   };
 };
 
-export default function MailComposer({ init, summary, onClose, onDone, onOpenSettings }) {
+export default function MailComposer({ init, summary, onClose, onDone, onOpenSettings, onConnectionLost }) {
   const accounts = summary?.accounts || [];
   const limits = summary?.limits || { files: 10, fileBytes: 5 * 1048576, totalBytes: 7 * 1048576 };
   const start = useMemo(() => initialState(init, accounts), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -104,6 +104,7 @@ export default function MailComposer({ init, summary, onClose, onDone, onOpenSet
       if (close) onClose();
     } catch (err) {
       setError(errorText(err, "The draft couldn't be saved."));
+      if (/^MAIL_/.test(err?.response?.data?.code || "")) onConnectionLost?.();
     } finally {
       setBusy(null);
     }
@@ -123,6 +124,8 @@ export default function MailComposer({ init, summary, onClose, onDone, onOpenSet
       onClose();
     } catch (err) {
       setError(errorText(err, "The email couldn't be sent."));
+      // Backend says the mailbox is no longer usable: re-check and lock actions
+      if (/^MAIL_/.test(err?.response?.data?.code || "")) onConnectionLost?.();
       // The server keeps a failed send as an editable draft — continue from it
       const failedId = err?.response?.data?.data?.id;
       if (failedId) {

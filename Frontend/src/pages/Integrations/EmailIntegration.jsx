@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import {
   Mail, ShieldCheck, Loader2, CheckCircle2, AlertTriangle, ArrowRight, Server, Star,
-  Send, Pencil, RefreshCw, Trash2, Plus, X, Eye, EyeOff, Lock,
+  Send, Pencil, RefreshCw, Trash2, Plus, X, Eye, EyeOff, Lock, Settings,
 } from "lucide-react";
 import API from "../../services/api";
 import MailWorkspace from "./mail/MailWorkspace";
@@ -93,6 +93,9 @@ const btn = {
   primary: "inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50",
   ghost: "inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold bg-white border rounded-xl border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50",
   danger: "inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-xl hover:bg-red-50 disabled:opacity-50",
+  primarySm: "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50",
+  ghostSm: "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white border rounded-lg border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50",
+  dangerSm: "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50",
 };
 const input = "w-full px-3.5 py-2.5 text-sm border rounded-xl border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50";
 
@@ -229,13 +232,13 @@ function SmtpDialog({ account, initialEmail, onClose, onSaved }) {
   );
 }
 
-/* ---------------- Page: mail workspace with these settings as a tab ---------------- */
+/* ---------------- Page: mail workspace with Email Settings always visible ---------------- */
 export default function EmailIntegration() {
-  return <MailWorkspace renderSettings={() => <MailSettings />} />;
+  return <MailWorkspace renderSettings={(props) => <MailSettings {...props} />} />;
 }
 
 /* ---------------- Email Settings (connected accounts) ---------------- */
-function MailSettings() {
+function MailSettings({ onChanged, capabilities = [] }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [state, setState] = useState("loading"); // loading | ready | error
@@ -244,6 +247,7 @@ function MailSettings() {
   const [choice, setChoice] = useState(null); // { provider|null, available } after detection
   const [banner, setBanner] = useState(null); // { type: "success"|"error", text }
   const [smtpDialog, setSmtpDialog] = useState(null); // { account?, email? }
+  const [addOpen, setAddOpen] = useState(false);
   const admin = isAdmin();
 
   const load = useCallback((quiet) => {
@@ -282,6 +286,7 @@ function MailSettings() {
     } catch (err) {
       setBanner({ type: "error", text: err.response?.data?.message || "Something went wrong. Please try again." });
       load(true);
+      onChanged?.();
     } finally {
       setBusy(null);
     }
@@ -317,6 +322,8 @@ function MailSettings() {
       toast.success("Email account disconnected");
       const revoke = res.data?.data?.revokeUrl;
       setBanner({ type: "success", text: `${a.email} disconnected.${revoke ? " You can also remove ReadyTech's access from your account settings." : ""}` });
+      // Lock email actions right away; they return only once the backend confirms a connection
+      onChanged?.({ disconnected: a.id });
       await load(true);
     });
   };
@@ -327,6 +334,7 @@ function MailSettings() {
       toast.success("Test email sent");
       setBanner({ type: "success", text: `${res.data?.message || "Test email sent"}. Check that inbox to confirm it arrived.` });
       await load(true);
+      onChanged?.();
     });
 
   const makeDefault = (a) =>
@@ -334,207 +342,181 @@ function MailSettings() {
       const res = await API.post(`/email/accounts/${a.id}/default`);
       toast.success(res.data?.message || "Default sender updated");
       await load(true);
+      onChanged?.();
     });
 
   const accounts = data?.accounts || [];
   const providers = data?.providers || [];
   const nameOf = (id) => providers.find((p) => p.id === id)?.name || "this provider";
   const full = accounts.length >= MAX_ACCOUNTS;
+  const showAdd = admin && !full && (accounts.length === 0 || addOpen);
+  const capOf = (id) => capabilities.find((c) => c.accountId === id);
 
   return (
-    <div className="max-w-5xl space-y-6">
-      {/* Header */}
-      <div className="p-5 bg-white border shadow-sm sm:p-6 rounded-2xl border-slate-200">
-        <div className="flex items-start gap-4">
-          <div className="grid w-12 h-12 text-indigo-600 rounded-xl bg-indigo-50 place-items-center shrink-0">
-            <Mail size={22} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-xl font-bold text-slate-900">Email Settings</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Connect your company's mailboxes — Gmail, Outlook / Microsoft 365, Zoho Mail or any custom-domain email over SMTP — so emails from the Mail workspace, CRM leads and ERP customers are sent from your own address.
-            </p>
-            <p className="flex items-start gap-1.5 mt-2 text-xs text-slate-500">
-              <ShieldCheck size={14} className="mt-px text-emerald-600 shrink-0" />
-              Accounts belong to this workspace only. OAuth sign-ins never share your password, and SMTP passwords are encrypted on our servers.
-            </p>
-          </div>
+    <section className="bg-white border shadow-sm rounded-2xl border-slate-200" aria-labelledby="mail-settings-title">
+      {/* Panel header */}
+      <div className="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-slate-100">
+        <div className="grid text-indigo-600 w-9 h-9 rounded-xl bg-indigo-50 place-items-center shrink-0"><Settings size={18} /></div>
+        <div className="flex-1 min-w-0">
+          <h2 id="mail-settings-title" className="font-semibold text-slate-900">Email Settings</h2>
+          <p className="flex items-center gap-1.5 text-xs text-slate-500">
+            <ShieldCheck size={13} className="text-emerald-600 shrink-0" />
+            Mailboxes belong to this workspace only. Credentials are encrypted on our servers and never shown in the browser.
+          </p>
         </div>
+        {accounts.length > 0 && <span className="text-xs font-medium text-slate-400">{accounts.length} / {MAX_ACCOUNTS} accounts</span>}
+        {admin && !full && accounts.length > 0 && (
+          <button onClick={() => setAddOpen((o) => !o)} className={btn.ghost} aria-expanded={addOpen}>
+            {addOpen ? <X size={15} /> : <Plus size={15} />} {addOpen ? "Close" : "Add account"}
+          </button>
+        )}
       </div>
 
-      {banner && (
-        <div className={`flex items-start gap-2 p-4 text-sm rounded-xl border ${banner.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-700"}`} role="status">
-          {banner.type === "success" ? <CheckCircle2 size={18} className="shrink-0" /> : <AlertTriangle size={18} className="shrink-0" />}
-          <span className="flex-1 break-words">{banner.text}</span>
-          <button onClick={() => setBanner(null)} className="text-xs font-semibold opacity-70 hover:opacity-100">Dismiss</button>
-        </div>
-      )}
+      <div className="p-5 space-y-4">
+        {banner && (
+          <div className={`flex items-start gap-2 p-3 text-sm rounded-xl border ${banner.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-700"}`} role="status">
+            {banner.type === "success" ? <CheckCircle2 size={17} className="shrink-0" /> : <AlertTriangle size={17} className="shrink-0" />}
+            <span className="flex-1 break-words">{banner.text}</span>
+            <button onClick={() => setBanner(null)} className="text-xs font-semibold opacity-70 hover:opacity-100">Dismiss</button>
+          </div>
+        )}
 
-      {state === "loading" && (
-        <p className="flex items-center gap-2 text-sm text-slate-500">
-          <Loader2 size={16} className="animate-spin" /> Loading mail integration…
-        </p>
-      )}
-      {state === "error" && (
-        <p className="text-sm text-red-600">
-          Couldn't load mail integration status. <button onClick={() => load()} className="font-semibold underline">Retry</button>
-        </p>
-      )}
+        {state === "loading" && (
+          <div className="grid gap-3 md:grid-cols-2" aria-busy="true">
+            {[0, 1].map((i) => <div key={i} className="h-28 rounded-xl bg-slate-100 animate-pulse" />)}
+          </div>
+        )}
+        {state === "error" && (
+          <p className="text-sm text-red-600">
+            Couldn't load your email accounts. <button onClick={() => load()} className="font-semibold underline">Retry</button>
+          </p>
+        )}
 
-      {state === "ready" && (
-        <>
-          {/* Connected accounts */}
-          <section className="space-y-3">
-            <div className="flex items-end justify-between gap-3">
-              <div>
-                <h2 className="font-semibold text-slate-900">Connected accounts</h2>
-                <p className="text-xs text-slate-500">The default sender is used for lead and customer emails.</p>
-              </div>
-              {accounts.length > 0 && <span className="text-xs text-slate-500">{accounts.length} / {MAX_ACCOUNTS}</span>}
-            </div>
-
-            {accounts.length === 0 ? (
-              <div className="p-6 text-sm text-center bg-white border border-dashed rounded-2xl border-slate-300 text-slate-500">
-                No mailbox connected yet. Emails to leads and customers are sent from the default ReadyTech sender.
-              </div>
-            ) : (
-              <ul className="space-y-3">
-                {accounts.map((a) => {
-                  const Icon = ICONS[a.provider] || SmtpIcon;
-                  const oauthAvailable = providers.find((p) => p.id === a.provider)?.available;
-                  return (
-                    <li key={a.id} className={`p-4 bg-white border shadow-sm rounded-2xl ${a.status === "error" ? "border-amber-200" : a.isDefault ? "border-indigo-200" : "border-slate-200"}`}>
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-                        <div className="flex items-start flex-1 min-w-0 gap-3">
-                          <div className="grid border w-11 h-11 rounded-xl border-slate-100 bg-slate-50 place-items-center shrink-0"><Icon /></div>
-                          <div className="min-w-0 space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-semibold break-all text-slate-900">{a.email}</span>
-                              {a.isDefault && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200">
-                                  <Star size={11} className="fill-current" /> Default
-                                </span>
-                              )}
-                              <StatusPill status={a.status} />
-                            </div>
-                            <p className="text-xs text-slate-500">
-                              {a.providerName}
-                              {a.displayName ? ` · sends as "${a.displayName}"` : ""}
-                              {a.smtp ? ` · ${a.smtp.host}:${a.smtp.port} (${a.smtp.security === "ssl" ? "SSL" : "STARTTLS"})` : ""}
-                            </p>
-                            <p className="text-xs text-slate-400">
-                              Connected {fmt(a.connectedAt)}
-                              {a.lastUsedAt ? ` · last used ${fmt(a.lastUsedAt)}` : ""}
-                              {a.lastTestedAt ? ` · tested ${fmt(a.lastTestedAt)}` : ""}
-                            </p>
-                            {a.status !== "connected" && a.lastError && <p className="text-sm text-amber-700">{a.lastError}</p>}
-                          </div>
-                        </div>
-
-                        {admin && (
-                          <div className="flex flex-wrap gap-2 lg:justify-end">
-                            {a.status === "error" && a.provider !== "smtp" ? (
-                              <button disabled={!!busy || !oauthAvailable} onClick={() => connect(a.provider, a.email)} className={btn.primary}>
-                                {busy === a.provider ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} Reconnect
-                              </button>
-                            ) : (
-                              <button disabled={!!busy} onClick={() => sendTest(a)} className={btn.ghost}>
-                                {busy === `test:${a.id}` ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Test
-                              </button>
-                            )}
-                            {a.provider === "smtp" ? (
-                              <button disabled={!!busy} onClick={() => setSmtpDialog({ account: a })} className={a.status === "error" ? btn.primary : btn.ghost}>
-                                <Pencil size={15} /> {a.status === "error" ? "Update settings" : "Edit"}
-                              </button>
-                            ) : (
-                              a.status !== "error" && (
-                                <button disabled={!!busy || !oauthAvailable} onClick={() => connect(a.provider, a.email)} className={btn.ghost} title="Sign in again to refresh access">
-                                  {busy === a.provider ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} Reconnect
-                                </button>
-                              )
-                            )}
-                            {!a.isDefault && (
-                              <button disabled={!!busy} onClick={() => makeDefault(a)} className={btn.ghost}>
-                                {busy === `def:${a.id}` ? <Loader2 size={15} className="animate-spin" /> : <Star size={15} />} Make default
-                              </button>
-                            )}
-                            <button disabled={!!busy} onClick={() => disconnect(a)} className={btn.danger}>
-                              {busy === `del:${a.id}` ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} Disconnect
-                            </button>
-                          </div>
+        {state === "ready" && accounts.length > 0 && (
+          <ul className="grid gap-3 md:grid-cols-2">
+            {accounts.map((a) => {
+              const Icon = ICONS[a.provider] || SmtpIcon;
+              const oauthAvailable = providers.find((p) => p.id === a.provider)?.available;
+              const cap = capOf(a.id);
+              return (
+                <li key={a.id} className={`flex flex-col gap-3 p-4 border rounded-xl ${a.status === "error" ? "border-amber-200 bg-amber-50/40" : a.isDefault ? "border-indigo-200 bg-indigo-50/30" : "border-slate-200"}`}>
+                  <div className="flex items-start gap-3">
+                    <div className="grid w-10 h-10 bg-white border rounded-xl border-slate-100 place-items-center shrink-0"><Icon size={24} /></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-sm font-semibold break-all text-slate-900">{a.email}</span>
+                        {a.isDefault && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                            <Star size={10} className="fill-current" /> Default sender
+                          </span>
                         )}
                       </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-
-          {/* Add account */}
-          {!admin ? (
-            <p className="text-sm text-slate-500">Only workspace admins can connect or manage email accounts.</p>
-          ) : full ? (
-            <p className="text-sm text-slate-500">This workspace has reached {MAX_ACCOUNTS} email accounts. Disconnect one to add another.</p>
-          ) : (
-            <section className="p-5 space-y-5 bg-white border shadow-sm sm:p-6 rounded-2xl border-slate-200">
-              <div>
-                <h2 className="flex items-center gap-2 font-semibold text-slate-900"><Plus size={18} /> Add an email account</h2>
-                <p className="text-sm text-slate-500">Enter the address you want to send from and we'll take you to the right sign-in, or pick a provider below.</p>
-              </div>
-
-              <form onSubmit={continueWithEmail} className="flex flex-col gap-3 sm:flex-row">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setChoice(null);
-                  }}
-                  placeholder="you@company.com"
-                  autoComplete="email"
-                  className={`${input} flex-1`}
-                />
-                <button type="submit" disabled={!!busy} className={btn.primary}>
-                  {busy === "detect" ? <><Loader2 size={16} className="animate-spin" /> Checking…</> : <>Continue <ArrowRight size={16} /></>}
-                </button>
-              </form>
-              {choice?.provider && !choice.available && (
-                <p className="p-3 text-sm rounded-xl bg-slate-50 text-slate-600">
-                  {nameOf(choice.provider)} connection isn't available yet — ReadyTech is finishing a one-time setup. You can still connect this mailbox with SMTP below.
-                </p>
-              )}
-              {choice && !choice.provider && <p className="text-sm text-slate-600">We couldn't tell who hosts this mailbox — choose your provider below.</p>}
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                {providers.map((p) => {
-                  const Icon = ICONS[p.id] || SmtpIcon;
-                  const hint = EMAIL_RE.test(email.trim()) ? email.trim() : undefined;
-                  return (
-                    <div key={p.id} className="flex flex-col gap-3 p-4 border rounded-xl border-slate-200">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center min-w-0 gap-3">
-                          <div className="grid w-10 h-10 border rounded-lg border-slate-100 bg-slate-50 place-items-center shrink-0"><Icon size={24} /></div>
-                          <h3 className="font-semibold text-slate-900">{p.name}</h3>
-                        </div>
-                        {!p.available && <StatusPill status="unavailable" />}
-                      </div>
-                      <p className="flex-1 text-xs text-slate-500">{p.limitations}</p>
-                      {p.available ? (
-                        <button disabled={!!busy} onClick={() => connect(p.id, hint)} className={`${btn.ghost} self-start`}>
-                          {busy === p.id ? <><Loader2 size={15} className="animate-spin" /> Redirecting…</> : CONNECT_LABEL[p.id] || `Connect ${SHORT[p.id] || p.name}`}
-                        </button>
-                      ) : (
-                        <p className="text-xs text-slate-500">ReadyTech is finishing a one-time setup for this provider.</p>
-                      )}
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {a.providerName}
+                        {a.displayName ? ` · sends as "${a.displayName}"` : ""}
+                        {a.smtp ? ` · ${a.smtp.host}:${a.smtp.port} (${a.smtp.security === "ssl" ? "SSL" : "STARTTLS"})` : ""}
+                      </p>
                     </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-        </>
-      )}
+                    <StatusPill status={a.status} />
+                  </div>
+
+                  <dl className="grid grid-cols-2 text-xs gap-x-4 gap-y-1">
+                    <dt className="text-slate-400">Sending</dt>
+                    <dd className={a.status === "connected" ? "text-emerald-700 font-medium" : "text-amber-700 font-medium"}>{a.status === "connected" ? "Enabled" : "Paused — reconnect"}</dd>
+                    <dt className="text-slate-400">Inbox sync</dt>
+                    <dd className="text-slate-600" title={cap?.inboxReason || ""}>{cap?.inbox ? "On" : "Not available yet"}</dd>
+                    <dt className="text-slate-400">Attachments</dt>
+                    <dd className="text-slate-600">{cap?.attachments === false ? "Not supported yet" : "Supported"}</dd>
+                    <dt className="text-slate-400">Last used</dt>
+                    <dd className="text-slate-600">{fmt(a.lastUsedAt) || "Never"}</dd>
+                  </dl>
+                  {a.status !== "connected" && a.lastError && <p className="text-xs text-amber-800">{a.lastError}</p>}
+
+                  {admin && (
+                    <div className="flex flex-wrap gap-2 pt-3 mt-auto border-t border-slate-100">
+                      {a.status === "error" && a.provider !== "smtp" ? (
+                        <button disabled={!!busy || !oauthAvailable} onClick={() => connect(a.provider, a.email)} className={btn.primarySm}>
+                          {busy === a.provider ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Reconnect
+                        </button>
+                      ) : a.status === "connected" && (
+                        <button disabled={!!busy} onClick={() => sendTest(a)} className={btn.ghostSm}>
+                          {busy === `test:${a.id}` ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Test
+                        </button>
+                      )}
+                      {a.provider === "smtp" && (
+                        <button disabled={!!busy} onClick={() => setSmtpDialog({ account: a })} className={a.status === "error" ? btn.primarySm : btn.ghostSm}>
+                          <Pencil size={14} /> {a.status === "error" ? "Update settings" : "Edit"}
+                        </button>
+                      )}
+                      {!a.isDefault && (
+                        <button disabled={!!busy} onClick={() => makeDefault(a)} className={btn.ghostSm}>
+                          {busy === `def:${a.id}` ? <Loader2 size={14} className="animate-spin" /> : <Star size={14} />} Make default
+                        </button>
+                      )}
+                      <button disabled={!!busy} onClick={() => disconnect(a)} className={`${btn.dangerSm} ml-auto`}>
+                        {busy === `del:${a.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Disconnect
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {state === "ready" && !admin && accounts.length === 0 && (
+          <p className="p-4 text-sm text-center border border-dashed rounded-xl border-slate-300 text-slate-500">No email account is connected. Ask a workspace admin to connect one.</p>
+        )}
+        {state === "ready" && !admin && accounts.length > 0 && <p className="text-xs text-slate-400">Only workspace admins can connect or manage email accounts.</p>}
+        {state === "ready" && admin && full && <p className="text-xs text-slate-500">This workspace has reached {MAX_ACCOUNTS} email accounts. Disconnect one to add another.</p>}
+
+        {/* Add / connect */}
+        {state === "ready" && showAdd && (
+          <div id="mail-add-account" className="p-4 space-y-4 border rounded-xl border-slate-200 bg-slate-50/50">
+            <div>
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><Plus size={16} /> {accounts.length ? "Add another email account" : "Connect your email account"}</h3>
+              <p className="text-xs text-slate-500">Enter the address you send from and we'll take you to the right sign-in, or pick a provider.</p>
+            </div>
+
+            <form onSubmit={continueWithEmail} className="flex flex-col gap-2 sm:flex-row">
+              <input id="mail-add-account-email" type="email" value={email} onChange={(e) => { setEmail(e.target.value); setChoice(null); }}
+                placeholder="you@company.com" autoComplete="email" className={`${input} flex-1 bg-white`} />
+              <button type="submit" disabled={!!busy} className={btn.primary}>
+                {busy === "detect" ? <><Loader2 size={16} className="animate-spin" /> Checking…</> : <>Continue <ArrowRight size={16} /></>}
+              </button>
+            </form>
+            {choice?.provider && !choice.available && (
+              <p className="p-3 text-xs bg-white rounded-lg text-slate-600">
+                {nameOf(choice.provider)} connection isn't available yet — ReadyTech is finishing a one-time setup. You can still connect this mailbox with SMTP below.
+              </p>
+            )}
+            {choice && !choice.provider && <p className="text-xs text-slate-600">We couldn't tell who hosts this mailbox — choose your provider below.</p>}
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {providers.map((p) => {
+                const Icon = ICONS[p.id] || SmtpIcon;
+                const hint = EMAIL_RE.test(email.trim()) ? email.trim() : undefined;
+                return (
+                  <div key={p.id} className={`flex flex-col gap-2 p-3 bg-white border rounded-xl border-slate-200 ${p.available ? "" : "opacity-75"}`}>
+                    <div className="flex items-center gap-2">
+                      <div className="grid w-8 h-8 border rounded-lg border-slate-100 bg-slate-50 place-items-center shrink-0"><Icon size={20} /></div>
+                      <h4 className="flex-1 min-w-0 text-sm font-semibold truncate text-slate-900">{SHORT[p.id] || p.name}</h4>
+                    </div>
+                    <p className="flex-1 text-[11px] leading-snug text-slate-500">{p.limitations}</p>
+                    {p.available ? (
+                      <button disabled={!!busy} onClick={() => connect(p.id, hint)} className={`${btn.ghostSm} justify-center`}>
+                        {busy === p.id ? <><Loader2 size={14} className="animate-spin" /> Redirecting…</> : CONNECT_LABEL[p.id] || `Connect ${SHORT[p.id] || p.name}`}
+                      </button>
+                    ) : (
+                      <span className="inline-flex justify-center px-2 py-1.5 text-[11px] font-semibold rounded-lg bg-slate-100 text-slate-500">Not available yet</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
 
       {smtpDialog && (
         <SmtpDialog
@@ -543,12 +525,14 @@ function MailSettings() {
           onClose={() => setSmtpDialog(null)}
           onSaved={(message) => {
             setSmtpDialog(null);
+            setAddOpen(false);
             toast.success(message);
             setBanner({ type: "success", text: `${message}. The connection was verified with your mail server.` });
             load(true);
+            onChanged?.();
           }}
         />
       )}
-    </div>
+    </section>
   );
 }

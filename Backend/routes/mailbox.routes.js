@@ -24,6 +24,7 @@ const handle = (fn) => async (req, res) => {
     res.status(status).json({
       success: false,
       message: err.status ? err.message : "Something went wrong. Please try again.",
+      ...(err.code && typeof err.code === "string" && err.code.startsWith("MAIL_") && { code: err.code }),
       ...(err.messageId && { data: { id: err.messageId } }),
     });
   }
