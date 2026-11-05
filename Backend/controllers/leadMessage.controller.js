@@ -5,6 +5,10 @@ import { sendTwilioMessage } from "../services/voip/twilio.service.js";
 import { sendLeadEmail } from "../services/email.service.js";
 import { sendViaConnectedAccount } from "../services/emailOAuth.service.js";
 
+const EMAIL_RE = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]{2,}$/;
+const MAX_SUBJECT = 200;
+const MAILBOX_LABEL = { google: "Gmail", microsoft: "Microsoft 365", zoho: "Zoho Mail", smtp: "SMTP" };
+
 const CHANNELS = {
   email: "Email",
   sms: "SMS",
@@ -34,6 +38,16 @@ export const sendLeadMessage = async (req, res) => {
     return res.status(400).json({ success: false, message: "Subject is required" });
   }
 
+  if (channel === "email" && subject.length > MAX_SUBJECT) {
+    return res.status(400).json({ success: false, message: `Subject must be ${MAX_SUBJECT} characters or fewer` });
+  }
+
+  // Optional edited recipient (email only) — a single valid address
+  const toOverride = channel === "email" ? String(req.body?.to || "").trim() : "";
+  if (toOverride && (toOverride.length > 254 || !EMAIL_RE.test(toOverride))) {
+    return res.status(400).json({ success: false, message: "Please enter a valid recipient email address" });
+  }
+
   let lead;
   try {
     lead = await Lead.findById(req.params.id).select("_id name email phone").lean();
@@ -45,7 +59,8 @@ export const sendLeadMessage = async (req, res) => {
     return res.status(404).json({ success: false, message: "Lead not found" });
   }
 
-  if (channel === "email" && !lead.email) {
+  const emailTo = toOverride || lead.email;
+  if (channel === "email" && !emailTo) {
     return res.status(400).json({ success: false, message: "This lead has no email address" });
   }
 
@@ -83,14 +98,14 @@ export const sendLeadMessage = async (req, res) => {
 
     if (channel === "email") {
       // Workspace's connected Gmail / Microsoft 365 mailbox first; Resend otherwise
-      const viaAccount = await sendViaConnectedAccount(req.workspace, { to: lead.email, subject, message });
+      const viaAccount = await sendViaConnectedAccount(req.workspace, { to: emailTo, subject, message });
       if (viaAccount) {
-        result = { to: lead.email, id: viaAccount.id, from: viaAccount.from, provider: viaAccount.provider, status: "sent" };
-        await logActivity("Sent", `Email to ${lead.email} from ${viaAccount.from} via ${viaAccount.provider === "google" ? "Gmail" : "Microsoft 365"}${viaAccount.id ? ` | ID: ${viaAccount.id}` : ""}`);
+        result = { to: emailTo, id: viaAccount.id, from: viaAccount.from, provider: viaAccount.provider, status: "sent" };
+        await logActivity("Sent", `Email to ${emailTo} from ${viaAccount.from} via ${MAILBOX_LABEL[viaAccount.provider] || viaAccount.provider}${viaAccount.id ? ` | ID: ${viaAccount.id}` : ""}`);
       } else {
-        const { id } = await sendLeadEmail({ to: lead.email, subject, message });
-        result = { to: lead.email, id, provider: "resend", status: "sent" };
-        await logActivity("Sent", `Email to ${lead.email} via Resend${id ? ` | ID: ${id}` : ""}`);
+        const { id } = await sendLeadEmail({ to: emailTo, subject, message });
+        result = { to: emailTo, id, provider: "resend", status: "sent" };
+        await logActivity("Sent", `Email to ${emailTo} via Resend${id ? ` | ID: ${id}` : ""}`);
       }
     } else {
       result = await sendTwilioMessage({ channel, to: lead.phone, body: message });

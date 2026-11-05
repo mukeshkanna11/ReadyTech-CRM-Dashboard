@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 
 import LeadAIAssistant from "../components/LeadAIAssistant";
+import LeadEmailComposer from "../components/LeadEmailComposer";
 
 const PAGE_SIZE = 8;
 
@@ -242,9 +243,14 @@ const [messageLead, setMessageLead] = useState(null);
 const [messageForm, setMessageForm] = useState({ subject: "", message: "" });
 const [messageSending, setMessageSending] = useState(false);
 const [messageResult, setMessageResult] = useState(null); // { ok, text }
+const [emailLead, setEmailLead] = useState(null); // Send Email composer
 
 const openMessage = (channel, lead = activeLead) => {
   if (!lead) return;
+  if (channel === "email") {
+    setEmailLead(lead);
+    return;
+  }
   if (channel !== "email" && !lead.phone) {
     toast.error("This lead has no phone number");
     return;
@@ -2041,6 +2047,27 @@ const fetchActivities = async (leadId) => {
                                   16
                                 }
                               />
+                            </IconButton>
+
+                            <IconButton
+                              onClick={() =>
+                                openMessage(
+                                  "email",
+                                  lead
+                                )
+                              }
+                              title={
+                                lead.email
+                                  ? `Email ${lead.email}`
+                                  : "Send Email (no email saved)"
+                              }
+                              className={
+                                lead.email
+                                  ? "text-blue-600 hover:bg-blue-50"
+                                  : "text-slate-400 hover:bg-slate-50"
+                              }
+                            >
+                              <Mail size={16} />
                             </IconButton>
 
                             <IconButton
@@ -4052,7 +4079,7 @@ const fetchActivities = async (leadId) => {
     {/* COMMUNICATION: Email | SMS | WhatsApp | Voice */}
     <div className="grid w-full grid-cols-4 gap-2">
       {[
-        { key: "email", label: "Email", icon: Mail, disabled: !activeLead.email, tone: "text-blue-600", onClick: () => openMessage("email") },
+        { key: "email", label: "Email", icon: Mail, disabled: false, tone: "text-blue-600", onClick: () => openMessage("email") },
         { key: "sms", label: "SMS", icon: MessageSquare, disabled: !activeLead.phone, tone: "text-violet-600", onClick: () => openMessage("sms") },
         { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, disabled: !activeLead.phone, tone: "text-emerald-600", onClick: () => openMessage("whatsapp") },
         { key: "voice", label: "Voice", icon: PhoneCall, disabled: !activeLead.phone, tone: "text-emerald-600", onClick: () => startCall(activeLead) },
@@ -4061,7 +4088,7 @@ const fetchActivities = async (leadId) => {
           key={key}
           onClick={onClick}
           disabled={disabled}
-          title={disabled ? (key === "email" ? "No email address" : "No phone number") : label}
+          title={disabled ? "No phone number" : key === "email" ? "Send Email" : label}
           className="flex flex-col items-center justify-center gap-1 px-2 py-3 text-xs font-medium bg-white border rounded-xl hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Icon size={16} className={tone} />
@@ -4115,6 +4142,24 @@ const fetchActivities = async (leadId) => {
           onClose={() =>
             setAiLead(null)
           }
+        />
+      )}
+
+      {/* SEND EMAIL */}
+
+      {emailLead && (
+        <LeadEmailComposer
+          lead={emailLead}
+          onClose={() => setEmailLead(null)}
+          onSent={() => {
+            if (activeLead?._id === emailLead._id) fetchActivities(emailLead._id);
+          }}
+          onEditLead={() => {
+            const lead = emailLead;
+            setEmailLead(null);
+            setProfileOpen(false);
+            openEditDrawer(lead);
+          }}
         />
       )}
 

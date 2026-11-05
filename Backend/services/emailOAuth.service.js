@@ -119,10 +119,10 @@ const httpError = (message, status) => Object.assign(new Error(message), { statu
 /* ---------------- OAuth state (CSRF + workspace binding) ---------------- */
 const STATE_PURPOSE = "email-oauth";
 
-export const buildAuthUrl = ({ provider, userId, workspaceId, loginHint }) => {
+export const buildAuthUrl = ({ provider, userId, workspaceId, loginHint, returnOrigin }) => {
   const p = PROVIDERS[provider];
   const state = jwt.sign(
-    { purpose: STATE_PURPOSE, provider, uid: String(userId), ws: String(workspaceId), nonce: crypto.randomBytes(12).toString("hex") },
+    { purpose: STATE_PURPOSE, provider, uid: String(userId), ws: String(workspaceId), nonce: crypto.randomBytes(12).toString("hex"), ...(returnOrigin && { ret: returnOrigin }) },
     process.env.JWT_SECRET,
     { expiresIn: "10m" }
   );
@@ -153,6 +153,7 @@ const bodyError = (body = {}, status, statusText, what) => {
   const err = new Error(`${what} failed: ${String(detail).split("\n")[0].slice(0, 200)}`);
   err.providerStatus = status;
   err.invalidGrant = INVALID_GRANT.has(body.error);
+  if (typeof body.error === "string") err.providerCode = body.error;
   return err;
 };
 const providerError = async (res, what) => bodyError(await res.json().catch(() => ({})), res.status, res.statusText, what);
@@ -456,7 +457,123 @@ const b64url = (s) => Buffer.from(s).toString("base64").replace(/\+/g, "-").repl
 const header = (v) => String(v).replace(/[\r\n]+/g, " ");
 const encodeWord = (s) => `=?UTF-8?B?${Buffer.from(header(s)).toString("base64")}?=`;
 
-const sendOAuth = async (conn, token, { to, subject, message }) => {
+/* ---- Rich messages (CC/BCC, HTML, attachments, threading) ----
+   Used only when one of these fields is present; plain-text sends keep the
+   original single-part path below byte for byte. */
+const RICH_FIELDS = ["cc", "bcc", "html", "attachments", "inReplyTo", "references", "threadId", "messageId"];
+const isRich = (m) => RICH_FIELDS.some((k) => (Array.isArray(m[k]) ? m[k].length : m[k]));
+const wrap76 = (b64) => b64.replace(/.{1,76}/g, "$&\r\n").replace(/\r\n$/, "");
+const boundary = () => `rt_${crypto.randomBytes(12).toString("hex")}`;
+const asciiName = (s) => header(s).replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "");
+const b64part = (type, body) =>
+  [`Content-Type: ${type}; charset="UTF-8"`, "Content-Transfer-Encoding: base64", "", wrap76(Buffer.from(String(body ?? "")).toString("base64"))].join("\r\n");
+const multipart = (type, parts) => {
+  const b = boundary();
+  return [`Content-Type: multipart/${type}; boundary="${b}"`, "", ...parts.flatMap((p) => [`--${b}`, p]), `--${b}--`].join("\r\n");
+};
+
+/* RFC 5322 message. Bcc is included for Gmail (which delivers to it and
+   strips the header); attachments are { filename, contentType, content: Buffer }. */
+export const buildMime = ({ from, to, cc, bcc, subject, text, html, attachments = [], messageId, inReplyTo, references }) => {
+  const head = [`From: ${from}`, `To: ${header(to)}`];
+  if (cc) head.push(`Cc: ${header(cc)}`);
+  if (bcc) head.push(`Bcc: ${header(bcc)}`);
+  head.push(`Subject: ${encodeWord(subject)}`, `Date: ${new Date().toUTCString()}`);
+  if (messageId) head.push(`Message-ID: ${header(messageId)}`);
+  if (inReplyTo) head.push(`In-Reply-To: ${header(inReplyTo)}`);
+  if (references) head.push(`References: ${header(references)}`);
+  head.push("MIME-Version: 1.0");
+
+  let body = html ? multipart("alternative", [b64part("text/plain", text), b64part("text/html", html)]) : b64part("text/plain", text);
+  if (attachments.length) {
+    body = multipart("mixed", [
+      body,
+      ...attachments.map((a) => {
+        const name = asciiName(a.filename) || "attachment";
+        return [
+          `Content-Type: ${header(a.contentType || "application/octet-stream")}; name="${name}"`,
+          `Content-Disposition: attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(header(a.filename))}`,
+          "Content-Transfer-Encoding: base64",
+          "",
+          wrap76(Buffer.from(a.content).toString("base64")),
+        ].join("\r\n");
+      }),
+    ]);
+  }
+  return `${head.join("\r\n")}\r\n${body}`;
+};
+
+const addressList = (v) => String(v || "").split(",").map((s) => s.trim()).filter(Boolean);
+const graphRecipients = (v) => addressList(v).map((address) => ({ emailAddress: { address } }));
+const MS_MAX_ATTACH = 3 * 1024 * 1024; // Graph sendMail request limit is 4 MB (base64)
+
+const sendRichOAuth = async (conn, token, m) => {
+  const text = String(m.message ?? "");
+  const attachments = m.attachments || [];
+  if (conn.provider === "google") {
+    const from = conn.displayName ? `${encodeWord(conn.displayName)} <${header(conn.email)}>` : header(conn.email);
+    const mime = buildMime({ ...m, from, text });
+    const auth = { authorization: `Bearer ${token}` };
+    if (!attachments.length) {
+      return fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ raw: b64url(mime), ...(m.threadId && { threadId: String(m.threadId) }) }),
+      });
+    }
+    // Attachments: media upload endpoint (35 MB) with the thread id as metadata
+    const b = boundary();
+    const payload = [
+      `--${b}`, "Content-Type: application/json; charset=UTF-8", "", JSON.stringify(m.threadId ? { threadId: String(m.threadId) } : {}),
+      `--${b}`, "Content-Type: message/rfc822", "", mime, `--${b}--`,
+    ].join("\r\n");
+    return fetch("https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart", {
+      method: "POST",
+      headers: { ...auth, "content-type": `multipart/related; boundary=${b}` },
+      body: payload,
+    });
+  }
+  if (conn.provider === "zoho") {
+    if (attachments.length) throw httpError("Attachments aren't supported for Zoho Mail yet — send without attachments or use another mailbox", 422);
+    const { mailBase, accountId } = conn.providerData || {};
+    return fetch(`${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages`, {
+      method: "POST",
+      headers: { authorization: `Zoho-oauthtoken ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        fromAddress: conn.email, toAddress: header(m.to), subject: header(m.subject),
+        ...(m.cc && { ccAddress: header(m.cc) }), ...(m.bcc && { bccAddress: header(m.bcc) }),
+        content: m.html || text, mailFormat: m.html ? "html" : "plaintext",
+      }),
+    });
+  }
+  if (attachments.reduce((n, a) => n + a.content.length, 0) > MS_MAX_ATTACH) {
+    throw httpError("Outlook / Microsoft 365 attachments are limited to 3 MB in total", 422);
+  }
+  return fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      message: {
+        subject: header(m.subject),
+        body: m.html ? { contentType: "HTML", content: m.html } : { contentType: "Text", content: text },
+        toRecipients: graphRecipients(m.to),
+        ...(m.cc && { ccRecipients: graphRecipients(m.cc) }),
+        ...(m.bcc && { bccRecipients: graphRecipients(m.bcc) }),
+        ...(attachments.length && {
+          attachments: attachments.map((a) => ({
+            "@odata.type": "#microsoft.graph.fileAttachment", name: header(a.filename),
+            contentType: a.contentType || "application/octet-stream", contentBytes: Buffer.from(a.content).toString("base64"),
+          })),
+        }),
+      },
+      saveToSentItems: true,
+    }),
+  });
+};
+
+const sendOAuth = async (conn, token, msg) => {
+  if (isRich(msg)) return sendRichOAuth(conn, token, msg);
+  const { to, subject, message } = msg;
   if (conn.provider === "google") {
     const from = conn.displayName ? `${encodeWord(conn.displayName)} <${header(conn.email)}>` : header(conn.email);
     const mime = [
@@ -496,7 +613,8 @@ const sendOAuth = async (conn, token, { to, subject, message }) => {
 /* Sends from the workspace's default (or given) mailbox. Returns null when
    the workspace has no account (caller decides). Never uses another
    workspace's account. */
-export const sendViaConnectedAccount = async (workspaceId, { to, subject, message }, { accountId } = {}) => {
+export const sendViaConnectedAccount = async (workspaceId, msg, { accountId } = {}) => {
+  const { to, subject, message } = msg;
   const conn = await loadAccount(workspaceId, accountId);
   if (!conn) return null;
 
@@ -507,7 +625,11 @@ export const sendViaConnectedAccount = async (workspaceId, { to, subject, messag
       throw httpError(`${conn.email}: ${conn.lastError}`, 409);
     }
     try {
-      const sent = await sendSmtp(conn.smtp, password, { from: conn.email, fromName: conn.displayName, to, subject: header(subject), text: String(message) });
+      const rich = {};
+      for (const k of ["cc", "bcc", "html", "attachments", "messageId", "inReplyTo", "references"]) {
+        if (Array.isArray(msg[k]) ? msg[k].length : msg[k]) rich[k] = msg[k];
+      }
+      const sent = await sendSmtp(conn.smtp, password, { from: conn.email, fromName: conn.displayName, to, subject: header(subject), text: String(message ?? ""), ...rich });
       await EmailConnection.updateOne({ _id: conn._id, workspace: workspaceId }, { $set: { lastUsedAt: new Date(), status: "connected", lastError: null } });
       return { id: sent.id, from: conn.email, provider: "smtp" };
     } catch (err) {
@@ -520,15 +642,19 @@ export const sendViaConnectedAccount = async (workspaceId, { to, subject, messag
   }
 
   const token = await ensureToken(conn);
-  const res = await sendOAuth(conn, token, { to, subject, message });
+  const res = await sendOAuth(conn, token, msg);
   const body = res.status === 202 ? {} : await res.json().catch(() => ({}));
   const zohoFailed = conn.provider === "zoho" && body?.status?.code && body.status.code >= 300;
 
   if (!res.ok || zohoFailed) {
     const err = bodyError(body, res.status, res.statusText, `${PROVIDERS[conn.provider].name} send`);
     console.error(`Email send via ${conn.provider} failed:`, err.message);
-    const authFailed = res.status === 401 || res.status === 403;
-    err.message = authFailed
+    // Gmail API switched off in the Google Cloud project: not the account's fault, reconnecting won't help
+    const apiDisabled = res.status === 403 && /has not been used|is disabled|SERVICE_DISABLED|accessNotConfigured/i.test(err.message);
+    const authFailed = !apiDisabled && (res.status === 401 || res.status === 403);
+    err.message = apiDisabled
+      ? `${PROVIDERS[conn.provider].name} sending isn't enabled on ReadyTech's side yet (API disabled) — please contact ReadyTech support`
+      : authFailed
       ? `${conn.email} no longer allows sending from ReadyTech CRM — please reconnect the account`
       : `${conn.email} couldn't send this email right now — please try again shortly`;
     if (authFailed) await markError(conn, err.message);
@@ -537,7 +663,10 @@ export const sendViaConnectedAccount = async (workspaceId, { to, subject, messag
   }
 
   await EmailConnection.updateOne({ _id: conn._id, workspace: workspaceId }, { $set: { lastUsedAt: new Date() } });
-  return { id: body.id || body.data?.messageId || null, from: conn.email, provider: conn.provider };
+  return {
+    id: body.id || body.data?.messageId || null, from: conn.email, provider: conn.provider,
+    ...(body.threadId && { threadId: body.threadId }),
+  };
 };
 
 /* Records a successful test on the account */
@@ -570,4 +699,11 @@ export const detectProvider = async (email) => {
     /* unknown — user picks */
   }
   return null;
+};
+
+/* Public view of the account a send would use (default or given) — lets the
+   mailbox service record which mailbox sent a message without secrets */
+export const resolveSendingAccount = async (workspaceId, accountId) => {
+  const conn = await loadAccount(workspaceId, accountId);
+  return conn ? publicAccount(conn.toObject ? conn.toObject() : conn) : null;
 };

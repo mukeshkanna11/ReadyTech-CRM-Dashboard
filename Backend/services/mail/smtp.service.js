@@ -129,11 +129,21 @@ export const verifySmtp = async (cfg, password) => {
   }
 };
 
-export const sendSmtp = async (cfg, password, { from, fromName, to, subject, text }) => {
+/* Optional rich fields (cc, bcc, html, attachments as Buffers, threading
+   headers) are only passed to Nodemailer when present. File / URL access is
+   disabled on the transport, so attachment content must be a Buffer. */
+export const sendSmtp = async (cfg, password, { from, fromName, to, subject, text, cc, bcc, html, attachments, messageId, inReplyTo, references }) => {
   const ip = await resolveSafeHost(cfg.host);
   const t = transportFor(cfg, password, ip);
   try {
-    const info = await t.sendMail({ from: fromName ? { name: fromName, address: from } : from, to, subject, text });
+    const info = await t.sendMail({
+      from: fromName ? { name: fromName, address: from } : from, to, subject, text,
+      ...(cc && { cc }), ...(bcc && { bcc }), ...(html && { html }),
+      ...(attachments?.length && {
+        attachments: attachments.map((a) => ({ filename: a.filename, contentType: a.contentType, content: Buffer.from(a.content) })),
+      }),
+      ...(messageId && { messageId }), ...(inReplyTo && { inReplyTo }), ...(references && { references }),
+    });
     return { id: info?.messageId || null };
   } catch (err) {
     console.error(`SMTP send failed for ${cfg.host}:${cfg.port}:`, err.code || err.message);

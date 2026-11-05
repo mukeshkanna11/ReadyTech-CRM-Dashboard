@@ -8,6 +8,7 @@ import mongoose from "mongoose";
 import User from "../models/User.js";
 import Client from "../models/Client.js";
 import { sendLeadEmail } from "../services/email.service.js";
+import mailboxRoutes from "./mailbox.routes.js";
 import {
   PROVIDERS, missingConfig, buildAuthUrl, verifyState, completeConnection,
   verifyConnection, disconnect, sendViaConnectedAccount, detectProvider,
@@ -16,8 +17,26 @@ import {
 
 const router = express.Router();
 
-const clientRedirect = (params) =>
-  `${(process.env.CLIENT_URL || "http://localhost:5173").replace(/\/+$/, "")}/integrations/email?${new URLSearchParams(params)}`;
+/* Mail workspace (compose, drafts, conversations, record links) */
+router.use("/mailbox", mailboxRoutes);
+
+const CLIENT_URL = () => (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/+$/, "");
+// The CRM is served from more than one host and the login token is stored per
+// origin, so the admin must land back on the host they started from — never an
+// arbitrary one (allow-list only, carried inside the signed state).
+const APP_ORIGINS = ["https://readytechcrm.netlify.app", "https://readytech-crm-site.netlify.app"];
+const appOrigin = (o) => {
+  const v = String(o || "").replace(/\/+$/, "");
+  return v && (v === CLIENT_URL() || APP_ORIGINS.includes(v)) ? v : undefined;
+};
+const stateOrigin = (state, provider) => {
+  try {
+    return appOrigin(verifyState(state, provider).ret);
+  } catch {
+    return undefined;
+  }
+};
+const clientRedirect = (params, origin) => `${appOrigin(origin) || CLIENT_URL()}/integrations/email?${new URLSearchParams(params)}`;
 
 /* Client-safe provider list — env var names / setup steps stay server-side */
 const providerList = (isAdmin) =>
@@ -36,6 +55,8 @@ const friendlyError = (err) => {
   if (err.name === "TokenExpiredError" || err.name === "JsonWebTokenError" || err.message === "Invalid OAuth state") return "The connection link expired — please click Connect again.";
   if (/refresh token|Not allowed|no email address|Permission to send/.test(err.message) || err.status === 409) return err.message;
   if (/admin|consent|AADSTS65001|AADSTS90094/i.test(err.message)) return "Your organisation requires an administrator to approve this app. Ask your IT admin to grant consent, then connect again.";
+  if (/redirect_uri_mismatch|invalid_client|unauthorized_client|OAuth client was not found/i.test(`${err.message} ${err.providerCode || ""}`)) return "The email sign-in isn't set up correctly on ReadyTech's side (OAuth client / redirect URI). Please contact ReadyTech support.";
+  if (err.invalidGrant) return "The sign-in code expired or was already used — please click Connect again.";
   return "We couldn't finish connecting your email account. Please try again.";
 };
 
@@ -69,7 +90,7 @@ router.get("/oauth/:provider/url", auth, role("admin"), (req, res) => {
     return res.status(400).json({ success: false, code: "EMAIL_PROVIDER_NOT_CONFIGURED", message: NOT_AVAILABLE(PROVIDERS[provider].name) });
   }
   res.json({ success: true, data: { url: buildAuthUrl({
-    provider, userId: req.user._id, workspaceId: req.workspace,
+    provider, userId: req.user._id, workspaceId: req.workspace, returnOrigin: appOrigin(req.get("origin")),
     loginHint: EMAIL_RE.test(String(req.query.email || "")) ? String(req.query.email).trim() : undefined,
   }) } });
 });
@@ -79,10 +100,11 @@ router.get("/oauth/:provider/callback", async (req, res) => {
   const { provider } = req.params;
   const { code, state, error, error_description: desc } = req.query;
   if (PROVIDERS[provider]?.kind !== "oauth") return res.redirect(clientRedirect({ connected: "0", message: "Unknown provider" }));
+  const origin = stateOrigin(state, provider);
   if (error || !code) {
-    if (error) console.warn(`Email OAuth (${provider}) provider error: ${error} ${desc || ""}`);
+    console.warn(`Email OAuth (${provider}) provider error: ${error || "no authorization code returned"} ${desc || ""}`);
     const message = error === "access_denied" ? "Sign-in was cancelled or permission wasn't granted." : friendlyError(new Error(String(desc || error || "")));
-    return res.redirect(clientRedirect({ connected: "0", message }));
+    return res.redirect(clientRedirect({ connected: "0", message }, origin));
   }
 
   try {
@@ -96,10 +118,10 @@ router.get("/oauth/:provider/callback", async (req, res) => {
       provider, code: String(code), workspaceId: s.ws, userId: s.uid,
       accountsServer: provider === "zoho" ? String(req.query["accounts-server"] || "") : undefined,
     });
-    return res.redirect(clientRedirect({ connected: "1", email }));
+    return res.redirect(clientRedirect({ connected: "1", email }, origin));
   } catch (err) {
     console.error(`Email OAuth (${provider}) callback failed:`, err.message);
-    return res.redirect(clientRedirect({ connected: "0", message: friendlyError(err).slice(0, 200) }));
+    return res.redirect(clientRedirect({ connected: "0", message: friendlyError(err).slice(0, 200) }, origin));
   }
 });
 

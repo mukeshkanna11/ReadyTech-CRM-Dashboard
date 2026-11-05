@@ -6,6 +6,7 @@ import {
   Send, Pencil, RefreshCw, Trash2, Plus, X, Eye, EyeOff, Lock,
 } from "lucide-react";
 import API from "../../services/api";
+import MailWorkspace from "./mail/MailWorkspace";
 
 /* =========================================================
    MAIL INTEGRATION — this workspace's own mailboxes: Gmail,
@@ -228,8 +229,13 @@ function SmtpDialog({ account, initialEmail, onClose, onSaved }) {
   );
 }
 
-/* ---------------- Page ---------------- */
+/* ---------------- Page: mail workspace with these settings as a tab ---------------- */
 export default function EmailIntegration() {
+  return <MailWorkspace renderSettings={() => <MailSettings />} />;
+}
+
+/* ---------------- Email Settings (connected accounts) ---------------- */
+function MailSettings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [state, setState] = useState("loading"); // loading | ready | error
@@ -344,9 +350,9 @@ export default function EmailIntegration() {
             <Mail size={22} />
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-bold text-slate-900">Mail Integration</h1>
+            <h2 className="text-xl font-bold text-slate-900">Email Settings</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Connect your company's mailboxes — Gmail, Outlook / Microsoft 365, Zoho Mail or any custom-domain email over SMTP — so emails to CRM leads and ERP customers are sent from your own address.
+              Connect your company's mailboxes — Gmail, Outlook / Microsoft 365, Zoho Mail or any custom-domain email over SMTP — so emails from the Mail workspace, CRM leads and ERP customers are sent from your own address.
             </p>
             <p className="flex items-start gap-1.5 mt-2 text-xs text-slate-500">
               <ShieldCheck size={14} className="mt-px text-emerald-600 shrink-0" />

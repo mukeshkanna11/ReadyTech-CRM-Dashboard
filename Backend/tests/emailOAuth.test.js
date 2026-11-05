@@ -532,3 +532,45 @@ test("isBlockedIp covers internal ranges and allows public addresses", () => {
 test("detectProvider recognises Zoho domains", async () => {
   assert.equal(await svc.detectProvider("a@zohomail.in"), "zoho");
 });
+
+/* ---- Gmail: land back on the app host the admin started from ---- */
+const gmailCallback = async (routes, { returnOrigin, query } = {}) => {
+  mockFetch(routes);
+  const url = new URL(svc.buildAuthUrl({ provider: "google", userId: ADMIN_A, workspaceId: WS_A, returnOrigin }));
+  const r = res();
+  await handler("get", "/oauth/:provider/callback")({ params: { provider: "google" }, query: { code: "c", state: url.searchParams.get("state"), ...query } }, r);
+  return r;
+};
+const okGoogle = {
+  "oauth2.googleapis.com/token": () => json(200, { access_token: "AT1", refresh_token: "RT1", expires_in: 3600, scope: "openid email https://www.googleapis.com/auth/gmail.send" }),
+  userinfo: () => json(200, { email: "quries.readytechsolutions@gmail.com" }),
+};
+
+test("Gmail callback returns to the allow-listed origin the admin started from", async () => {
+  const r = await gmailCallback(okGoogle, { returnOrigin: "https://readytechcrm.netlify.app" });
+  assert.match(r.redirectUrl, /^https:\/\/readytechcrm\.netlify\.app\/integrations\/email\?connected=1/);
+  assert.equal(store.get(WS_A).email, "quries.readytechsolutions@gmail.com");
+  const denied = await gmailCallback(okGoogle, { returnOrigin: "https://readytechcrm.netlify.app", query: { code: undefined, error: "access_denied" } });
+  assert.match(denied.redirectUrl, /^https:\/\/readytechcrm\.netlify\.app\/.*connected=0/);
+});
+
+test("Gmail callback never redirects to an unknown origin", async () => {
+  const r = await gmailCallback(okGoogle, { returnOrigin: "https://evil.example" });
+  assert.ok(!r.redirectUrl.includes("evil.example"));
+  assert.match(r.redirectUrl, /connected=1/);
+});
+
+test("Gmail token exchange errors produce clear messages", async () => {
+  const expired = await gmailCallback({ "oauth2.googleapis.com/token": () => json(400, { error: "invalid_grant", error_description: "Bad Request" }) });
+  assert.match(new URL(expired.redirectUrl).searchParams.get("message"), /expired or was already used/);
+  const mismatch = await gmailCallback({ "oauth2.googleapis.com/token": () => json(400, { error: "redirect_uri_mismatch", error_description: "Bad Request" }) });
+  assert.match(new URL(mismatch.redirectUrl).searchParams.get("message"), /isn't set up correctly/);
+  assert.equal(store.size, 0);
+});
+
+test("Gmail send with the Gmail API disabled keeps the account connected", async () => {
+  await gmailCallback(okGoogle);
+  mockFetch({ "gmail.googleapis.com": () => json(403, { error: { message: "Gmail API has not been used in project 123 before or it is disabled." } }) });
+  await assert.rejects(svc.sendViaConnectedAccount(WS_A, { to: "x@y.com", subject: "s", message: "m" }), /API disabled/);
+  assert.equal(store.get(WS_A).status, "connected");
+});
