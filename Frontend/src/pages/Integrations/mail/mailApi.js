@@ -17,6 +17,7 @@ export const mailApi = {
   saveDraft: (body, id) =>
     (id ? API.put(`${BASE}/drafts/${id}`, body, opts({ timeout: 60000 })) : API.post(`${BASE}/drafts`, body, opts({ timeout: 60000 }))).then((r) => r.data.data),
   send: (body) => API.post(`${BASE}/send`, body, opts({ timeout: 90000 })).then((r) => r.data),
+  sync: () => API.post(`${BASE}/sync`, {}, opts({ timeout: 60000 })).then((r) => r.data.data),
   linkTargets: (type, q) => API.get(`${BASE}/link-targets`, opts({ params: { type, q } })).then((r) => r.data.data),
 };
 

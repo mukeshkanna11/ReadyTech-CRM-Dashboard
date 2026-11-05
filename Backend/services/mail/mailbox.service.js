@@ -16,6 +16,7 @@ import SalesOrder from "../../models/SalesOrder.model.js";
 import PurchaseOrder from "../../models/PurchaseOrder.model.js";
 import { getDefaultWorkspaceId } from "../../utils/workspaceContext.js";
 import { sendViaConnectedAccount, resolveSendingAccount, listAccounts, verifyConnection } from "../emailOAuth.service.js";
+import { inboxStatus } from "./gmailSync.service.js";
 
 /* ---------------- Limits ---------------- */
 export const LIMITS = {
@@ -135,14 +136,18 @@ export const htmlToText = (html) =>
 const snippetOf = (text) => String(text || "").replace(/\s+/g, " ").trim().slice(0, 180);
 const cleanSubject = (s) => String(s || "").replace(/[\r\n]+/g, " ").trim().slice(0, LIMITS.subject);
 
-const cleanFilename = (name) =>
+export const cleanFilename = (name) =>
   String(name || "")
     .split(/[\\/]/).pop()
     .replace(/[\u0000-\u001f\u007f"<>|:*?]/g, "_")
     .trim()
     .slice(0, 150) || "attachment";
-const cleanType = (t) => (/^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/i.test(String(t || "")) ? String(t).toLowerCase() : "application/octet-stream");
+export const cleanType = (t) => (/^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/i.test(String(t || "")) ? String(t).toLowerCase() : "application/octet-stream");
 const B64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+export const isBlockedFilename = (filename) => {
+  const ext = String(filename).includes(".") ? String(filename).split(".").pop().toLowerCase() : "";
+  return BLOCKED_EXT.has(ext);
+};
 
 /* New uploads: [{ filename, contentType, data: base64 }] → validated buffers */
 export const decodeUploads = (list) => {
@@ -150,8 +155,7 @@ export const decodeUploads = (list) => {
   if (!Array.isArray(list)) throw fail("Attachments must be a list");
   return list.map((a) => {
     const filename = cleanFilename(a?.filename);
-    const ext = filename.includes(".") ? filename.split(".").pop().toLowerCase() : "";
-    if (BLOCKED_EXT.has(ext)) throw fail(`"${filename}" can't be attached — executable and script files are blocked by mail providers`);
+    if (isBlockedFilename(filename)) throw fail(`"${filename}" can't be attached — executable and script files are blocked by mail providers`);
     const b64 = String(a?.data || "").replace(/^data:[^,]*,/, "").replace(/\s+/g, "");
     if (!b64 || b64.length % 4 !== 0 || !B64_RE.test(b64)) throw fail(`"${filename}" couldn't be read — please attach it again`);
     const content = Buffer.from(b64, "base64");
@@ -208,6 +212,7 @@ const listView = (m) => ({
   status: m.status,
   direction: m.direction,
   from: m.from,
+  fromName: m.fromName || "",
   to: m.to,
   cc: m.cc,
   subject: m.subject,
@@ -232,7 +237,10 @@ const fullView = (m) => ({
   replyMode: m.replyMode,
   replyToMessage: m.replyToMessage ? String(m.replyToMessage) : null,
   account: m.account ? String(m.account) : null,
-  attachments: (m.attachments || []).map((a) => ({ id: String(a.attachment), filename: a.filename, contentType: a.contentType, size: a.size })),
+  attachments: (m.attachments || []).map((a) => ({
+    id: a.attachment ? String(a.attachment) : null, filename: a.filename, contentType: a.contentType, size: a.size,
+    downloadable: !!a.attachment, unavailable: a.unavailable || null,
+  })),
 });
 
 /* ---------------- Folders, lists, conversations ---------------- */
@@ -343,16 +351,30 @@ export const summary = async (ctx) => {
     count("inbox", { read: false }),
   ]);
   const def = accounts.find((a) => a.isDefault) || null;
-  const caps = accounts.map((a) => ({ accountId: a.id, ...CAPABILITIES[a.provider] }));
+  // Gmail reply sync (feature-flagged): per-account access + status
+  const sync = await inboxStatus(ctx.workspaceId);
+  const caps = accounts.map((a) => {
+    const st = sync.accounts[a.id];
+    const base = { accountId: a.id, ...CAPABILITIES[a.provider] };
+    if (!sync.enabled || a.provider !== "google") return base;
+    return {
+      ...base,
+      inbox: !!st?.access,
+      inboxReason: st?.access ? null : "Enable inbox sync in Email Settings to see replies here.",
+      sync: st || null,
+    };
+  });
   const inboxAvailable = caps.some((c) => c.inbox);
+  const defCap = def && caps.find((c) => c.accountId === def.id);
   return {
+    inboxSync: { enabled: sync.enabled, mode: "replies" },
     accounts,
     connection: connectionState(accounts),
     defaultAccount: def,
     capabilities: caps,
     inbox: {
       available: inboxAvailable,
-      reason: inboxAvailable ? null : def ? CAPABILITIES[def.provider]?.inboxReason : "Connect a mailbox in Email Settings to start.",
+      reason: inboxAvailable ? null : def ? defCap?.inboxReason || CAPABILITIES[def.provider]?.inboxReason : "Connect a mailbox in Email Settings to start.",
     },
     counts: { inboxUnread, drafts, starred, archived, trash, sent, failed },
     limits: { files: LIMITS.files, fileBytes: LIMITS.fileBytes, totalBytes: LIMITS.totalBytes, recipients: LIMITS.recipients },
@@ -429,7 +451,7 @@ const storeUploads = async (ctx, uploads) => {
 const keepAttachments = (ids, ...sources) => {
   if (ids == null) return [];
   if (!Array.isArray(ids)) throw fail("Attachments must be a list");
-  const pool = sources.flatMap((s) => s?.attachments || []);
+  const pool = sources.flatMap((s) => s?.attachments || []).filter((a) => a.attachment); // received-but-not-imported files can't be forwarded
   return ids.map((id) => {
     const meta = pool.find((a) => String(a.attachment) === String(id));
     if (!meta) throw fail("Attachment not found");

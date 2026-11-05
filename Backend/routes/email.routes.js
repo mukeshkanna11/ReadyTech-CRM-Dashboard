@@ -9,6 +9,7 @@ import User from "../models/User.js";
 import Client from "../models/Client.js";
 import { sendLeadEmail } from "../services/email.service.js";
 import mailboxRoutes from "./mailbox.routes.js";
+import { inboxSyncEnabled, READ_SCOPE, startInitialSync } from "../services/mail/gmailSync.service.js";
 import {
   PROVIDERS, missingConfig, buildAuthUrl, verifyState, completeConnection,
   verifyConnection, disconnect, sendViaConnectedAccount, detectProvider,
@@ -89,8 +90,14 @@ router.get("/oauth/:provider/url", auth, role("admin"), (req, res) => {
     console.warn(`Email OAuth (${provider}) not configured — ReadyTech admin: set ${missing.join(", ")}. ${PROVIDERS[provider].setup}`);
     return res.status(400).json({ success: false, code: "EMAIL_PROVIDER_NOT_CONFIGURED", message: NOT_AVAILABLE(PROVIDERS[provider].name) });
   }
+  // "Enable inbox sync": Gmail only, and only while the feature flag is on
+  const wantsInbox = req.query.inbox === "1";
+  if (wantsInbox && (provider !== "google" || !inboxSyncEnabled())) {
+    return res.status(400).json({ success: false, code: "INBOX_SYNC_UNAVAILABLE", message: "Inbox sync isn't available for this mailbox yet." });
+  }
   res.json({ success: true, data: { url: buildAuthUrl({
     provider, userId: req.user._id, workspaceId: req.workspace, returnOrigin: appOrigin(req.get("origin")),
+    ...(wantsInbox && { extraScopes: [READ_SCOPE] }),
     loginHint: EMAIL_RE.test(String(req.query.email || "")) ? String(req.query.email).trim() : undefined,
   }) } });
 });
@@ -118,7 +125,9 @@ router.get("/oauth/:provider/callback", async (req, res) => {
       provider, code: String(code), workspaceId: s.ws, userId: s.uid,
       accountsServer: provider === "zoho" ? String(req.query["accounts-server"] || "") : undefined,
     });
-    return res.redirect(clientRedirect({ connected: "1", email }, origin));
+    // Inbox sync requested: report whether read access was granted and start the first sync
+    const inbox = s.inbox ? await startInitialSync(s.ws, provider, email).catch(() => ({ granted: false })) : null;
+    return res.redirect(clientRedirect({ connected: "1", email, ...(inbox && { inbox: inbox.granted ? "1" : "0" }) }, origin));
   } catch (err) {
     console.error(`Email OAuth (${provider}) callback failed:`, err.message);
     return res.redirect(clientRedirect({ connected: "0", message: friendlyError(err).slice(0, 200) }, origin));

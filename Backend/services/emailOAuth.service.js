@@ -119,10 +119,16 @@ const httpError = (message, status) => Object.assign(new Error(message), { statu
 /* ---------------- OAuth state (CSRF + workspace binding) ---------------- */
 const STATE_PURPOSE = "email-oauth";
 
-export const buildAuthUrl = ({ provider, userId, workspaceId, loginHint, returnOrigin }) => {
+/* `extraScopes` is only passed by the (feature-flagged) "Enable inbox sync"
+   flow; every other connection requests exactly PROVIDERS[provider].scope. */
+export const buildAuthUrl = ({ provider, userId, workspaceId, loginHint, returnOrigin, extraScopes }) => {
   const p = PROVIDERS[provider];
+  const extra = (extraScopes || []).filter(Boolean);
   const state = jwt.sign(
-    { purpose: STATE_PURPOSE, provider, uid: String(userId), ws: String(workspaceId), nonce: crypto.randomBytes(12).toString("hex"), ...(returnOrigin && { ret: returnOrigin }) },
+    {
+      purpose: STATE_PURPOSE, provider, uid: String(userId), ws: String(workspaceId), nonce: crypto.randomBytes(12).toString("hex"),
+      ...(returnOrigin && { ret: returnOrigin }), ...(extra.length && { inbox: true }),
+    },
     process.env.JWT_SECRET,
     { expiresIn: "10m" }
   );
@@ -131,7 +137,7 @@ export const buildAuthUrl = ({ provider, userId, workspaceId, loginHint, returnO
     client_id: clientId(provider),
     redirect_uri: redirectUri(provider),
     response_type: "code",
-    scope: p.scope,
+    scope: extra.length ? [p.scope, ...extra].join(" ") : p.scope,
     state,
     ...p.extraAuthParams,
     ...(loginHint && { login_hint: loginHint }),

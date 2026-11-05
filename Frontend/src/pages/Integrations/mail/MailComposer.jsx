@@ -33,7 +33,7 @@ const initialState = ({ mode, source, draft }, accounts) => {
     to: addrs([...new Set(to)]), cc: addrs([...new Set(cc)]), bcc: "",
     subject: prefix(mode === "forward" ? "Fwd" : "Re", source.subject),
     html: quoteBlock(source, mode),
-    kept: mode === "forward" ? source.attachments || [] : [],
+    kept: mode === "forward" ? (source.attachments || []).filter((a) => a.id) : [], // only files stored in ReadyTech
     links: source.links || [],
     draftId: null,
   };

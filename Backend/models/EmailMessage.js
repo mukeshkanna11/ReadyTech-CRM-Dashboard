@@ -9,7 +9,9 @@ const LINK_TYPES = ["lead", "client", "vendor", "salesOrder", "purchaseOrder"];
 
 const attachmentMetaSchema = new mongoose.Schema(
   {
-    attachment: { type: mongoose.Schema.Types.ObjectId, ref: "EmailAttachment", required: true },
+    // null for received attachments that weren't imported (see `unavailable`)
+    attachment: { type: mongoose.Schema.Types.ObjectId, ref: "EmailAttachment", default: null },
+    unavailable: { type: String, enum: [null, "too_large", "blocked", "limit"], default: null },
     filename: { type: String, required: true },
     contentType: { type: String, default: "application/octet-stream" },
     size: { type: Number, default: 0 },
@@ -38,6 +40,7 @@ const emailMessageSchema = new mongoose.Schema(
     error: { type: String, default: null },
 
     from: { type: String, default: "" },
+    fromName: { type: String, default: "", maxlength: 100 },
     to: { type: [String], default: [] },
     cc: { type: [String], default: [] },
     bcc: { type: [String], default: [] },

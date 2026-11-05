@@ -48,6 +48,7 @@ function ConnectionPill({ summary, checking, error }) {
   return <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600"><Plug size={12} /> Not connected</span>;
 }
 const EMPTY = {
+  inbox: ["No replies yet", "Replies to emails you send from ReadyTech appear here automatically."],
   sent: ["No sent emails yet", "Emails you send from this workspace appear here."],
   drafts: ["No drafts", "Save an email as a draft to finish it later."],
   starred: ["Nothing starred", "Star important emails to find them quickly."],
@@ -102,7 +103,14 @@ function Attachments({ list }) {
     <div className="pt-4 mt-4 border-t border-slate-100">
       <p className="mb-2 text-xs font-semibold text-slate-500">{list.length} attachment{list.length > 1 ? "s" : ""}</p>
       <div className="flex flex-wrap gap-2">
-        {list.map((a) => (
+        {list.map((a, i) => a.downloadable === false ? (
+          <span key={`na-${i}`} title={UNAVAILABLE[a.unavailable] || "Not available in ReadyTech"}
+            className="inline-flex items-center gap-2 px-3 py-2 text-xs border border-dashed rounded-lg cursor-not-allowed border-slate-200 text-slate-400">
+            <Paperclip size={14} />
+            <span className="max-w-[200px] truncate font-medium">{a.filename}</span>
+            <span>{UNAVAILABLE[a.unavailable] || "Open in Gmail"}</span>
+          </span>
+        ) : (
           <button key={a.id} onClick={() => get(a)} disabled={busy === a.id} className="inline-flex items-center gap-2 px-3 py-2 text-xs border rounded-lg border-slate-200 hover:bg-slate-50">
             {busy === a.id ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} className="text-slate-400" />}
             <span className="max-w-[200px] truncate font-medium text-slate-700">{a.filename}</span>
@@ -121,6 +129,13 @@ const Recipients = ({ m }) => (
     {m.cc?.length > 0 && <p><span className="text-slate-400">Cc:</span> {m.cc.join(", ")}</p>}
     {m.bcc?.length > 0 && <p><span className="text-slate-400">Bcc:</span> {m.bcc.join(", ")}</p>}
   </div>
+);
+
+const UNAVAILABLE = { too_large: "Too large — open in Gmail", blocked: "Blocked file type", limit: "Open in Gmail" };
+const Sender = ({ m, className = "" }) => (
+  <p className={`text-sm font-semibold text-slate-800 break-all ${className}`}>
+    {m.fromName ? <>{m.fromName} <span className="font-normal text-slate-500">&lt;{m.from}&gt;</span></> : m.from}
+  </p>
 );
 
 const iconBtn = "inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-40";
@@ -196,7 +211,7 @@ function MessageView({ id, canSend, onBack, onCompose, onChanged, onOpenThread }
           <Avatar email={m.from} />
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm font-semibold text-slate-800 break-all">{m.from}</p>
+              <Sender m={m} />
               <p className="text-xs text-slate-400">{fmtFull(m.date)}</p>
             </div>
             <Recipients m={m} />
@@ -258,7 +273,7 @@ function ThreadView({ threadKey, canSend, onBack, onCompose }) {
                   <Avatar email={m.from} />
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <p className="text-sm font-semibold text-slate-800 break-all">{m.from} <StatusBadge m={m} /></p>
+                      <div className="flex flex-wrap items-center gap-1.5"><Sender m={m} /><StatusBadge m={m} />{m.direction === "inbound" && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Reply</span>}</div>
                       <p className="text-xs text-slate-400">{fmtFull(m.date)}</p>
                     </div>
                     {expanded ? <Recipients m={m} /> : <p className="text-xs truncate text-slate-500">{m.snippet}</p>}
@@ -297,6 +312,7 @@ export default function MailWorkspace({ renderSettings }) {
   const [selected, setSelected] = useState(null); // { type: "message" | "thread", id }
   const [composer, setComposer] = useState(null);
   const [refreshedAt, setRefreshedAt] = useState(null);
+  const [syncing, setSyncing] = useState(false);
   const listReq = useRef(0);
   const summaryReq = useRef(0);
 
@@ -312,10 +328,10 @@ export default function MailWorkspace({ renderSettings }) {
       .catch((err) => { if (req === summaryReq.current) setSummaryError(errorText(err, "Couldn't check your email connection.")); });
   }, []);
 
-  const loadList = useCallback(async ({ page = 1, append = false } = {}) => {
+  const loadList = useCallback(async ({ page = 1, append = false, quiet = false } = {}) => {
     if (!hasMailbox || (folder === "inbox" && !summary?.inbox?.available)) return;
     const req = ++listReq.current;
-    setList((l) => ({ ...l, loading: true, error: null, ...(append ? {} : { items: [] }) }));
+    if (!quiet) setList((l) => ({ ...l, loading: true, error: null, ...(append ? {} : { items: [] }) }));
     try {
       const data = folder === "conversations"
         ? await mailApi.conversations({ q: query, page })
@@ -352,11 +368,50 @@ export default function MailWorkspace({ renderSettings }) {
     loadSummary().finally(() => setChecking(false));
   }, [loadSummary]);
 
-  const refresh = () => {
+  /* Refresh: asks the backend to check Gmail for replies now (when inbox
+     sync is on), then reloads. The backend worker also syncs every few minutes. */
+  const replySync = !!summary?.inboxSync?.enabled && !!summary?.capabilities?.some((c) => c.inbox);
+  const refresh = async () => {
+    if (syncing) return;
+    if (replySync) {
+      setSyncing(true);
+      try {
+        const r = await mailApi.sync();
+        if (r.imported > 0) toast.success(`${r.imported} new repl${r.imported === 1 ? "y" : "ies"}`);
+        const failed = r.results?.find((x) => x.error);
+        if (failed) toast.error(failed.error);
+      } catch (err) {
+        toast.error(errorText(err, "Couldn't check for replies."));
+      } finally {
+        setSyncing(false);
+      }
+    }
     setChecking(true);
     loadSummary().finally(() => setChecking(false));
     loadList();
   };
+
+  /* Quiet auto-refresh while the page is visible (picks up worker-synced replies) */
+  const pageRef = useRef(1);
+  pageRef.current = list.page;
+  useEffect(() => {
+    if (!hasMailbox || !replySync) return undefined;
+    const t = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      loadSummary();
+      if (pageRef.current === 1) loadList({ quiet: true });
+    }, 60_000);
+    return () => clearInterval(t);
+  }, [hasMailbox, replySync, loadSummary, loadList]);
+
+  /* Open on Inbox the first time replies are available */
+  const openedInbox = useRef(false);
+  useEffect(() => {
+    if (openedInbox.current || !summary?.inbox?.available) return;
+    openedInbox.current = true;
+    setFolder((f) => (f === "sent" ? "inbox" : f));
+  }, [summary?.inbox?.available]);
+  const lastSynced = summary?.capabilities?.map((c) => c.sync?.lastSuccessAt).filter(Boolean).sort().at(-1);
   const pick = (id) => {
     setFolder(id);
     setSelected(null);
@@ -398,12 +453,17 @@ export default function MailWorkspace({ renderSettings }) {
         <div className="grid w-11 h-11 text-white shadow-sm rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-700 place-items-center shrink-0"><Mail size={20} /></div>
         <div className="flex-1 min-w-0 space-y-1">
           <h1 className="text-xl font-bold leading-tight text-slate-900">Mail Integration</h1>
-          <ConnectionPill summary={summary} checking={checking} error={summaryError} />
+          <div className="flex flex-wrap items-center gap-2">
+            <ConnectionPill summary={summary} checking={checking} error={summaryError} />
+            {replySync && (
+              <span className="text-xs text-slate-500">{syncing ? "Checking Gmail for replies…" : lastSynced ? `Replies synced ${new Date(lastSynced).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Replies sync pending"}</span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={refresh} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-white border rounded-xl border-slate-300 text-slate-700 hover:bg-slate-50"
-            title={refreshedAt ? `Updated ${refreshedAt.toLocaleTimeString()}` : "Refresh"}>
-            <RefreshCw size={15} className={checking || (list.loading && hasMailbox) ? "animate-spin" : ""} /> Refresh
+          <button onClick={refresh} disabled={syncing} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-white border rounded-xl border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            title={replySync ? "Check Gmail for new replies" : refreshedAt ? `Updated ${refreshedAt.toLocaleTimeString()}` : "Refresh"}>
+            <RefreshCw size={15} className={syncing || checking || (list.loading && hasMailbox) ? "animate-spin" : ""} /> {syncing ? "Syncing…" : "Refresh"}
           </button>
           <button onClick={() => compose({})} disabled={!canSend} title={canSend ? "Compose a new email" : NO_SEND}
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 shadow-sm rounded-xl hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed">
@@ -514,7 +574,7 @@ export default function MailWorkspace({ renderSettings }) {
                           const item = folder === "conversations" ? { ...raw.latest, threadKey: raw.threadKey, count: raw.count, read: !raw.unread, starred: raw.starred } : raw;
                           const key = folder === "conversations" ? raw.threadKey : item.id;
                           const active = selected && selected.id === key;
-                          const who = item.direction === "outbound" ? `To: ${(item.to || []).join(", ") || "(no recipients)"}` : item.from;
+                          const who = item.direction === "outbound" ? `To: ${(item.to || []).join(", ") || "(no recipients)"}` : item.fromName || item.from;
                           return (
                             <li key={key}>
                               <div role="button" tabIndex={0} onClick={() => openItem(folder === "conversations" ? raw : item)} onKeyDown={(e) => e.key === "Enter" && openItem(folder === "conversations" ? raw : item)}

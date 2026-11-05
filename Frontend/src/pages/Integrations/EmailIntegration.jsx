@@ -101,6 +101,31 @@ const btn = {
 };
 const input = "w-full px-3.5 py-2.5 text-sm border rounded-xl border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50";
 
+/* ---------------- Inbox sync (Gmail replies) status ---------------- */
+const ago = (d) => {
+  if (!d) return null;
+  const s = Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 1000));
+  return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : new Date(d).toLocaleDateString();
+};
+function InboxSyncStatus({ cap, account, admin, busy, onEnable }) {
+  const st = cap?.sync;
+  if (cap?.inbox && st) {
+    if (st.status === "syncing") return <span className="inline-flex items-center gap-1 font-medium text-indigo-600"><Loader2 size={11} className="animate-spin" /> Syncing…</span>;
+    if (st.status === "error") return <span className="font-medium text-amber-700" title={st.lastError || ""}>Retrying{st.lastSuccessAt ? ` · last ${ago(st.lastSuccessAt)}` : ""}</span>;
+    if (st.status === "needs_permission") return <span className="font-medium text-amber-700" title={st.lastError || ""}>Read access removed</span>;
+    return <span className="font-medium text-emerald-700" title="Replies to emails sent from ReadyTech">Replies · {st.lastSuccessAt ? `synced ${ago(st.lastSuccessAt)}` : "first sync pending"}</span>;
+  }
+  if (st?.canEnable && account.status === "connected") {
+    return admin ? (
+      <button type="button" onClick={onEnable} disabled={!!busy} title="Adds read-only Gmail access so replies appear here. Only replies to emails sent from ReadyTech are imported."
+        className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50">
+        {busy === `inbox:${account.id}` ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} Enable inbox sync
+      </button>
+    ) : <span className="text-slate-600">Off</span>;
+  }
+  return <span className="text-slate-600" title={cap?.inboxReason || ""}>Not available yet</span>;
+}
+
 /* ---------------- Disconnect confirmation ----------------
    Custom modal (no native confirm). Stays open while the request runs and
    only reports success once the backend has removed the account. */
@@ -371,7 +396,11 @@ function MailSettings({ onChanged, capabilities = [] }) {
     if (!connected) return;
     if (connected === "1") {
       toast.success("Email account connected");
-      setBanner({ type: "success", text: `${searchParams.get("email") || "Your email account"} is connected.` });
+      const inbox = searchParams.get("inbox");
+      const who = searchParams.get("email") || "Your email account";
+      setBanner(inbox === "0"
+        ? { type: "error", text: `${who} is connected for sending, but inbox sync wasn't enabled because read access wasn't granted. Click "Enable inbox sync" and allow ReadyTech to read email to try again.` }
+        : { type: "success", text: inbox === "1" ? `Inbox sync is on for ${who}. Replies to emails sent from ReadyTech will appear shortly.` : `${who} is connected.` });
     } else {
       setBanner({ type: "error", text: searchParams.get("message") || "We couldn't connect your email account. Please try again." });
     }
@@ -393,14 +422,16 @@ function MailSettings({ onChanged, capabilities = [] }) {
     }
   };
 
-  const redirectToSignIn = async (provider, hint) => {
-    const res = await API.get(`/email/oauth/${provider}/url`, { params: hint ? { email: hint } : {} });
+  const redirectToSignIn = async (provider, hint, inbox) => {
+    const res = await API.get(`/email/oauth/${provider}/url`, { params: { ...(hint && { email: hint }), ...(inbox && { inbox: "1" }) } });
     window.location.href = res.data.data.url;
   };
   const connect = (provider, hint) => {
     if (provider === "smtp") return setSmtpDialog({ email: hint || "" });
     return run(provider, () => redirectToSignIn(provider, hint));
   };
+  /* Gmail: incremental consent that adds read access (replies only) */
+  const enableInbox = (a) => run(`inbox:${a.id}`, () => redirectToSignIn("google", a.email, true));
 
   /* Email first → straight to the right provider when we can tell */
   const continueWithEmail = (e) => {
@@ -542,7 +573,7 @@ function MailSettings({ onChanged, capabilities = [] }) {
                     <dt className="text-slate-400">Sending</dt>
                     <dd className={a.status === "connected" ? "text-emerald-700 font-medium" : "text-amber-700 font-medium"}>{a.status === "connected" ? "Enabled" : "Paused — reconnect"}</dd>
                     <dt className="text-slate-400">Inbox sync</dt>
-                    <dd className="text-slate-600" title={cap?.inboxReason || ""}>{cap?.inbox ? "On" : "Not available yet"}</dd>
+                    <dd className="min-w-0"><InboxSyncStatus cap={cap} account={a} admin={admin} busy={busy} onEnable={() => enableInbox(a)} /></dd>
                     <dt className="text-slate-400">Attachments</dt>
                     <dd className="text-slate-600">{cap?.attachments === false ? "Not supported yet" : "Supported"}</dd>
                     <dt className="text-slate-400">Last used</dt>

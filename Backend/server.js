@@ -41,6 +41,8 @@ const server = app.listen(PORT, "0.0.0.0", () => {
     (await import("./services/scheduler.js")).startScheduler();
     /* Shopify webhook inbox worker (no-op until Shopify is configured) */
     (await import("./services/shopify/webhookWorker.js")).startShopifyWorker();
+    /* Gmail reply sync (no-op unless GMAIL_INBOX_SYNC_ENABLED=true) */
+    (await import("./services/mail/gmailSync.service.js")).startMailSyncWorker();
 
     /* ==========================
        Claude API Test

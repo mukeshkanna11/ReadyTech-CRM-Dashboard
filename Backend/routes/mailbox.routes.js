@@ -8,6 +8,7 @@ import {
   mailCtx, summary, listMessages, listConversations, getThread, getMessage, updateFlags,
   deleteMessage, setLinks, getAttachment, saveDraft, sendMessage, searchLinkTargets,
 } from "../services/mail/mailbox.service.js";
+import { syncWorkspace } from "../services/mail/gmailSync.service.js";
 
 const router = express.Router();
 router.use(auth);
@@ -37,6 +38,18 @@ const sendLimiter = rateLimit({
 });
 
 router.get("/summary", handle(async (ctx) => ({ data: await summary(ctx) })));
+
+/* Manual "Refresh": checks this workspace's Gmail mailboxes for replies now
+   (no-op while GMAIL_INBOX_SYNC_ENABLED is off) */
+const syncLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: (req) => `mailbox-sync:${req.workspace}`,
+  message: { success: false, message: "Checked for replies a moment ago. Please wait a minute and try again." },
+});
+router.post("/sync", syncLimiter, handle(async (ctx) => {
+  const r = await syncWorkspace(ctx.workspaceId);
+  return { data: { enabled: r.enabled, imported: r.imported || 0, results: r.results.map(({ accountId, email, status, imported, error }) => ({ accountId, email, status, imported: imported || 0, error: error || null })) } };
+}));
 
 router.get("/messages", handle(async (ctx, req) => ({ data: await listMessages(ctx, req.query) })));
 router.get("/messages/:id", handle(async (ctx, req) => ({ data: await getMessage(ctx, req.params.id) })));
