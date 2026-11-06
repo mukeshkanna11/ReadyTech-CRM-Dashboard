@@ -207,18 +207,20 @@ export default function RtsAssistantWidget() {
 
   if (!open) {
     const listening = state === "listening" || state === "detected";
-    const active = listening || state === "thinking" || state === "speaking" || state === "executing";
+    // Recognition really running and waiting for "Hey RTS" → calm glow + "Say Hey RTS" status
+    const shown = state === "idle" && voice.running && voice.phase === "wake" ? "wake" : state;
+    const active = listening || shown === "wake" || state === "thinking" || state === "speaking" || state === "executing";
     const transcript = listening ? voice.heard : spoken;
     return (
       <>
-        {state !== "idle" && !(state === "error" && errorHidden) && (
+        {shown !== "idle" && !(state === "error" && errorHidden) && (
           <button
             onClick={() => setOpen(true)}
             aria-live="polite"
             className="fixed z-40 flex items-center gap-2 py-2 pl-3 pr-4 text-sm text-white rounded-full shadow-2xl bottom-[10.5rem] right-6 max-w-[min(80vw,320px)] bg-slate-900/90 backdrop-blur"
           >
-            {state === "error" ? <MicOff size={16} className="text-rose-300 shrink-0" /> : <RtsWave state={state} light />}
-            <span className="font-medium shrink-0">{state === "executing" ? `Opening ${executing}…` : STATE_LABEL[state]}</span>
+            {state === "error" ? <MicOff size={16} className="text-rose-300 shrink-0" /> : <RtsWave state={shown} light />}
+            <span className="font-medium shrink-0">{state === "executing" ? `Opening ${executing}…` : STATE_LABEL[shown]}</span>
             {state === "error" && <span className="truncate text-rose-200">{voice.error}</span>}
             {state !== "error" && transcript && <span className="italic truncate text-slate-200">“{transcript}”</span>}
           </button>
@@ -244,7 +246,7 @@ export default function RtsAssistantWidget() {
             </>
           )}
           <span className="absolute inset-0 rounded-full bg-gradient-to-br from-fuchsia-600 to-indigo-600" aria-hidden="true" />
-          <span className="relative">{active ? <RtsWave state={state} light /> : <Sparkles size={22} />}</span>
+          <span className="relative">{active ? <RtsWave state={shown} light /> : <Sparkles size={22} />}</span>
           {(voice.enabled || voice.phase === "error") && (
             <span
               className={`absolute flex items-center justify-center w-5 h-5 border-2 border-white rounded-full -right-0.5 -top-0.5 ${

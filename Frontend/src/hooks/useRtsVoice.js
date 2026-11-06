@@ -76,6 +76,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
   const [speaking, setSpeaking] = useState(false);
   const [lang, setLangState] = useState(() => store.get("rts.lang") || "en-IN");
   const [error, setError] = useState("");
+  const [running, setRunning] = useState(false); // a SpeechRecognition session is actually live
 
   const recRef = useRef(null);
   const enabledRef = useRef(false);
@@ -142,6 +143,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
     clearTimeout(restartTimer.current);
     const rec = recRef.current;
     recRef.current = null;
+    setRunning(false);
     if (rec) {
       rec.onend = rec.onresult = rec.onerror = null;
       try { rec.abort(); } catch { /* already stopped */ }
@@ -234,7 +236,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
     let startedAt = Date.now();
     let gotResult = false;
 
-    rec.onstart = () => { startedAt = Date.now(); rtsLog("recognition started", rec.lang); };
+    rec.onstart = () => { startedAt = Date.now(); setRunning(true); rtsLog("recognition started", rec.lang); };
 
     rec.onresult = (event) => {
       gotResult = true;
@@ -295,7 +297,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
       if (recRef.current !== rec) return;
       rtsLog("recognition ended (will restart if still listening)");
       recRef.current = null;
-      if (!shouldRun() || document.hidden) return;
+      if (!shouldRun() || document.hidden) { setRunning(false); return; }
       const fast = !gotResult && Date.now() - startedAt < FAST_END_MS;
       fastFails.current = fast ? fastFails.current + 1 : 0;
       if (fastFails.current > MAX_FAST_FAILS) {
@@ -481,6 +483,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
     supported: Boolean(Recognition),
     ttsSupported: Boolean(synth),
     enabled,
+    running,
     phase,
     listening: phase === "command" || phase === "detected",
     heard,
