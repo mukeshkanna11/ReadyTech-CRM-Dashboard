@@ -102,6 +102,16 @@ export const memModel = (Model, { unique = [], defaults = {} } = {}) => {
     }
     return { matchedCount: i >= 0 ? 1 : 0 };
   };
+  Model.updateMany = async (f, u) => {
+    let n = 0;
+    rows.forEach((x, i) => {
+      if (!match(x, f)) return;
+      const next = apply(x, u);
+      if (dupe(next, x)) throw fail11000();
+      rows[i] = next; n += 1;
+    });
+    return { matchedCount: n, modifiedCount: n };
+  };
   Model.findOneAndUpdate = (f, u, o = {}) => chain(() => {
     const i = rows.findIndex((x) => match(x, f));
     if (i >= 0) {

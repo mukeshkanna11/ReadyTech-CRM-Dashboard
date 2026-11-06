@@ -8,6 +8,8 @@ import dns from "node:dns/promises";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
 import EmailConnection from "../models/EmailConnection.js";
+import EmailMessage from "../models/EmailMessage.js";
+import EmailSyncState from "../models/EmailSyncState.js";
 import { validateSmtpInput, verifySmtp, sendSmtp } from "./mail/smtp.service.js";
 
 export const MAX_ACCOUNTS_PER_WORKSPACE = 10;
@@ -237,6 +239,30 @@ const loadAccount = async (workspaceId, accountId) => {
   return EmailConnection.findOne({ workspace: workspaceId, _id: accountId }).select(SECRETS);
 };
 
+/* Reconnect of a previously disconnected mailbox: its stored messages/drafts
+   still point at the deleted connection id. Re-attach them (same workspace,
+   provider and address only; rows of live accounts are never touched) so the
+   history, sync de-duplication and reply threading carry over. */
+const relinkHistory = async (workspaceId, conn, liveAccounts) => {
+  try {
+    const live = liveAccounts.map((a) => a._id);
+    const mine = { workspace: workspaceId, provider: conn.provider, accountEmail: conn.email, account: { $ne: null, $nin: [...live, conn._id] } };
+    const oldIds = await EmailMessage.distinct("account", mine);
+    if (!oldIds.length) return;
+    // Sync cursor (Gmail historyId is per mailbox, not per grant) → resume instead of a full re-import
+    if (!(await EmailSyncState.findOne({ workspace: workspaceId, account: conn._id }).lean())) {
+      const prev = await EmailSyncState.find({ workspace: workspaceId, account: { $in: oldIds } }).sort({ lastSuccessAt: -1 }).limit(1).lean();
+      if (prev[0]) {
+        await EmailSyncState.updateOne({ workspace: workspaceId, _id: prev[0]._id }, { $set: { account: conn._id, lockedUntil: null, lockId: null } });
+      }
+    }
+    const r = await EmailMessage.updateMany(mine, { $set: { account: conn._id } });
+    console.info(`Email reconnect: restored ${r.modifiedCount} message(s) for ${conn.email}`);
+  } catch (err) {
+    console.error("Email reconnect: history relink failed:", err.message);
+  }
+};
+
 /* Adds a new mailbox (respecting the per-workspace limit) or updates the
    same mailbox. First account of a workspace becomes the default sender. */
 const upsertAccount = async (workspaceId, { provider, email }, fields, existingId) => {
@@ -253,11 +279,13 @@ const upsertAccount = async (workspaceId, { provider, email }, fields, existingI
   const isDefault = same ? !!same.isDefault || !all.some((a) => a.isDefault) : !all.some((a) => a.isDefault);
   const filter = same ? { workspace: workspaceId, _id: same._id } : { workspace: workspaceId, provider, email };
   try {
-    return await EmailConnection.findOneAndUpdate(
+    const saved = await EmailConnection.findOneAndUpdate(
       filter,
       { $set: { workspace: workspaceId, provider, email, isDefault, status: "connected", lastError: null, ...fields } },
       { upsert: !same, new: true, setDefaultsOnInsert: true }
     );
+    if (!same && saved) await relinkHistory(workspaceId, saved, all);
+    return saved;
   } catch (err) {
     if (err?.code === 11000) {
       // Legacy single-account index still present → migration not yet run
