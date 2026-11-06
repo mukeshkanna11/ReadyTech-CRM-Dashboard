@@ -166,9 +166,10 @@ export default function useRtsVoice({ onCommand, onWake }) {
   const fireCommand = (raw) => {
     const text = String(raw || "").trim();
     backToWake();
-    if (!text || isEcho(text)) return;
+    if (!text) return;
+    if (isEcho(text)) { rtsLog("ignored (echo of own speech):", JSON.stringify(text)); return; }
     const key = norm(text);
-    if (key === lastCmd.current.text && Date.now() - lastCmd.current.at < DUP_MS) return; // duplicate final
+    if (key === lastCmd.current.text && Date.now() - lastCmd.current.at < DUP_MS) { rtsLog("ignored (duplicate):", JSON.stringify(text)); return; }
     lastCmd.current = { text: key, at: Date.now() };
     rtsLog("command:", JSON.stringify(text));
     onCommandRef.current?.(text);
@@ -243,9 +244,15 @@ export default function useRtsVoice({ onCommand, onWake }) {
         const wake = matchWake(text);
         rtsLog(result.isFinal ? "final:" : "interim:", JSON.stringify(text), `mode=${modeRef.current}`, wake ? "(wake)" : "");
 
+        // Chrome sometimes never fires utterance.onend → guard stuck on, every command ignored
+        if (speakingRef.current && synth && !synth.speaking && !synth.pending && Date.now() - lastSpoken.current.at > 1000) {
+          rtsLog("speech guard was stuck — cleared");
+          speakingRef.current = false;
+        }
+
         // While we speak, only "Hey RTS" (barge-in) is accepted
         if (speakingRef.current) {
-          if (!wake) continue;
+          if (!wake) { if (result.isFinal) rtsLog("ignored (assistant speaking):", JSON.stringify(text)); continue; }
           stopSpeaking();
         }
 
@@ -270,8 +277,9 @@ export default function useRtsVoice({ onCommand, onWake }) {
           else enterCommand(); // "Hey RTS" … wait for the next utterance
         } else if (modeRef.current === "command") {
           fireCommand(text);
+        } else {
+          rtsLog("ignored (no wake word):", JSON.stringify(text)); // ordinary speech
         }
-        // wake mode + no wake word → ordinary speech, ignored
       }
     };
 

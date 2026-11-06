@@ -66,7 +66,8 @@ const QUESTION = /\b(how|why|what|when|which|steps?|explain|evlo|ethana|eppadi|e
    + ஆர்டிஎஸ் / ஆர் டி எஸ் (or Latin RTS). */
 const WAKE_RE = new RegExp(
   "(?:^|[^a-z\u0B80-\u0BFF])" +
-    "(?:(?:hey|hay|hei|hi|hello|ok|okay)[\\s,.!-]*(?:r[\\s.]*t[\\s.'’]*s|arts|artists?|arties|artis|rds|rtx)" +
+    "(?:(?:(?:hey|hay|hei|hi|hii|hello|ok|okay)[\\s,.!-]*|(?:he|a)[\\s,.!-]+)(?:r[\\s.]*t[\\s.'’]*s|ar[\\s.]*ts|arts|artists?|arties|artis|rds|rtx|rtc)" +
+    "|^\\s*r[\\s.]*t[\\s.]*s(?=[\\s,.!]+\\S)" +
     "|(?:ஹே|ஹேய்|ஏய்|ஹாய்)[\\s,.!-]*(?:ஆர்[\\s.]*டி[\\s.]*எஸ்|ஆர்டிஎஸ்|r[\\s.]*t[\\s.]*s))" +
     "(?![a-z\u0B80-\u0BFF])[\\s,.!?:;-]*",
   "i"
