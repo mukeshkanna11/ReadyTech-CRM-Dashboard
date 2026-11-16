@@ -4,6 +4,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
+    // HTTPS tunnels (cloudflared / ngrok) for testing Meta Embedded Signup locally
+    allowedHosts: [".trycloudflare.com", ".ngrok-free.app", ".ngrok.app"],
     proxy: {
       "/api": {
         target: "http://localhost:5000",

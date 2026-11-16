@@ -187,7 +187,7 @@ function WhatsAppCard({ wa, busy, onSync, platform, onConnect, onSignup, onDisco
               {wa?.verifiedName && <span className="ml-2 font-normal text-slate-500">· {wa.verifiedName}</span>}
             </p>
             <p className="flex items-center gap-1 text-xs text-slate-500">
-              {wa?.displayPhoneNumber ? (
+              {connected && wa?.displayPhoneNumber ? (
                 <>
                   <ShieldCheck size={12} className="text-emerald-600" />
                   {maskPhone(wa.displayPhoneNumber)}
@@ -341,7 +341,7 @@ function WhatsAppCard({ wa, busy, onSync, platform, onConnect, onSignup, onDisco
       {showDetails && (connected || configured) && (
         <dl className="grid gap-4 pt-4 mt-4 text-sm border-t border-slate-100 sm:grid-cols-2 lg:grid-cols-4">
           <Detail label="Business name" value={wa?.verifiedName || "—"} />
-          <Detail label="Phone number" value={maskPhone(wa?.displayPhoneNumber) || "—"} />
+          <Detail label="Phone number" value={(connected && maskPhone(wa?.displayPhoneNumber)) || "—"} />
           <Detail
             label="Health"
             value={wa?.health === "healthy" ? "Healthy" : wa?.health === "error" ? "Error" : connected ? "Not tested" : "—"}

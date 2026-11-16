@@ -1023,6 +1023,11 @@ export const completeEmbeddedSignup = async ({ code, state, phoneNumberId, wabaI
     lastSyncedAt: new Date(),
     lastError: null,
   });
+  // Default workspace connecting its own number: the platform (.env)
+  // number must not keep overriding it for sends / status.
+  if (connection.key === "default" && id !== String(process.env.WHATSAPP_PHONE_NUMBER_ID || "")) {
+    connection.whatsapp.platformDisabled = true;
+  }
 
   await connection.save();
   return connection;
