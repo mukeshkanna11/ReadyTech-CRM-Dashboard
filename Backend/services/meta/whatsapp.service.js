@@ -436,26 +436,277 @@ export const workspaceForPhoneNumberId = async (phoneNumberId) => {
    never shows a stale "Connected". Returns 1 when nothing matched. */
 const OFFBOARD_EVENTS = new Set(["PARTNER_REMOVED", "ACCOUNT_OFFBOARDED", "ACCOUNT_DELETED"]);
 
-const processAccountUpdate = async (wabaId, value = {}) => {
-  const event = String(value?.event || "").toUpperCase();
-  if (!wabaId || !OFFBOARD_EVENTS.has(event)) return 1;
+/* Coexistence disconnect reasons (PARTNER_REMOVED.disconnection_info.reason)
+   — fixed Meta enum, safe to surface; anything else is dropped. */
+const DISCONNECT_REASONS = new Set([
+  "ACCOUNT_DISCONNECTED", "BUSINESS_DOWNGRADE", "CHANGE_NUMBER",
+  "COMPANION_INACTIVITY", "PRIMARY_INACTIVITY", "USER_RE_REGISTERED",
+]);
 
-  const r = await MetaConnection.updateMany(
-    { "whatsapp.wabaId": String(wabaId), "whatsapp.connected": true },
-    {
-      $set: {
-        "whatsapp.connected": false,
-        "whatsapp.health": "error",
-        "whatsapp.webhookSubscribed": false,
-        "whatsapp.lastError": `Meta reported ${event} for this WhatsApp account — reconnect WhatsApp to resume messaging`,
-      },
+const processAccountUpdate = async (entryId, value = {}) => {
+  const event = String(value?.event || "").toUpperCase();
+  // Partner events carry the WABA in waba_info (entry.id may be the
+  // partner business); ACCOUNT_OFFBOARDED / RECONNECTED only use entry.id.
+  const wabaId = value?.waba_info?.waba_id || entryId;
+  if (!wabaId) return 1;
+
+  // Only OUR app being uninstalled disconnects; another partner app does not
+  let disconnect = OFFBOARD_EVENTS.has(event);
+  if (event === "PARTNER_APP_UNINSTALLED") {
+    const appId = getMetaConfig().appId;
+    disconnect = !!appId && String(value?.waba_info?.partner_app_id || "") === String(appId);
+  }
+
+  if (disconnect) {
+    const reason = String(value?.disconnection_info?.reason || "").toUpperCase();
+    const why = DISCONNECT_REASONS.has(reason) ? ` (${reason})` : "";
+    const r = await MetaConnection.updateMany(
+      { "whatsapp.wabaId": String(wabaId), "whatsapp.connected": true },
+      {
+        $set: {
+          "whatsapp.connected": false,
+          "whatsapp.health": "error",
+          "whatsapp.webhookSubscribed": false,
+          "whatsapp.lastError": `Meta reported ${event}${why} for this WhatsApp account — reconnect WhatsApp to resume messaging`,
+        },
+      }
+    );
+    return r.modifiedCount ? 0 : 1;
+  }
+
+  // Never auto-reconnect: the stored token/number may no longer be valid.
+  // Only tell the disconnected workspace it can be restored.
+  if (event === "ACCOUNT_RECONNECTED") {
+    const r = await MetaConnection.updateMany(
+      { "whatsapp.wabaId": String(wabaId), "whatsapp.connected": false },
+      {
+        $set: {
+          "whatsapp.lastError": "Meta reported ACCOUNT_RECONNECTED for this WhatsApp account — test or reconnect WhatsApp to resume messaging",
+        },
+      }
+    );
+    return r.modifiedCount ? 0 : 1;
+  }
+
+  // PARTNER_ADDED / PARTNER_APP_INSTALLED etc.: informational only —
+  // connection state is owned by Embedded Signup, never by this webhook.
+  return 1;
+};
+
+/* =========================================================
+   WHATSAPP BUSINESS APP COEXISTENCE
+   history / smb_message_echoes / smb_app_state_sync all carry
+   value.metadata.phone_number_id and are routed exactly like
+   "messages": unknown numbers are dropped.
+========================================================= */
+const COEXISTENCE_FIELDS = new Set(["history", "smb_message_echoes", "smb_app_state_sync"]);
+
+// history_context.status → WhatsAppMessage.status
+const HISTORY_STATUS = {
+  PENDING: "pending", SENT: "sent", DELIVERED: "delivered",
+  READ: "read", PLAYED: "read", ERROR: "failed",
+};
+
+const toDate = (ts) => {
+  const n = Number(ts);
+  return Number.isFinite(n) && n > 0 ? new Date(n * 1000) : null;
+};
+
+/* Saves one Business-app message (history or echo). Requires a wamid so
+   re-delivered chunks/echoes are always de-duplicated. Never bumps
+   unread, never reopens a thread, never moves the 24h window. */
+const importAppMessage = async ({ message, direction, customer, businessPhone, waId, profileName, status, live }) => {
+  if (!message?.id || !message?.type) return { skipped: "malformed" };
+
+  const phoneNumber = normalizePhone(customer);
+  if (!phoneNumber) return { skipped: "no-phone" };
+
+  if (await WhatsAppMessage.exists({ messageId: message.id })) {
+    return { skipped: "duplicate" };
+  }
+
+  const timestamp = toDate(message.timestamp) || new Date();
+  const conversation = await getOrCreateConversation({ phoneNumber, waId, profileName });
+
+  const placeholder = message.type === "media_placeholder";
+  const isText = message.type === "text";
+  const media = extractMedia(message);
+  const body = placeholder ? "" : extractBody(message);
+  const business = normalizePhone(businessPhone) || null;
+
+  try {
+    await WhatsAppMessage.create({
+      conversation: conversation._id,
+      direction,
+      messageId: message.id,
+      from: direction === "inbound" ? phoneNumber : business,
+      to: direction === "inbound" ? business : phoneNumber,
+      type: message.type,
+      body: isText ? body : body || `[${placeholder ? "media" : message.type}]`,
+      timestamp,
+      status,
+      meta: isText ? null : { type: message.type, ...(media || {}) },
+    });
+  } catch (error) {
+    if (error?.code === 11000) return { skipped: "duplicate" };
+    throw error;
+  }
+
+  // Older history must not overwrite a newer thread preview
+  if (!conversation.lastMessageAt || timestamp >= conversation.lastMessageAt) {
+    conversation.lastMessageAt = timestamp;
+    conversation.lastMessagePreview = (body || `[${placeholder ? "media" : message.type}]`).slice(0, 300);
+    conversation.lastMessageDirection = direction;
+  }
+  if (live && direction === "outbound" &&
+      (!conversation.lastOutboundAt || timestamp > conversation.lastOutboundAt)) {
+    conversation.lastOutboundAt = timestamp;
+  }
+  await conversation.save();
+
+  if (live) await touchLeadRecency(conversation.lead, timestamp);
+  return { conversationId: conversation._id };
+};
+
+/* smb_message_echoes: sent from the WhatsApp Business app → outbound.
+   revoke / edit refer to an earlier message and are not imported. */
+const ECHO_SKIP_TYPES = new Set(["revoke", "edit"]);
+
+const processEchoes = async (value, result) => {
+  const contacts = Array.isArray(value.contacts) ? value.contacts : [];
+  for (const echo of Array.isArray(value.message_echoes) ? value.message_echoes : []) {
+    try {
+      if (ECHO_SKIP_TYPES.has(echo?.type)) { result.ignored += 1; continue; }
+      // No `to` (username-only user): use the contact only if unambiguous
+      const contact = echo?.to ? null : contacts.length === 1 ? contacts[0] : null;
+      const r = await importAppMessage({
+        message: echo,
+        direction: "outbound",
+        customer: echo?.to || contact?.wa_id,
+        waId: echo?.to || contact?.wa_id || null,
+        businessPhone: echo?.from || value.metadata?.display_phone_number,
+        profileName: null,
+        status: "sent",
+        live: true,
+      });
+      if (r.skipped) result.ignored += 1;
+      else result.echoes += 1;
+    } catch (error) {
+      console.error("WhatsApp echo error:", error.message);
+      result.ignored += 1;
     }
-  );
-  return r.modifiedCount ? 0 : 1;
+  }
+};
+
+/* history: chunks of 1:1 threads from the Business app (up to 180 days).
+   Customer side is identified by the thread id; any other sender is the
+   business. A declined share arrives as history[].errors. */
+const processHistory = async (value, result) => {
+  for (const chunk of Array.isArray(value.history) ? value.history : []) {
+    if (Array.isArray(chunk?.errors) && chunk.errors.length) {
+      console.warn(`WhatsApp history sync unavailable (code ${Number(chunk.errors[0]?.code) || "unknown"})`);
+      result.ignored += 1;
+      continue;
+    }
+
+    for (const thread of Array.isArray(chunk?.threads) ? chunk.threads : []) {
+      const customer = normalizePhone(thread?.id || thread?.context?.wa_id);
+      for (const message of Array.isArray(thread?.messages) ? thread.messages : []) {
+        try {
+          if (!customer || !message?.from) { result.ignored += 1; continue; }
+          const direction = normalizePhone(message.from) === customer ? "inbound" : "outbound";
+          const mapped = HISTORY_STATUS[String(message.history_context?.status || "").toUpperCase()];
+          const r = await importAppMessage({
+            message,
+            direction,
+            customer,
+            businessPhone: value.metadata?.display_phone_number,
+            waId: thread?.context?.wa_id || thread?.id || null,
+            profileName: null,
+            status: mapped || (direction === "inbound" ? "delivered" : "sent"),
+            live: false,
+          });
+          if (r.skipped) result.ignored += 1;
+          else result.history += 1;
+        } catch (error) {
+          console.error("WhatsApp history error:", error.message);
+          result.ignored += 1;
+        }
+      }
+    }
+  }
+
+  // Follow-up for media_placeholder: value.messages[] carries the media
+  // asset for an already-imported message. Only fills that placeholder.
+  for (const message of Array.isArray(value.messages) ? value.messages : []) {
+    try {
+      const media = message?.id ? extractMedia(message) : null;
+      if (!media) { result.ignored += 1; continue; }
+      const r = await WhatsAppMessage.updateOne(
+        { messageId: message.id, type: "media_placeholder" },
+        {
+          $set: {
+            type: message.type,
+            body: extractBody(message) || `[${message.type}]`,
+            meta: { type: message.type, ...media },
+          },
+        }
+      );
+      if (r?.modifiedCount) result.history += 1;
+      else result.ignored += 1;
+    } catch (error) {
+      console.error("WhatsApp history media error:", error.message);
+      result.ignored += 1;
+    }
+  }
+};
+
+/* smb_app_state_sync: Business-app contact book. Names an EXISTING thread
+   only when it has none; never creates threads/leads, never deletes. */
+const processStateSync = async (value, result) => {
+  for (const item of Array.isArray(value.state_sync) ? value.state_sync : []) {
+    try {
+      const contact = item?.contact;
+      const action = String(item?.action || "").toLowerCase();
+      const phoneNumber = normalizePhone(contact?.phone_number);
+      const name = String(contact?.full_name || contact?.first_name || "").trim();
+      if (item?.type !== "contact" || action !== "add" || !phoneNumber || !name) {
+        result.ignored += 1;
+        continue;
+      }
+
+      const r = await WhatsAppConversation.updateOne(
+        { phoneNumber, $or: [{ profileName: null }, { profileName: "" }] },
+        { $set: { profileName: name.slice(0, 200) } }
+      );
+      if (r?.modifiedCount) result.contacts += 1;
+      else result.ignored += 1;
+    } catch (error) {
+      console.error("WhatsApp contact sync error:", error.message);
+      result.ignored += 1;
+    }
+  }
+};
+
+const COEXISTENCE_HANDLERS = {
+  history: processHistory,
+  smb_message_echoes: processEchoes,
+  smb_app_state_sync: processStateSync,
+};
+
+const processCoexistenceChange = async (field, value, result) => {
+  const workspaceId = value && typeof value === "object"
+    ? await workspaceForPhoneNumberId(value.metadata?.phone_number_id)
+    : null;
+  if (!workspaceId) {
+    result.ignored += 1;
+    return;
+  }
+  await runWithWorkspace(workspaceId, () => COEXISTENCE_HANDLERS[field](value, result));
 };
 
 export const processWebhookPayload = async (payload) => {
-  const result = { messages: 0, statuses: 0, ignored: 0 };
+  const result = { messages: 0, statuses: 0, history: 0, echoes: 0, contacts: 0, ignored: 0 };
 
   if (payload?.object !== "whatsapp_business_account") {
     result.ignored += 1;
@@ -466,6 +717,11 @@ export const processWebhookPayload = async (payload) => {
     for (const change of entry.changes || []) {
       if (change.field === "account_update") {
         result.ignored += await processAccountUpdate(entry.id, change.value);
+        continue;
+      }
+
+      if (COEXISTENCE_FIELDS.has(change.field)) {
+        await processCoexistenceChange(change.field, change.value, result);
         continue;
       }
 

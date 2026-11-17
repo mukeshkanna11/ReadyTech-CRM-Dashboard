@@ -78,7 +78,7 @@ const allowedOrigins = [
 
   "https://crmreadytechsolutions.in",
   "https://www.crmreadytechsolutions.in",
-"https://wagner-incentives-glass-teacher.trycloudflare.com",
+"https://course-swap-was-cached.trycloudflare.com",
 
   ...(process.env.CLIENT_URL
     ? [process.env.CLIENT_URL.replace(/\/+$/, "")]
