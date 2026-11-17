@@ -70,14 +70,16 @@ const CONNECT_LABEL = {
 };
 const SHORT = { google: "Gmail", microsoft: "Outlook / 365", zoho: "Zoho Mail", smtp: "SMTP" };
 
-/* Common custom-domain hosts (port/security are standard for each) */
+/* Common custom-domain hosts (port/security are standard for each; IMAP over SSL on 993) */
 const PRESETS = [
-  { id: "hostinger", label: "Hostinger", host: () => "smtp.hostinger.com", security: "ssl", port: 465 },
-  { id: "cpanel", label: "cPanel", host: (d) => (d ? `mail.${d}` : ""), security: "ssl", port: 465 },
-  { id: "godaddy", label: "GoDaddy", host: () => "smtpout.secureserver.net", security: "ssl", port: 465 },
-  { id: "other", label: "Other", host: () => "", security: "starttls", port: 587 },
+  { id: "hostinger", label: "Hostinger", host: () => "smtp.hostinger.com", security: "ssl", port: 465, imap: () => "imap.hostinger.com" },
+  { id: "titan", label: "Titan", host: () => "smtp.titan.email", security: "ssl", port: 465, imap: () => "imap.titan.email" },
+  { id: "cpanel", label: "cPanel", host: (d) => (d ? `mail.${d}` : ""), security: "ssl", port: 465, imap: (d) => (d ? `mail.${d}` : "") },
+  { id: "godaddy", label: "GoDaddy", host: () => "smtpout.secureserver.net", security: "ssl", port: 465, imap: () => "imap.secureserver.net" },
+  { id: "other", label: "Other", host: () => "", security: "starttls", port: 587, imap: () => "" },
 ];
 const PORTS = { ssl: [465], starttls: [587, 25, 2525] };
+const IMAP_PORTS = { ssl: [993], starttls: [143] };
 
 const fmt = (d) => (d ? new Date(d).toLocaleString() : null);
 
@@ -101,7 +103,7 @@ const btn = {
 };
 const input = "w-full px-3.5 py-2.5 text-sm border rounded-xl border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50";
 
-/* ---------------- Inbox sync (Gmail replies) status ---------------- */
+/* ---------------- Inbox sync status (replies + CRM contacts) ---------------- */
 const ago = (d) => {
   if (!d) return null;
   const s = Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 1000));
@@ -113,13 +115,17 @@ function InboxSyncStatus({ cap, account, admin, busy, onEnable }) {
     if (st.status === "syncing") return <span className="inline-flex items-center gap-1 font-medium text-indigo-600"><Loader2 size={11} className="animate-spin" /> Syncing…</span>;
     if (st.status === "error") return <span className="font-medium text-amber-700" title={st.lastError || ""}>Retrying{st.lastSuccessAt ? ` · last ${ago(st.lastSuccessAt)}` : ""}</span>;
     if (st.status === "needs_permission") return <span className="font-medium text-amber-700" title={st.lastError || ""}>Read access removed</span>;
-    return <span className="font-medium text-emerald-700" title="Replies to emails sent from ReadyTech">Replies · {st.lastSuccessAt ? `synced ${ago(st.lastSuccessAt)}` : "first sync pending"}</span>;
+    return <span className="font-medium text-emerald-700" title="Replies to ReadyTech emails and emails from your Leads, Clients and Vendors">On · {st.lastSuccessAt ? `synced ${ago(st.lastSuccessAt)}` : "first sync pending"}</span>;
   }
   if (st?.canEnable && account.status === "connected") {
+    const imap = account.provider === "smtp";
     return admin ? (
-      <button type="button" onClick={onEnable} disabled={!!busy} title="Adds read-only Gmail access so replies appear here. Only replies to emails sent from ReadyTech are imported."
+      <button type="button" onClick={onEnable} disabled={!!busy}
+        title={imap
+          ? "Add your IMAP server so replies and emails from your CRM contacts appear here."
+          : "Adds read-only access so replies and emails from your Leads, Clients and Vendors appear here. Other mail is never imported."}
         className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50">
-        {busy === `inbox:${account.id}` ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} Enable inbox sync
+        {busy === `inbox:${account.id}` ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} {imap ? "Add IMAP" : "Enable inbox sync"}
       </button>
     ) : <span className="text-slate-600">Off</span>;
   }
@@ -225,22 +231,34 @@ function DisconnectDialog({ account, isLast, onCancel, onConfirm }) {
 }
 
 /* ---------------- SMTP setup / update dialog ---------------- */
-function SmtpDialog({ account, initialEmail, onClose, onSaved }) {
+function SmtpDialog({ account, initialEmail, suggested, addImap, onClose, onSaved }) {
   const editing = !!account;
   const domain = (initialEmail || account?.email || "").split("@")[1] || "";
-  const [form, setForm] = useState(() =>
-    editing
-      ? { email: account.email, displayName: account.displayName || "", host: account.smtp?.host || "", security: account.smtp?.security || "ssl",
-          port: account.smtp?.port || 465, username: account.smtp?.username || account.email, password: "" }
-      : { email: initialEmail || "", displayName: "", host: "", security: "ssl", port: 465, username: "", password: "" }
-  );
+  const [form, setForm] = useState(() => {
+    if (editing) {
+      const im = account.imap || {};
+      const guess = PRESETS.find((p) => p.host(domain) === account.smtp?.host)?.imap(domain) || "";
+      return { email: account.email, displayName: account.displayName || "", host: account.smtp?.host || "", security: account.smtp?.security || "ssl",
+        port: account.smtp?.port || 465, username: account.smtp?.username || account.email, password: "",
+        imapEnabled: !!im.enabled || !!addImap, imapHost: im.host || guess, imapSecurity: im.security || "ssl", imapPort: im.port || 993 };
+    }
+    // Detected provider (Hostinger, Titan, GoDaddy, cPanel …) pre-fills both servers
+    return { email: initialEmail || "", displayName: "", host: suggested?.smtp?.host || "", security: suggested?.smtp?.security || "ssl",
+      port: suggested?.smtp?.port || 465, username: "", password: "",
+      imapEnabled: !!suggested?.imap, imapHost: suggested?.imap?.host || "", imapSecurity: suggested?.imap?.security || "ssl", imapPort: suggested?.imap?.port || 993 };
+  });
   const [showPw, setShowPw] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  const preset = (p) => setForm((f) => ({ ...f, host: p.host((f.email.split("@")[1] || domain).toLowerCase()), security: p.security, port: p.port }));
+  const preset = (p) => setForm((f) => {
+    const d = (f.email.split("@")[1] || domain).toLowerCase();
+    const imapHost = p.imap(d);
+    return { ...f, host: p.host(d), security: p.security, port: p.port, imapHost, imapSecurity: "ssl", imapPort: 993, imapEnabled: imapHost ? true : f.imapEnabled };
+  });
   const setSecurity = (security) => setForm((f) => ({ ...f, security, port: PORTS[security][0] }));
+  const setImapSecurity = (imapSecurity) => setForm((f) => ({ ...f, imapSecurity, imapPort: IMAP_PORTS[imapSecurity][0] }));
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && !saving && onClose();
@@ -254,9 +272,14 @@ function SmtpDialog({ account, initialEmail, onClose, onSaved }) {
     if (!EMAIL_RE.test(form.email.trim())) return setError("Enter a valid email address.");
     if (!form.host.trim()) return setError("Enter the SMTP host from your email provider.");
     if (!editing && !form.password) return setError("Enter the mailbox password.");
+    if (form.imapEnabled && !form.imapHost.trim()) return setError("Enter the IMAP host from your email provider, or turn off receiving.");
     setSaving(true);
     try {
-      const body = { ...form, port: Number(form.port), username: form.username.trim() || form.email.trim() };
+      const { imapEnabled, imapHost, imapSecurity, imapPort, ...rest } = form;
+      const body = {
+        ...rest, port: Number(form.port), username: form.username.trim() || form.email.trim(),
+        imap: imapEnabled ? { enabled: true, host: imapHost.trim(), security: imapSecurity, port: Number(imapPort) } : { enabled: false },
+      };
       const res = editing ? await API.put(`/email/accounts/${account.id}/smtp`, body) : await API.post("/email/smtp", body);
       onSaved(res.data?.message || "Email account connected");
     } catch (err) {
@@ -273,7 +296,7 @@ function SmtpDialog({ account, initialEmail, onClose, onSaved }) {
           <div className="flex items-center gap-3">
             <div className="grid w-10 h-10 rounded-xl bg-indigo-50 place-items-center"><SmtpIcon size={24} /></div>
             <div>
-              <h2 id="smtp-title" className="font-semibold text-slate-900">{editing ? "Update SMTP account" : "Custom domain email (SMTP)"}</h2>
+              <h2 id="smtp-title" className="font-semibold text-slate-900">{editing ? "Update custom domain email" : "Custom domain email (SMTP + IMAP)"}</h2>
               <p className="text-xs text-slate-500">We test the login before saving anything.</p>
             </div>
           </div>
@@ -281,6 +304,9 @@ function SmtpDialog({ account, initialEmail, onClose, onSaved }) {
         </div>
 
         <div className="p-5 space-y-4">
+          {!editing && suggested?.label && (
+            <p className="p-2.5 text-xs rounded-lg bg-indigo-50 text-indigo-800">Detected <b>{suggested.label}</b> — server settings are filled in. Just enter your password.</p>
+          )}
           {!editing && (
             <div>
               <p className="mb-1.5 text-xs font-semibold text-slate-600">Quick setup</p>
@@ -335,9 +361,42 @@ function SmtpDialog({ account, initialEmail, onClose, onSaved }) {
             </label>
           </div>
 
+          {/* Receiving (IMAP): same username and password */}
+          <div className="p-3 space-y-3 border rounded-xl border-slate-200">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.imapEnabled} onChange={(e) => set("imapEnabled", e.target.checked)} className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              <span>
+                <span className="block text-sm font-semibold text-slate-800">Also receive email (IMAP)</span>
+                <span className="block text-xs text-slate-500">Replies and emails from your Leads, Clients and Vendors appear in the Inbox. Other mail is never imported, and nothing is changed in your mailbox.</span>
+              </span>
+            </label>
+            {form.imapEnabled && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1 sm:col-span-2">
+                  <span className="text-xs font-semibold text-slate-600">IMAP host</span>
+                  <input value={form.imapHost} onChange={(e) => set("imapHost", e.target.value)} placeholder="imap.hostinger.com" autoComplete="off" spellCheck={false} className={input} />
+                </label>
+                <div className="space-y-1">
+                  <span className="text-xs font-semibold text-slate-600">Encryption</span>
+                  <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-100">
+                    {[["ssl", "SSL"], ["starttls", "STARTTLS"]].map(([v, l]) => (
+                      <button key={v} type="button" onClick={() => setImapSecurity(v)} className={`py-1.5 text-sm font-semibold rounded-lg ${form.imapSecurity === v ? "bg-white shadow-sm text-indigo-700" : "text-slate-600"}`}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-slate-600">Port</span>
+                  <select value={form.imapPort} onChange={(e) => set("imapPort", Number(e.target.value))} className={input}>
+                    {IMAP_PORTS[form.imapSecurity].map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </label>
+              </div>
+            )}
+          </div>
+
           <p className="flex items-start gap-1.5 text-xs text-slate-500">
             <Lock size={13} className="mt-0.5 shrink-0 text-emerald-600" />
-            Your password is encrypted on ReadyTech's servers, is only used to send email from this workspace and is never shown again.
+            Your password is encrypted on ReadyTech's servers, is only used for this workspace's mailbox and is never shown again.
           </p>
           {error && (
             <p className="flex items-start gap-2 p-3 text-sm text-red-700 border border-red-200 rounded-xl bg-red-50" role="alert">
@@ -400,7 +459,7 @@ function MailSettings({ onChanged, capabilities = [] }) {
       const who = searchParams.get("email") || "Your email account";
       setBanner(inbox === "0"
         ? { type: "error", text: `${who} is connected for sending, but inbox sync wasn't enabled because read access wasn't granted. Click "Enable inbox sync" and allow ReadyTech to read email to try again.` }
-        : { type: "success", text: inbox === "1" ? `Inbox sync is on for ${who}. Replies to emails sent from ReadyTech will appear shortly.` : `${who} is connected.` });
+        : { type: "success", text: inbox === "1" ? `Inbox sync is on for ${who}. Replies and emails from your Leads, Clients and Vendors will appear shortly.` : `${who} is connected.` });
     } else {
       setBanner({ type: "error", text: searchParams.get("message") || "We couldn't connect your email account. Please try again." });
     }
@@ -427,11 +486,14 @@ function MailSettings({ onChanged, capabilities = [] }) {
     window.location.href = res.data.data.url;
   };
   const connect = (provider, hint) => {
-    if (provider === "smtp") return setSmtpDialog({ email: hint || "" });
+    if (provider === "smtp") return setSmtpDialog({ email: hint || "", suggested: choice?.settings });
     return run(provider, () => redirectToSignIn(provider, hint));
   };
-  /* Gmail: incremental consent that adds read access (replies only) */
-  const enableInbox = (a) => run(`inbox:${a.id}`, () => redirectToSignIn("google", a.email, true));
+  /* Inbox sync: OAuth mailboxes add read-only access (incremental consent);
+     custom-domain mailboxes add their IMAP server */
+  const enableInbox = (a) => (a.provider === "smtp"
+    ? setSmtpDialog({ account: a, addImap: true })
+    : run(`inbox:${a.id}`, () => redirectToSignIn(a.provider, a.email, true)));
 
   /* Email first → straight to the right provider when we can tell */
   const continueWithEmail = (e) => {
@@ -440,10 +502,10 @@ function MailSettings({ onChanged, capabilities = [] }) {
     if (!EMAIL_RE.test(value)) return setBanner({ type: "error", text: "Please enter a valid email address." });
     run("detect", async () => {
       const res = await API.get("/email/detect", { params: { email: value } });
-      const { provider, available } = res.data?.data || {};
-      if (provider === "smtp") return setSmtpDialog({ email: value });
+      const { provider, available, settings } = res.data?.data || {};
+      if (provider === "smtp") return setSmtpDialog({ email: value, suggested: settings });
       if (provider && available) return redirectToSignIn(provider, value);
-      setChoice({ provider, available });
+      setChoice({ provider, available, settings });
     });
   };
 
@@ -564,6 +626,7 @@ function MailSettings({ onChanged, capabilities = [] }) {
                         {a.providerName}
                         {a.displayName ? ` · sends as "${a.displayName}"` : ""}
                         {a.smtp ? ` · ${a.smtp.host}:${a.smtp.port} (${a.smtp.security === "ssl" ? "SSL" : "STARTTLS"})` : ""}
+                        {a.imap?.enabled ? ` · IMAP ${a.imap.host}:${a.imap.port}` : ""}
                       </p>
                     </div>
                     <StatusPill status={a.status} />
@@ -683,6 +746,8 @@ function MailSettings({ onChanged, capabilities = [] }) {
         <SmtpDialog
           account={smtpDialog.account}
           initialEmail={smtpDialog.email}
+          suggested={smtpDialog.suggested}
+          addImap={smtpDialog.addImap}
           onClose={() => setSmtpDialog(null)}
           onSaved={(message) => {
             setSmtpDialog(null);

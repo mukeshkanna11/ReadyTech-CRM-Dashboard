@@ -48,7 +48,7 @@ function ConnectionPill({ summary, checking, error }) {
   return <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600"><Plug size={12} /> Not connected</span>;
 }
 const EMPTY = {
-  inbox: ["No replies yet", "Replies to emails you send from ReadyTech appear here automatically."],
+  inbox: ["Nothing here yet", "Replies to your ReadyTech emails and emails from your Leads, Clients and Vendors appear here automatically."],
   sent: ["No sent emails yet", "Emails you send from this workspace appear here."],
   drafts: ["No drafts", "Save an email as a draft to finish it later."],
   starred: ["Nothing starred", "Star important emails to find them quickly."],
@@ -108,7 +108,7 @@ function Attachments({ list }) {
             className="inline-flex items-center gap-2 px-3 py-2 text-xs border border-dashed rounded-lg cursor-not-allowed border-slate-200 text-slate-400">
             <Paperclip size={14} />
             <span className="max-w-[200px] truncate font-medium">{a.filename}</span>
-            <span>{UNAVAILABLE[a.unavailable] || "Open in Gmail"}</span>
+            <span>{UNAVAILABLE[a.unavailable] || "Open in your mailbox"}</span>
           </span>
         ) : (
           <button key={a.id} onClick={() => get(a)} disabled={busy === a.id} className="inline-flex items-center gap-2 px-3 py-2 text-xs border rounded-lg border-slate-200 hover:bg-slate-50">
@@ -134,7 +134,7 @@ const Recipients = ({ m }) => (
 /* Stable, unique list keys: conversations by thread, everything else by message id */
 const rowKey = (folder, row) => (folder === "conversations" ? `t:${row.threadKey}` : `m:${row.id}`);
 
-const UNAVAILABLE = { too_large: "Too large — open in Gmail", blocked: "Blocked file type", limit: "Open in Gmail" };
+const UNAVAILABLE = { too_large: "Too large — open in your mailbox", blocked: "Blocked file type", limit: "Open in your mailbox" };
 const Sender = ({ m, className = "" }) => (
   <p className={`text-sm font-semibold text-slate-800 break-all ${className}`}>
     {m.fromName ? <>{m.fromName} <span className="font-normal text-slate-500">&lt;{m.from}&gt;</span></> : m.from}
@@ -376,7 +376,7 @@ export default function MailWorkspace({ renderSettings }) {
     loadSummary().finally(() => setChecking(false));
   }, [loadSummary]);
 
-  /* Refresh: asks the backend to check Gmail for replies now (when inbox
+  /* Refresh: asks the backend to check connected mailboxes now (when inbox
      sync is on), then reloads. The backend worker also syncs every few minutes. */
   const replySync = !!summary?.inboxSync?.enabled && !!summary?.capabilities?.some((c) => c.inbox);
   const refresh = async () => {
@@ -385,11 +385,11 @@ export default function MailWorkspace({ renderSettings }) {
       setSyncing(true);
       try {
         const r = await mailApi.sync();
-        if (r.imported > 0) toast.success(`${r.imported} new repl${r.imported === 1 ? "y" : "ies"}`);
+        if (r.imported > 0) toast.success(`${r.imported} new email${r.imported === 1 ? "" : "s"}`);
         const failed = r.results?.find((x) => x.error);
         if (failed) toast.error(failed.error);
       } catch (err) {
-        toast.error(errorText(err, "Couldn't check for replies."));
+        toast.error(errorText(err, "Couldn't check for new email."));
       } finally {
         setSyncing(false);
       }
@@ -464,13 +464,13 @@ export default function MailWorkspace({ renderSettings }) {
           <div className="flex flex-wrap items-center gap-2">
             <ConnectionPill summary={summary} checking={checking} error={summaryError} />
             {replySync && (
-              <span className="text-xs text-slate-500">{syncing ? "Checking Gmail for replies…" : lastSynced ? `Replies synced ${new Date(lastSynced).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Replies sync pending"}</span>
+              <span className="text-xs text-slate-500">{syncing ? "Checking your mailboxes…" : lastSynced ? `Inbox synced ${new Date(lastSynced).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Inbox sync pending"}</span>
             )}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={refresh} disabled={syncing} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-white border rounded-xl border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            title={replySync ? "Check Gmail for new replies" : refreshedAt ? `Updated ${refreshedAt.toLocaleTimeString()}` : "Refresh"}>
+            title={replySync ? "Check your mailboxes for new email" : refreshedAt ? `Updated ${refreshedAt.toLocaleTimeString()}` : "Refresh"}>
             <RefreshCw size={15} className={syncing || checking || (list.loading && hasMailbox) ? "animate-spin" : ""} /> {syncing ? "Syncing…" : "Refresh"}
           </button>
           <button onClick={() => compose({})} disabled={!canSend} title={canSend ? "Compose a new email" : NO_SEND}
@@ -495,7 +495,7 @@ export default function MailWorkspace({ renderSettings }) {
           <div className="grid mx-auto mb-4 w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 place-items-center"><Plug size={24} /></div>
           <h2 className="text-lg font-semibold text-slate-900">Connect email account to start</h2>
           <p className="max-w-md mx-auto mt-2 text-sm text-slate-500">
-            Connect your Gmail, Zoho Mail or custom-domain mailbox to compose, send and reply from ReadyTech. Emails here are sent only from your own connected account.
+            Connect your Gmail, Outlook / Microsoft 365, Zoho Mail or custom-domain mailbox to compose, send and reply from ReadyTech. Emails here are sent only from your own connected account.
           </p>
           <button onClick={goToConnect} className="inline-flex items-center gap-2 px-5 py-2.5 mt-5 text-sm font-semibold text-white bg-indigo-600 shadow-sm rounded-xl hover:bg-indigo-700">
             <Plug size={16} /> Connect email account

@@ -9,11 +9,11 @@ import User from "../models/User.js";
 import Client from "../models/Client.js";
 import { sendLeadEmail } from "../services/email.service.js";
 import mailboxRoutes from "./mailbox.routes.js";
-import { inboxSyncEnabled, READ_SCOPE, startInitialSync } from "../services/mail/gmailSync.service.js";
+import { inboxSyncEnabled, READ_SCOPES, startInitialSync } from "../services/mail/gmailSync.service.js";
 import {
   PROVIDERS, missingConfig, buildAuthUrl, verifyState, completeConnection,
   verifyConnection, disconnect, sendViaConnectedAccount, detectProvider,
-  listAccounts, setDefaultAccount, saveSmtpAccount, markTested,
+  listAccounts, setDefaultAccount, saveSmtpAccount, markTested, detectMailSettings,
 } from "../services/emailOAuth.service.js";
 
 const router = express.Router();
@@ -56,7 +56,11 @@ const friendlyError = (err) => {
   if (err.name === "TokenExpiredError" || err.name === "JsonWebTokenError" || err.message === "Invalid OAuth state") return "The connection link expired — please click Connect again.";
   if (/refresh token|Not allowed|no email address|Permission to send/.test(err.message) || err.status === 409) return err.message;
   if (/admin|consent|AADSTS65001|AADSTS90094/i.test(err.message)) return "Your organisation requires an administrator to approve this app. Ask your IT admin to grant consent, then connect again.";
-  if (/redirect_uri_mismatch|invalid_client|unauthorized_client|OAuth client was not found/i.test(`${err.message} ${err.providerCode || ""}`)) return "The email sign-in isn't set up correctly on ReadyTech's side (OAuth client / redirect URI). Please contact ReadyTech support.";
+  // Microsoft Entra setup errors: redirect URI (50011), app not in tenant (700016),
+  // single-tenant app used by another organisation (50194), bad / expired secret (7000215 / 7000222)
+  if (/redirect_uri_mismatch|invalid_client|unauthorized_client|OAuth client was not found|AADSTS(50011|700016|50194|7000215|7000222)\b/i.test(`${err.message} ${err.providerCode || ""}`)) return "The email sign-in isn't set up correctly on ReadyTech's side (OAuth client / redirect URI). Please contact ReadyTech support.";
+  // Personal account blocked by a work-only app registration, or vice versa
+  if (/AADSTS(50020|500200|9002331)\b/i.test(err.message)) return "This Microsoft account type can't be used here. Sign in with your company Outlook / Microsoft 365 account.";
   if (err.invalidGrant) return "The sign-in code expired or was already used — please click Connect again.";
   return "We couldn't finish connecting your email account. Please try again.";
 };
@@ -75,7 +79,9 @@ router.get("/status", auth, async (req, res) => {
 /* Which provider hosts this address (so the UI can go straight to its sign-in) */
 router.get("/detect", auth, role("admin"), async (req, res) => {
   const provider = await detectProvider(req.query.email);
-  res.json({ success: true, data: { provider, available: provider ? missingConfig(provider).length === 0 : null } });
+  // Custom domains: SMTP + IMAP suggestion (Hostinger, Titan, GoDaddy, cPanel)
+  const settings = provider === "smtp" || provider === null ? await detectMailSettings(req.query.email) : null;
+  res.json({ success: true, data: { provider, available: provider ? missingConfig(provider).length === 0 : null, ...(settings && { settings }) } });
 });
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -90,14 +96,14 @@ router.get("/oauth/:provider/url", auth, role("admin"), (req, res) => {
     console.warn(`Email OAuth (${provider}) not configured — ReadyTech admin: set ${missing.join(", ")}. ${PROVIDERS[provider].setup}`);
     return res.status(400).json({ success: false, code: "EMAIL_PROVIDER_NOT_CONFIGURED", message: NOT_AVAILABLE(PROVIDERS[provider].name) });
   }
-  // "Enable inbox sync": Gmail only, and only while the feature flag is on
+  // "Enable inbox sync": adds the provider's read-only scope, only while the feature flag is on
   const wantsInbox = req.query.inbox === "1";
-  if (wantsInbox && (provider !== "google" || !inboxSyncEnabled())) {
+  if (wantsInbox && (!READ_SCOPES[provider] || !inboxSyncEnabled())) {
     return res.status(400).json({ success: false, code: "INBOX_SYNC_UNAVAILABLE", message: "Inbox sync isn't available for this mailbox yet." });
   }
   res.json({ success: true, data: { url: buildAuthUrl({
     provider, userId: req.user._id, workspaceId: req.workspace, returnOrigin: appOrigin(req.get("origin")),
-    ...(wantsInbox && { extraScopes: [READ_SCOPE] }),
+    ...(wantsInbox && { extraScopes: READ_SCOPES[provider] }),
     loginHint: EMAIL_RE.test(String(req.query.email || "")) ? String(req.query.email).trim() : undefined,
   }) } });
 });
@@ -124,6 +130,7 @@ router.get("/oauth/:provider/callback", async (req, res) => {
     const email = await completeConnection({
       provider, code: String(code), workspaceId: s.ws, userId: s.uid,
       accountsServer: provider === "zoho" ? String(req.query["accounts-server"] || "") : undefined,
+      ...(s.inbox && READ_SCOPES[provider] && { extraScopes: READ_SCOPES[provider] }),
     });
     // Inbox sync requested: report whether read access was granted and start the first sync
     const inbox = s.inbox ? await startInitialSync(s.ws, provider, email).catch(() => ({ granted: false })) : null;
@@ -197,6 +204,7 @@ const smtpError = (res, error) => {
 router.post("/smtp", auth, role("admin"), smtpLimiter, async (req, res) => {
   try {
     const account = await saveSmtpAccount(req.workspace, req.user._id, req.body);
+    if (account.imap?.enabled) startInitialSync(String(req.workspace), "smtp", account.email).catch(() => {});
     res.json({ success: true, message: `${account.email} connected`, data: account });
   } catch (error) {
     smtpError(res, error);
@@ -206,6 +214,7 @@ router.put("/accounts/:id/smtp", auth, role("admin"), smtpLimiter, async (req, r
   if (badId(req, res)) return;
   try {
     const account = await saveSmtpAccount(req.workspace, req.user._id, req.body, req.params.id);
+    if (account.imap?.enabled) startInitialSync(String(req.workspace), "smtp", account.email).catch(() => {});
     res.json({ success: true, message: `${account.email} updated`, data: account });
   } catch (error) {
     smtpError(res, error);

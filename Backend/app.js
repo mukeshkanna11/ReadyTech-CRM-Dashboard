@@ -83,6 +83,7 @@ const allowedOrigins = [
   ...(process.env.CLIENT_URL
     ? [process.env.CLIENT_URL.replace(/\/+$/, "")]
     : []),
+    
 ];
 const corsOptions = {
   origin: (origin, callback) => {

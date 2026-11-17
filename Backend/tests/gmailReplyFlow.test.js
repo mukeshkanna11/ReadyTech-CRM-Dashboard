@@ -20,6 +20,9 @@ const { default: EmailConnection } = await import("../models/EmailConnection.js"
 const { default: EmailMessage } = await import("../models/EmailMessage.js");
 const { default: EmailAttachment } = await import("../models/EmailAttachment.js");
 const { default: EmailSyncState } = await import("../models/EmailSyncState.js");
+const { default: Lead } = await import("../models/Lead.js");
+const { default: Client } = await import("../models/Client.js");
+const { default: Vendor } = await import("../models/Vendor.model.js");
 
 const WS = "64b0000000000000000000a1";
 const OTHER_WS = "64b0000000000000000000b2";
@@ -66,6 +69,7 @@ const fakeGmail = () => {
       const start = Number(u.searchParams.get("startHistoryId"));
       return json(200, { history: gmailState.history.filter((h) => Number(h.id) > start), historyId: String(gmailState.historyId) });
     }
+    if (path === "messages") return json(200, { messages: [...gmailState.messages.values()].filter((x) => (x.labelIds || []).includes("INBOX")).map(({ id, threadId }) => ({ id, threadId })) });
     let m = /^threads\/(.+)$/.exec(path);
     if (m) return json(200, { id: m[1], messages: [...gmailState.messages.values()].filter((x) => x.threadId === m[1]).map(({ id, labelIds }) => ({ id, labelIds })) });
     m = /^messages\/([^/]+)$/.exec(path);
@@ -116,6 +120,7 @@ beforeEach(() => {
   });
   memModel(EmailAttachment);
   memModel(EmailSyncState, { unique: [["workspace", "account"]], defaults: { failures: 0, totalImported: 0, historyId: null, lockedUntil: null } });
+  memModel(Lead); memModel(Client); memModel(Vendor);
   fakeGmail();
 });
 

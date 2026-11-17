@@ -39,7 +39,7 @@ const BLOCKED_EXT = new Set([
 /* Which providers can do what today (no over-promising in the UI) */
 export const CAPABILITIES = {
   google: { send: true, attachments: true, inbox: false, inboxReason: "Reading your Gmail inbox needs an additional Google permission (gmail.readonly) that ReadyTech is getting verified. Sending, drafts and sent conversations work now." },
-  microsoft: { send: true, attachments: true, inbox: false, inboxReason: "Outlook / Microsoft 365 inbox access isn't available yet." },
+  microsoft: { send: true, attachments: true, inbox: false, inboxReason: "Outlook / Microsoft 365 inbox sync isn't switched on for this workspace yet. Sending works now." },
   zoho: { send: true, attachments: false, inbox: false, inboxReason: "Zoho Mail inbox access isn't available yet. Sending works now." },
   smtp: { send: true, attachments: true, inbox: false, inboxReason: "SMTP can only send email. Receiving needs IMAP, which isn't available yet." },
 };
@@ -171,7 +171,7 @@ const LINK_MODELS = {
 
 /* Records of this workspace; the default workspace also owns pre-isolation
    records that have no workspace field (same rule as the scope plugin). */
-const recordScope = (ws) =>
+export const recordScope = (ws) =>
   String(ws) === String(getDefaultWorkspaceId() || "")
     ? { $or: [{ workspace: ws }, { workspace: null }, { workspace: { $exists: false } }] }
     : { workspace: ws };
@@ -346,23 +346,27 @@ export const summary = async (ctx) => {
     count("inbox", { read: false }),
   ]);
   const def = accounts.find((a) => a.isDefault) || null;
-  // Gmail reply sync (feature-flagged): per-account access + status
+  // Inbox sync (feature-flagged): per-account access + status, every provider
   const sync = await inboxStatus(ctx.workspaceId);
   const caps = accounts.map((a) => {
     const st = sync.accounts[a.id];
     const base = { accountId: a.id, ...CAPABILITIES[a.provider] };
-    if (!sync.enabled || a.provider !== "google") return base;
+    if (!sync.enabled || !st) return base;
     return {
       ...base,
-      inbox: !!st?.access,
-      inboxReason: st?.access ? null : "Enable inbox sync in Email Settings to see replies here.",
-      sync: st || null,
+      inbox: !!st.access,
+      inboxReason: st.access
+        ? null
+        : a.provider === "smtp"
+        ? "Add IMAP to this mailbox in Email Settings to receive email here."
+        : "Enable inbox sync in Email Settings to see replies and customer emails here.",
+      sync: st,
     };
   });
   const inboxAvailable = caps.some((c) => c.inbox);
   const defCap = def && caps.find((c) => c.accountId === def.id);
   return {
-    inboxSync: { enabled: sync.enabled, mode: "replies" },
+    inboxSync: { enabled: sync.enabled, mode: "replies_contacts" },
     accounts,
     connection: connectionState(accounts),
     defaultAccount: def,

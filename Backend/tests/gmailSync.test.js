@@ -1,4 +1,4 @@
-// DB-free tests for Gmail reply sync (Replies only, behind GMAIL_INBOX_SYNC_ENABLED).
+// DB-free tests for Gmail inbox sync (replies + CRM contacts, behind GMAIL_INBOX_SYNC_ENABLED).
 // Run: node --test tests/gmailSync.test.js
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
@@ -22,6 +22,9 @@ const { default: EmailConnection } = await import("../models/EmailConnection.js"
 const { default: EmailMessage } = await import("../models/EmailMessage.js");
 const { default: EmailAttachment } = await import("../models/EmailAttachment.js");
 const { default: EmailSyncState } = await import("../models/EmailSyncState.js");
+const { default: Lead } = await import("../models/Lead.js");
+const { default: Client } = await import("../models/Client.js");
+const { default: Vendor } = await import("../models/Vendor.model.js");
 
 const WS_A = "64b0000000000000000000a1";
 const WS_B = "64b0000000000000000000b2";
@@ -105,6 +108,7 @@ beforeEach(async () => {
     defaults: { links: [], attachments: [], to: [], cc: [], bcc: [], read: false, starred: false, archived: false, trashed: false },
   });
   files = memModel(EmailAttachment);
+  memModel(Lead); memModel(Client); memModel(Vendor);
   states = memModel(EmailSyncState, { unique: [["workspace", "account"]], defaults: { failures: 0, totalImported: 0, historyId: null, lockedUntil: null } });
   conns.push(
     gconn(ACC_A, WS_A, "owner@a.com", "AT-A", `openid email ${SEND} ${READ}`),
@@ -117,6 +121,7 @@ beforeEach(async () => {
 const firstSyncRoutes = (extra = []) => [
   ...extra,
   [/^profile$/, () => ({ historyId: "500" })],
+  [/^messages$/, () => ({ messages: [] })],
   [/^threads\/t1$/, () => ({ id: "t1", messages: [{ id: "sent-t1-a1", labelIds: ["SENT"] }, { id: "r1", labelIds: ["INBOX", "UNREAD"] }] })],
   [/^messages\/r1\/attachments\/att1$/, () => ({ data: b64u("PDFDATA") })],
   [/^messages\/r1$/, () => gmailMsg({ id: "r1", attachments: [pdfPart] })],
@@ -148,7 +153,7 @@ test("flag OFF: Google scope is exactly the existing send-only scope; no sync, n
   assert.equal(s.inbox.available, false);
 });
 
-test("flag ON: only 'Enable inbox sync' adds gmail.readonly (send scope kept); other providers refused", () => {
+test("flag ON: only 'Enable inbox sync' adds gmail.readonly (send scope kept); Zoho gets its read scopes comma-separated", () => {
   on();
   const r = res();
   handler("get", "/oauth/:provider/url")(urlReq({ inbox: "1" }), r);
@@ -162,7 +167,10 @@ test("flag ON: only 'Enable inbox sync' adds gmail.readonly (send scope kept); o
   const zoho = res();
   process.env.ZOHO_CLIENT_ID = "z"; process.env.ZOHO_CLIENT_SECRET = "z"; process.env.ZOHO_OAUTH_REDIRECT_URI = "http://z";
   handler("get", "/oauth/:provider/url")({ ...urlReq({ inbox: "1" }), params: { provider: "zoho" } }, zoho);
-  assert.equal(zoho.statusCode, 400);
+  assert.equal(new URL(zoho.body.data.url).searchParams.get("scope"), "ZohoMail.messages.CREATE,ZohoMail.accounts.READ,ZohoMail.messages.READ,ZohoMail.folders.READ");
+  const smtp = res();
+  handler("get", "/oauth/:provider/url")({ ...urlReq({ inbox: "1" }), params: { provider: "smtp" } }, smtp);
+  assert.equal(smtp.statusCode, 404);
 });
 
 /* ---------------- Sync ---------------- */
@@ -208,7 +216,7 @@ test("first sync: imports the reply in the ReadyTech thread with sender, recipie
   assert.equal((await mb.summary(memberA)).counts.inboxUnread, 1);
 });
 
-test("incremental sync: only known threads are read; unrelated mail is never fetched; no duplicates", async () => {
+test("incremental sync: known threads imported; unrelated mail only has its headers checked and is never imported; no duplicates", async () => {
   on();
   gmailMock(firstSyncRoutes());
   await sync.syncAccount(WS_A, ACC_A);
@@ -230,7 +238,9 @@ test("incremental sync: only known threads are read; unrelated mail is never fet
     [/^messages\/r2$/, () => gmailMsg({ id: "r2", labels: ["INBOX"], text: "Second reply", html: "" })],
   ]);
   assert.deepEqual(await sync.syncAccount(WS_A, ACC_A), { status: "ok", imported: 1 });
-  assert.equal(gmailCalls(/^messages\/u1/).length, 0, "unrelated personal mail must not be read");
+  // Not a CRM contact and not a reply: headers checked (format=metadata), body never downloaded, nothing stored
+  assert.deepEqual(gmailCalls(/^messages\/u1/).map((c) => c.params.format), ["metadata"]);
+  assert.equal(messages.some((m) => m.providerMessageId === "u1"), false);
   assert.equal(gmailCalls(/^messages\/r1/).length, 0, "already-synced message must not be refetched");
   assert.equal(gmailCalls(/^messages\/x1/).length, 0);
   assert.equal(messages.filter((m) => m.direction === "inbound").length, 2);
@@ -264,6 +274,7 @@ test("expired history (404): re-reads known threads and sets a fresh baseline", 
   gmailMock([
     [/^history$/, () => ({ __status: 404, body: { error: { code: 404 } } })],
     [/^profile$/, () => ({ historyId: "900" })],
+    [/^messages$/, () => ({ messages: [] })],
     [/^threads\/t1$/, () => ({ messages: [{ id: "r1", labelIds: ["INBOX"] }, { id: "r3", labelIds: ["INBOX"] }] })],
     [/^messages\/r3$/, () => gmailMsg({ id: "r3", labels: ["INBOX"] })],
   ]);
@@ -326,6 +337,7 @@ test("attachments: oversized and executable files are listed but never downloade
   on();
   gmailMock([
     [/^profile$/, () => ({ historyId: "500" })],
+    [/^messages$/, () => ({ messages: [] })],
     [/^threads\/t1$/, () => ({ messages: [{ id: "r1", labelIds: ["INBOX"] }] })],
     [/^messages\/r1\/attachments\//, () => { throw new Error("must not download"); }],
     [/^messages\/r1$/, () => gmailMsg({ id: "r1", attachments: [
@@ -368,7 +380,7 @@ test("summary + initial sync: per-account status, enable option, and no secrets"
 
   const s = await mb.summary(ctxA);
   assert.equal(s.inboxSync.enabled, true);
-  assert.equal(s.inboxSync.mode, "replies");
+  assert.equal(s.inboxSync.mode, "replies_contacts");
   assert.equal(s.inbox.available, true);
   const a = s.capabilities.find((c) => c.accountId === ACC_A);
   const a2 = s.capabilities.find((c) => c.accountId === ACC_A2);

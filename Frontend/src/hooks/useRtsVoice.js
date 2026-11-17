@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { matchWake } from "../components/rtsCommands";
+import { matchWake, parseNavigation } from "../components/rtsCommands";
 
 /* ======================================================
    RTS VOICE (browser-native, no paid voice APIs)
@@ -45,6 +45,8 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
   del: (k) => { try { localStorage.removeItem(k); } catch { /* private mode */ } },
 };
+const LANG_CODES = new Set(["en-IN", "ta-IN"]);
+const ALTERNATIVES = 3; // recogniser guesses per phrase; the wake word / a page command may be in any of them
 const RETRY_MS = 15000; // transient failure (network, mic busy) → try again after this
 const PERMISSION_ERRORS = new Set(["not-allowed", "service-not-allowed"]);
 
@@ -74,7 +76,8 @@ export default function useRtsVoice({ onCommand, onWake }) {
   const [heard, setHeard] = useState("");
   const [muted, setMuted] = useState(() => store.get("rts.muted") === "1");
   const [speaking, setSpeaking] = useState(false);
-  const [lang, setLangState] = useState(() => store.get("rts.lang") || "en-IN");
+  // Only the supported languages; anything else stored falls back to Indian English
+  const [lang, setLangState] = useState(() => (LANG_CODES.has(store.get("rts.lang")) ? store.get("rts.lang") : "en-IN"));
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false); // a SpeechRecognition session is actually live
 
@@ -90,7 +93,10 @@ export default function useRtsVoice({ onCommand, onWake }) {
   const fastFails = useRef(0);
   const lastCmd = useRef({ text: "", at: 0 });
   const lastSpoken = useRef({ text: "", at: 0 });
-  const userOffRef = useRef(false); // user switched "Hey RTS" off for this session (never persisted)
+  // Bumped on Disable / unmount: every session, timer and pending await from
+  // before that point is stale and must never start or keep recognition alive
+  const genRef = useRef(0);
+  const userOffRef = useRef(true); // OFF until the user turns "Hey RTS" on (never persisted: every reload / login starts OFF)
   const permRef = useRef(""); // microphone Permissions API state, when known
   const retryTimer = useRef(null);
   const gestureRetry = useRef(null); // pending "retry on next click/key" handler
@@ -145,7 +151,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
     recRef.current = null;
     setRunning(false);
     if (rec) {
-      rec.onend = rec.onresult = rec.onerror = null;
+      rec.onstart = rec.onend = rec.onresult = rec.onerror = null;
       try { rec.abort(); } catch { /* already stopped */ }
     }
   }
@@ -227,23 +233,44 @@ export default function useRtsVoice({ onCommand, onWake }) {
     }, RETRY_MS);
   }
 
+  /* Best transcript among the recogniser's alternatives: one containing the
+     wake word, else (while a command is expected) one that is a page command,
+     else the top guess. Parsing rules themselves are unchanged. */
+  const pickAlternative = (result) => {
+    const alts = [];
+    for (let a = 0; a < (result.length || 1); a += 1) if (result[a]?.transcript) alts.push(result[a].transcript);
+    if (!alts.length) return { text: "", wake: null };
+    for (const t of alts) { const w = matchWake(t); if (w) return { text: t, wake: w }; }
+    const text = (modeRef.current === "command" && alts.find((t) => parseNavigation(t))) || alts[0];
+    return { text, wake: null };
+  };
+
   function startRec() {
     if (!Recognition || recRef.current || document.hidden || !shouldRun()) return;
+    const gen = genRef.current;
     const rec = new Recognition();
     rec.continuous = true;
     rec.interimResults = true;
+    rec.maxAlternatives = ALTERNATIVES;
     rec.lang = langRef.current;
     let startedAt = Date.now();
     let gotResult = false;
+    // An event from a session that was stopped / superseded (e.g. Chrome's async
+    // "start" arriving after Disable) must never revive it
+    const stale = () => recRef.current !== rec || gen !== genRef.current;
+    const later = (ms) => { restartTimer.current = setTimeout(() => { if (gen === genRef.current) startRec(); }, ms); };
 
-    rec.onstart = () => { startedAt = Date.now(); setRunning(true); rtsLog("recognition started", rec.lang); };
+    rec.onstart = () => {
+      if (stale()) { rtsLog("ignored start of a stopped session"); try { rec.abort(); } catch { /* already stopped */ } return; }
+      startedAt = Date.now(); setRunning(true); rtsLog("recognition started", rec.lang);
+    };
 
     rec.onresult = (event) => {
+      if (stale()) return;
       gotResult = true;
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const result = event.results[i];
-        const text = result[0]?.transcript || "";
-        const wake = matchWake(text);
+        const { text, wake } = pickAlternative(result);
         rtsLog(result.isFinal ? "final:" : "interim:", JSON.stringify(text), `mode=${modeRef.current}`, wake ? "(wake)" : "");
 
         // Chrome sometimes never fires utterance.onend → guard stuck on, every command ignored
@@ -286,6 +313,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
     };
 
     rec.onerror = (event) => {
+      if (stale()) return;
       rtsLog("recognition error:", event.error);
       if (FATAL.has(event.error)) fail(event.error);
       // "no-speech" / "aborted" are normal; onend restarts
@@ -294,7 +322,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
     // Sessions end after silence / ~60s; restart while needed, backing off
     // on fast failures so a broken mic can never spin in a tight loop.
     rec.onend = () => {
-      if (recRef.current !== rec) return;
+      if (stale()) return;
       rtsLog("recognition ended (will restart if still listening)");
       recRef.current = null;
       if (!shouldRun() || document.hidden) { setRunning(false); return; }
@@ -304,7 +332,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
         fail("stopped");
         return;
       }
-      restartTimer.current = setTimeout(startRec, fast ? 300 * 2 ** fastFails.current : 150);
+      later(fast ? 300 * 2 ** fastFails.current : 150);
     };
 
     recRef.current = rec;
@@ -313,7 +341,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
     } catch {
       recRef.current = null;
       fastFails.current += 1;
-      if (fastFails.current <= MAX_FAST_FAILS) restartTimer.current = setTimeout(startRec, 300 * 2 ** fastFails.current);
+      if (fastFails.current <= MAX_FAST_FAILS) later(300 * 2 ** fastFails.current);
     }
   }
 
@@ -350,15 +378,17 @@ export default function useRtsVoice({ onCommand, onWake }) {
 
   const enable = useCallback(async () => {
     userOffRef.current = false;
+    const gen = genRef.current;
     if (!(await ensureMic())) return;
-    if (userOffRef.current) return; // switched off while the prompt was open
+    if (userOffRef.current || gen !== genRef.current) return; // switched off while the prompt was open
     startWakeListening();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Session-only: a reload / next login starts listening again (default ON)
+  // Never persisted: a reload / next login starts OFF until the user turns it on
   const disable = useCallback(() => {
     rtsLog("turned off by user (this session)");
+    genRef.current += 1; // invalidates every pending session, timer and await
     userOffRef.current = true;
     clearRecovery();
     enabledRef.current = false;
@@ -378,7 +408,9 @@ export default function useRtsVoice({ onCommand, onWake }) {
   const listenNow = useCallback(async () => {
     if (modeRef.current === "command") { backToWake(); return; }
     stopSpeaking();
+    const gen = genRef.current;
     if (!(await ensureMic())) return;
+    if (gen !== genRef.current) return; // Disable pressed while the prompt was open
     enterCommand();
     if (!recRef.current) { fastFails.current = 0; startRec(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -429,38 +461,30 @@ export default function useRtsVoice({ onCommand, onWake }) {
   }, []);
 
   /* After login (this hook lives in the dashboard layout, mounted once
-     for every authenticated CRM + ERP route): start wake listening
-     automatically — default ON. The old persisted rts.voice = "off"
-     flag blocked this forever (only the panel toggle could undo it), so
-     it is cleared and no longer read. */
+     for every authenticated CRM + ERP route): voice stays OFF — the
+     microphone is never opened until the user turns "Hey RTS" on. Only the
+     permission state is read (no prompt) so a permission granted later can
+     resume listening the user had already switched on. The old persisted
+     rts.voice flag is cleared and no longer read. */
   useEffect(() => {
-    rtsLog("listener mounted", Recognition ? "" : "(SpeechRecognition not supported)");
+    rtsLog("listener mounted (voice off until enabled)", Recognition ? "" : "(SpeechRecognition not supported)");
     store.del("rts.voice");
-    if (!Recognition) return undefined;
+    if (!Recognition || !navigator.permissions?.query) return undefined;
     let status;
     let cancelled = false;
     const apply = () => {
       permRef.current = status?.state || "";
       rtsLog("microphone permission:", permRef.current || "unknown");
-      if (cancelled || enabledRef.current || userOffRef.current) return;
+      if (cancelled || enabledRef.current || userOffRef.current) return; // never starts unless the user enabled it
       if (status?.state === "granted") {
         micOkRef.current = true;
         startWakeListening();
-      } else if (status?.state === "denied") {
-        setError("Microphone access is blocked for this site. Allow it in the browser's site settings (listening starts automatically), or type your question.");
-        setPhase("error");
-      } else {
-        enable(); // "prompt": the browser asks once, then listening starts
       }
     };
-    if (navigator.permissions?.query) {
-      navigator.permissions
-        .query({ name: "microphone" })
-        .then((p) => { status = p; p.onchange = apply; apply(); })
-        .catch(() => enable()); // Permissions API without "microphone" (Safari/Firefox)
-    } else {
-      enable();
-    }
+    navigator.permissions
+      .query({ name: "microphone" })
+      .then((p) => { status = p; p.onchange = apply; apply(); })
+      .catch(() => {}); // Permissions API without "microphone" (Safari/Firefox)
     return () => { cancelled = true; if (status) status.onchange = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -468,6 +492,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
   useEffect(
     () => () => {
       rtsLog("listener unmounted");
+      genRef.current += 1;
       clearRecovery();
       enabledRef.current = false;
       modeRef.current = "wake";

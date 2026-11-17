@@ -5,8 +5,10 @@
 import net from "node:net";
 import dns from "node:dns/promises";
 import nodemailer from "nodemailer";
+import { ImapFlow } from "imapflow";
 
 export const SMTP_PORTS = { ssl: [465], starttls: [587, 25, 2525] };
+export const IMAP_PORTS = { ssl: [993], starttls: [143] };
 const HOST_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -33,9 +35,11 @@ export const isBlockedIp = (ip) => {
 /* Test seams (DNS + transport) — never used in production code paths */
 let lookup = (host) => dns.lookup(host, { all: true, verbatim: true });
 let createTransport = (opts) => nodemailer.createTransport(opts);
+let createImapClient = (opts) => new ImapFlow(opts);
 export const __setSmtpTestHooks = (h = {}) => {
   if (h.lookup) lookup = h.lookup;
   if (h.createTransport) createTransport = h.createTransport;
+  if (h.createImapClient) createImapClient = h.createImapClient;
 };
 
 const fail = (message, status = 422, extra = {}) => Object.assign(new Error(message), { status, ...extra });
@@ -63,7 +67,7 @@ export const validateSmtpInput = (body = {}, { requirePassword = true } = {}) =>
 };
 
 /* Resolve and vet every address; returns the first public one */
-export const resolveSafeHost = async (host) => {
+export const resolveSafeHost = async (host, label = "SMTP") => {
   let addrs;
   try {
     addrs = await Promise.race([
@@ -71,11 +75,11 @@ export const resolveSafeHost = async (host) => {
       new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000)),
     ]);
   } catch {
-    throw fail(`We couldn't find the mail server "${host}". Check the SMTP host.`);
+    throw fail(`We couldn't find the mail server "${host}". Check the ${label} host.`);
   }
   const list = (Array.isArray(addrs) ? addrs : [addrs]).map((a) => a.address || a).filter(Boolean);
-  if (!list.length) throw fail(`We couldn't find the mail server "${host}". Check the SMTP host.`);
-  if (list.some(isBlockedIp)) throw fail("This mail server address isn't allowed. Use your provider's public SMTP hostname.");
+  if (!list.length) throw fail(`We couldn't find the mail server "${host}". Check the ${label} host.`);
+  if (list.some(isBlockedIp)) throw fail(`This mail server address isn't allowed. Use your provider's public ${label} hostname.`);
   return list[0];
 };
 
@@ -151,4 +155,66 @@ export const sendSmtp = async (cfg, password, { from, fromName, to, subject, tex
   } finally {
     t.close?.();
   }
+};
+
+/* ---------------- IMAP (receiving for custom-domain mailboxes) ----------------
+   Same SSRF rules as SMTP: hostnames only, vetted public IP pinned, TLS
+   certificate checked against the hostname. Uses the SMTP username/password. */
+export const validateImapInput = (imap) => {
+  if (!imap || (imap.enabled !== true && imap.enabled !== "true")) return { enabled: false, host: null, port: null, security: null };
+  const host = clean(imap.host, 253).toLowerCase().replace(/\.$/, "");
+  const security = String(imap.security || "").toLowerCase();
+  const port = Number(imap.port);
+  if (!HOST_RE.test(host)) throw fail("Enter the IMAP server hostname (for example imap.hostinger.com) — IP addresses aren't accepted");
+  if (!IMAP_PORTS[security]) throw fail("Choose SSL or STARTTLS for IMAP");
+  if (!IMAP_PORTS[security].includes(port)) throw fail(security === "ssl" ? "IMAP over SSL uses port 993" : "IMAP with STARTTLS uses port 143");
+  return { enabled: true, host, port, security };
+};
+
+const friendlyImap = (err, cfg) => {
+  const code = String(err.code || "");
+  const msg = String(err.message || "");
+  if (err.authenticationFailed || /AUTHENTICATIONFAILED|Invalid credentials|LOGIN failed/i.test(msg + (err.responseText || ""))) {
+    return fail("The IMAP server rejected the username or password. Check them (some providers need an app password).", 422, { authFailed: true });
+  }
+  if (/CERT|certificate|self.signed|altname/i.test(code + msg)) {
+    return fail(`The SSL certificate of ${cfg.host} isn't valid for that hostname. Use the IMAP hostname from your email provider.`);
+  }
+  if (/ETIMEDOUT|ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH|timeout|NoConnection/i.test(code + msg)) {
+    return fail(`We couldn't reach ${cfg.host}:${cfg.port}. Check the IMAP host, port and SSL/STARTTLS setting.`);
+  }
+  return fail("The IMAP server didn't accept the connection. Check your IMAP settings.");
+};
+
+/* Connected + logged-in client; caller must logout() */
+export const openImap = async (cfg, username, password) => {
+  const ip = await resolveSafeHost(cfg.host, "IMAP");
+  const client = createImapClient({
+    host: ip,
+    port: cfg.port,
+    secure: cfg.security === "ssl",
+    doSTARTTLS: cfg.security === "starttls" ? true : undefined,
+    servername: cfg.host,
+    auth: { user: username, pass: password },
+    tls: { servername: cfg.host, minVersion: "TLSv1.2", rejectUnauthorized: true },
+    logger: false,
+    disableAutoIdle: true,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 30_000,
+  });
+  client.on?.("error", () => {}); // socket errors surface through the awaited call
+  try {
+    await client.connect();
+  } catch (err) {
+    console.error(`IMAP connect failed for ${cfg.host}:${cfg.port}:`, err.authenticationFailed ? "authentication failed" : err.code || err.message);
+    throw friendlyImap(err, cfg);
+  }
+  return client;
+};
+
+/* Connect + authenticate, then disconnect */
+export const verifyImap = async (cfg, username, password) => {
+  const client = await openImap(cfg, username, password);
+  await client.logout().catch(() => {});
 };

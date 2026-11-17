@@ -10,7 +10,7 @@ import jwt from "jsonwebtoken";
 import EmailConnection from "../models/EmailConnection.js";
 import EmailMessage from "../models/EmailMessage.js";
 import EmailSyncState from "../models/EmailSyncState.js";
-import { validateSmtpInput, verifySmtp, sendSmtp } from "./mail/smtp.service.js";
+import { validateSmtpInput, verifySmtp, sendSmtp, validateImapInput, verifyImap } from "./mail/smtp.service.js";
 
 export const MAX_ACCOUNTS_PER_WORKSPACE = 10;
 
@@ -37,7 +37,7 @@ export const PROVIDERS = {
     sendScope: "https://www.googleapis.com/auth/gmail.send",
     revokeUrl: "https://myaccount.google.com/permissions",
     limitations:
-      "Sends emails from your Gmail address (no inbox access). Gmail daily sending limits apply (~500/day personal, ~2,000/day Workspace).",
+      "Sends emails from your Gmail address. Inbox sync (optional, read-only) imports replies and mail from your CRM contacts. Gmail daily sending limits apply (~500/day personal, ~2,000/day Workspace).",
     setup:
       "Google Cloud Console → APIs & Services: enable the Gmail API, configure the OAuth consent screen (scope gmail.send), create an OAuth client (Web application) and add GOOGLE_OAUTH_REDIRECT_URI as an Authorized redirect URI.",
   },
@@ -52,9 +52,9 @@ export const PROVIDERS = {
     sendScope: "Mail.Send",
     revokeUrl: "https://myapps.microsoft.com",
     limitations:
-      "Sends emails from your Outlook / Microsoft 365 address (no inbox access). Some organisations require IT admin approval the first time.",
+      "Sends emails from your Outlook / Microsoft 365 address. Inbox sync (optional, read-only) imports replies and mail from your CRM contacts. Some organisations require IT admin approval the first time.",
     setup:
-      "Azure Portal → App registrations: register a Web app (accounts in any organizational directory and personal Microsoft accounts), add MICROSOFT_OAUTH_REDIRECT_URI as a Web redirect URI, add delegated Microsoft Graph permissions Mail.Send, User.Read, offline_access, and create a client secret. Optional MICROSOFT_TENANT_ID (default: common).",
+      "Azure Portal → App registrations: register a Web app (accounts in any organizational directory and personal Microsoft accounts), add MICROSOFT_OAUTH_REDIRECT_URI as a Web redirect URI, add delegated Microsoft Graph permissions Mail.Send, User.Read, offline_access (plus Mail.Read for inbox sync), and create a client secret. Optional MICROSOFT_TENANT_ID (default: common).",
   },
   zoho: {
     kind: "oauth",
@@ -66,7 +66,9 @@ export const PROVIDERS = {
     extraAuthParams: { access_type: "offline", prompt: "consent" },
     sendScope: null,
     revokeUrl: "https://accounts.zoho.com/home#sessions/userauthtoken",
-    limitations: "Sends emails from your Zoho Mail address (no inbox access). Zoho Mail sending limits apply.",
+    // Zoho expects comma-separated scopes
+    scopeSep: ",",
+    limitations: "Sends emails from your Zoho Mail address. Inbox sync (optional, read-only) imports replies and mail from your CRM contacts. Zoho Mail sending limits apply.",
     setup:
       "Zoho API Console (api-console.zoho.com) → Add Client → Server-based Applications: add ZOHO_OAUTH_REDIRECT_URI as an Authorized Redirect URI, then Settings → enable Multi-DC so accounts from every Zoho data centre can connect.",
   },
@@ -76,7 +78,7 @@ export const PROVIDERS = {
     env: [],
     revokeUrl: null,
     limitations:
-      "Sends through your own mail server (Hostinger, cPanel, GoDaddy, …) over SSL (465) or STARTTLS (587). Your provider's sending limits apply.",
+      "Sends through your own mail server (Hostinger, cPanel, GoDaddy, …) over SSL (465) or STARTTLS (587). Add IMAP to also receive replies and mail from your CRM contacts. Your provider's sending limits apply.",
   },
 };
 
@@ -139,7 +141,7 @@ export const buildAuthUrl = ({ provider, userId, workspaceId, loginHint, returnO
     client_id: clientId(provider),
     redirect_uri: redirectUri(provider),
     response_type: "code",
-    scope: extra.length ? [p.scope, ...extra].join(" ") : p.scope,
+    scope: extra.length ? [p.scope, ...extra].join(p.scopeSep || " ") : p.scope,
     state,
     ...p.extraAuthParams,
     ...(loginHint && { login_hint: loginHint }),
@@ -300,7 +302,7 @@ const upsertAccount = async (workspaceId, { provider, email }, fields, existingI
 };
 
 /* Callback: code → tokens → account email → store (this workspace only) */
-export const completeConnection = async ({ provider, code, workspaceId, userId, accountsServer }) => {
+export const completeConnection = async ({ provider, code, workspaceId, userId, accountsServer, extraScopes }) => {
   const ctx = {};
   let tokenUrl;
   if (provider === "zoho") {
@@ -324,7 +326,8 @@ export const completeConnection = async ({ provider, code, workspaceId, userId, 
   try {
     await upsertAccount(workspaceId, { provider, email }, {
       accessToken: encrypt(t.access_token), refreshToken: encrypt(t.refresh_token),
-      expiresAt: expiry(t), scope: t.scope || PROVIDERS[provider].scope,
+      // Providers that omit `scope` granted what was requested
+      expiresAt: expiry(t), scope: t.scope || [PROVIDERS[provider].scope, ...(extraScopes || [])].join(PROVIDERS[provider].scopeSep || " "),
       connectedBy: userId, ...(providerData && { providerData }),
     });
   } catch (err) {
@@ -335,6 +338,10 @@ export const completeConnection = async ({ provider, code, workspaceId, userId, 
 };
 
 /* ---------------- Tokens ---------------- */
+// Microsoft returns scopes as "Mail.Read" or "https://graph.microsoft.com/Mail.Read"
+export const msHasRead = (scope) =>
+  String(scope || "").split(/\s+/).map((s) => s.split("/").pop().toLowerCase()).some((s) => s === "mail.read" || s === "mail.readwrite");
+
 const refreshing = new Map(); // accountId → in-flight refresh (no parallel rotations)
 
 const markError = async (conn, message) => {
@@ -362,7 +369,8 @@ const ensureToken = async (conn) => {
         }
         const t = await tokenRequest(conn.provider, {
           grant_type: "refresh_token", refresh_token: refreshToken,
-          ...(conn.provider === "microsoft" && { scope: PROVIDERS.microsoft.scope }),
+          // Keep inbox read access (Mail.Read) on the refreshed token when it was granted
+          ...(conn.provider === "microsoft" && { scope: msHasRead(conn.scope) ? `${PROVIDERS.microsoft.scope} Mail.Read` : PROVIDERS.microsoft.scope }),
         }, PROVIDERS[conn.provider].tokenUrl(conn));
         conn.accessToken = encrypt(t.access_token);
         if (t.refresh_token) conn.refreshToken = encrypt(t.refresh_token); // Microsoft rotates
@@ -411,6 +419,7 @@ export const publicAccount = (c) => ({
   lastTestedAt: c.lastTestedAt || null,
   ...(c.provider === "smtp" && {
     smtp: { host: c.smtp?.host, port: c.smtp?.port, security: c.smtp?.security, username: c.smtp?.username },
+    imap: { enabled: !!c.imap?.enabled, host: c.imap?.host || null, port: c.imap?.port || null, security: c.imap?.security || null },
   }),
 });
 
@@ -478,9 +487,14 @@ export const saveSmtpAccount = async (workspaceId, userId, body, accountId) => {
 
   const cfg = { host: input.host, port: input.port, security: input.security, username: input.username };
   await verifySmtp(cfg, password);
+  // IMAP (optional): an update without `imap` keeps the saved setting
+  const imap = body.imap === undefined && existing?.imap
+    ? { enabled: !!existing.imap.enabled, host: existing.imap.host, port: existing.imap.port, security: existing.imap.security }
+    : validateImapInput(body.imap);
+  if (imap.enabled) await verifyImap(imap, input.username, password);
 
   const saved = await upsertAccount(workspaceId, { provider: "smtp", email: input.email }, {
-    displayName: input.displayName, smtp: cfg, smtpPassword: encrypt(password),
+    displayName: input.displayName, smtp: cfg, imap, smtpPassword: encrypt(password),
     connectedBy: userId, lastTestedAt: new Date(),
   }, existing?._id);
   return publicAccount(saved?.toObject ? saved.toObject() : saved || { ...cfg, provider: "smtp", email: input.email });
@@ -703,6 +717,9 @@ export const sendViaConnectedAccount = async (workspaceId, msg, { accountId } = 
   };
 };
 
+/* Decrypted SMTP/IMAP password for the mail sync worker (server-side only) */
+export const readSmtpPassword = (conn) => safeDecrypt(conn?.smtpPassword);
+
 /* Records a successful test on the account */
 export const markTested = (workspaceId, accountId) =>
   EmailConnection.updateOne({ _id: accountId, workspace: workspaceId }, { $set: { lastTestedAt: new Date(), status: "connected", lastError: null } });
@@ -740,4 +757,40 @@ export const detectProvider = async (email) => {
 export const resolveSendingAccount = async (workspaceId, accountId) => {
   const conn = await loadAccount(workspaceId, accountId);
   return conn ? publicAccount(conn.toObject ? conn.toObject() : conn) : null;
+};
+
+/* ---------------- Custom-domain settings (SMTP + IMAP presets from MX) ---------------- */
+export const MAIL_PRESETS = {
+  hostinger: { label: "Hostinger", smtp: { host: "smtp.hostinger.com", port: 465, security: "ssl" }, imap: { host: "imap.hostinger.com", port: 993, security: "ssl" } },
+  titan: { label: "Titan (Hostinger / others)", smtp: { host: "smtp.titan.email", port: 465, security: "ssl" }, imap: { host: "imap.titan.email", port: 993, security: "ssl" } },
+  godaddy: { label: "GoDaddy", smtp: { host: "smtpout.secureserver.net", port: 465, security: "ssl" }, imap: { host: "imap.secureserver.net", port: 993, security: "ssl" } },
+  cpanel: { label: "cPanel", smtp: { host: "mail.{domain}", port: 465, security: "ssl" }, imap: { host: "mail.{domain}", port: 993, security: "ssl" } },
+};
+const MX_PRESETS = [
+  [/(^|\.)hostinger\.(com|in|io)$/, "hostinger"],
+  [/(^|\.)titan\.email$/, "titan"],
+  [/(^|\.)secureserver\.net$/, "godaddy"],
+];
+
+/* SMTP + IMAP suggestion for a custom-domain address. Unknown hosts fall
+   back to the cPanel convention (mail.<domain>). Best effort, 3s cap. */
+export const detectMailSettings = async (email) => {
+  const domain = String(email || "").trim().toLowerCase().split("@")[1];
+  if (!domain || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return null;
+  let id = "cpanel";
+  try {
+    const mx = await Promise.race([
+      dns.resolveMx(domain),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 3000)),
+    ]);
+    for (const host of mx.map((m) => m.exchange.toLowerCase().replace(/\.$/, ""))) {
+      const hit = MX_PRESETS.find(([re]) => re.test(host));
+      if (hit) { id = hit[1]; break; }
+    }
+  } catch {
+    /* no MX — keep the cPanel convention */
+  }
+  const p = MAIL_PRESETS[id];
+  const fill = (c) => ({ ...c, host: c.host.replace("{domain}", domain) });
+  return { preset: id, label: p.label, smtp: fill(p.smtp), imap: fill(p.imap) };
 };

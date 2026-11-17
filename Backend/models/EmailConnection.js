@@ -32,6 +32,13 @@ const emailConnectionSchema = new mongoose.Schema(
       username: { type: String, default: null },
     },
     smtpPassword: { type: String, default: null, select: false },
+    // Optional IMAP (receiving) for the same mailbox — same username/password
+    imap: {
+      enabled: { type: Boolean, default: false },
+      host: { type: String, default: null },
+      port: { type: Number, default: null },
+      security: { type: String, enum: ["ssl", "starttls", null], default: null },
+    },
 
     status: { type: String, enum: ["connected", "error"], default: "connected" },
     lastError: { type: String, default: null },
