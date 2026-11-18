@@ -15,6 +15,7 @@ import {
   listAssignees,
   connectAccount,
   disconnectAccount,
+  restorePlatformNumber,
   requireWhatsAppForConversation,
   embeddedSignupConfig,
   embeddedSignupComplete,
@@ -45,6 +46,8 @@ router.get("/assignees", auth, listAssignees);
 /* Admin — connect / disconnect this workspace's own WhatsApp number */
 router.post("/connect", auth, role("admin"), connectAccount);
 router.post("/disconnect", auth, role("admin"), disconnectAccount);
+// Default workspace only (enforced in the service) — re-enables the .env number
+router.post("/restore-platform", auth, role("admin"), restorePlatformNumber);
 
 /* Admin — Meta Embedded Signup (connect / change number / reconnect) */
 router.get("/embedded-signup/config", auth, role("admin"), embeddedSignupConfig);

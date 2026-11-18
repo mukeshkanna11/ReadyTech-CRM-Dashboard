@@ -1121,6 +1121,43 @@ const assertNumberAvailable = async (phoneNumberId) => {
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 
 /* =========================================================
+   RESTORE PLATFORM NUMBER (default workspace only)
+   Undoes `platformDisabled` so the .env number is used again for sends
+   and webhook routing. Only flips that flag — no tokens are stored and
+   nothing on Meta's side is changed (one read-only check).
+========================================================= */
+export const restorePlatformWhatsApp = async () => {
+  if (metaKeyFor() !== "default") {
+    throw httpError(403, "Only the default workspace can restore the platform WhatsApp number");
+  }
+
+  const { phoneNumberId, wabaId, accessToken } = getWhatsAppConfig();
+  if (!phoneNumberId || !wabaId || !accessToken) {
+    throw httpError(400, "The platform WhatsApp number is not configured on the server");
+  }
+
+  const connection = await MetaConnection.getSingleton();
+  const wa = connection.whatsapp || {};
+  if (!wa.platformDisabled) return connection;
+
+  // A different number connected by this workspace would be overridden
+  if (wa.phoneNumberId && String(wa.phoneNumberId) !== String(phoneNumberId)) {
+    throw httpError(409, "Disconnect this workspace's own WhatsApp number before restoring the platform number");
+  }
+  await assertNumberAvailable(String(phoneNumberId));
+
+  // Read-only: the env credentials must still reach this number
+  const phone = await graphFetch(String(phoneNumberId), { token: accessToken, params: { fields: "id" } });
+  if (String(phone?.id) !== String(phoneNumberId)) {
+    throw httpError(502, "Meta did not confirm the platform WhatsApp number");
+  }
+
+  connection.whatsapp.platformDisabled = false;
+  await connection.save();
+  return connection;
+};
+
+/* =========================================================
    EMBEDDED SIGNUP (Meta Cloud API, Tech Provider flow)
    1. GET config → app id + Login-for-Business config id + a signed,
       short-lived state bound to this workspace + admin user.

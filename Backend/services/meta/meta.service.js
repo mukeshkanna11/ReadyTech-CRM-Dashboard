@@ -459,6 +459,7 @@ export const getMetaAccessContext = async () => {
    PAGE WEBHOOK SUBSCRIPTION (Messenger + Instagram DMs)
    POST /{page-id}/subscribed_apps — needs pages_manage_metadata.
 ========================================================= */
+
 export const subscribePageWebhook = async () => {
   const connection = await MetaConnection.getSingleton();
   const pageId = connection.facebookPage?.id;
@@ -470,29 +471,48 @@ export const subscribePageWebhook = async () => {
   }
 
   const { apiVersion } = getMetaConfig();
+
   const res = await fetch(
     `https://graph.facebook.com/${apiVersion}/${pageId}/subscribed_apps`,
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${decryptToken(connection.facebookPage.encryptedToken)}`,
+        Authorization: `Bearer ${decryptToken(
+          connection.facebookPage.encryptedToken
+        )}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ subscribed_fields: "messages" }),
+      body: JSON.stringify({
+        subscribed_fields: "messages",
+      }),
     }
   );
+
   const data = await res.json().catch(() => null);
 
-  if (!res.ok || data?.error) {
-    const error = new Error(explainMetaError(data?.error, `Page subscribe failed (${res.status})`));
+  if (!res.ok || data?.error || data?.success !== true) {
+    const error = new Error(
+      explainMetaError(
+        data?.error,
+        data?.success === false
+          ? "Meta did not confirm Page webhook subscription"
+          : `Page subscribe failed (${res.status})`
+      )
+    );
+
     error.status = 400;
+    error.code = data?.error?.code ?? null;
     throw error;
   }
 
-  connection.facebookPage.webhookSubscribed = data?.success === true;
+  connection.facebookPage.webhookSubscribed = true;
   await connection.save();
 
-  return { pageId, success: data?.success === true };
+  return {
+    pageId,
+    success: true,
+  };
 };
+
 
 export { OAUTH_SCOPES };

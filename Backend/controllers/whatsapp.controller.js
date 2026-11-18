@@ -14,6 +14,7 @@ import {
   getEmbeddedSignupConfig,
   completeEmbeddedSignup,
   disconnectWhatsAppAccount,
+  restorePlatformWhatsApp,
   fetchWhatsAppMedia,
   resolveWhatsAppAccount,
 } from "../services/meta/whatsapp.service.js";
@@ -475,6 +476,17 @@ export const disconnectAccount = async (req, res) => {
     res.json({ success: true, message: "WhatsApp disconnected", data: connection.toSafeJSON().whatsapp });
   } catch (error) {
     fail(res, error, "Failed to disconnect WhatsApp");
+  }
+};
+
+/* POST /restore-platform (admin, default workspace only) — re-enable the
+   .env number after it was switched off; flips platformDisabled only */
+export const restorePlatformNumber = async (req, res) => {
+  try {
+    const connection = await restorePlatformWhatsApp();
+    res.json({ success: true, message: "Platform WhatsApp number restored", data: connection.toSafeJSON().whatsapp });
+  } catch (error) {
+    fail(res, error, "Failed to restore the platform WhatsApp number");
   }
 };
 

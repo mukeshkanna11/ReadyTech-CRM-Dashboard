@@ -285,18 +285,62 @@ const refreshLoginToken = async ({ connection, token, source }) => {
   return connection;
 };
 
+
+
 export const subscribeInstagramWebhook = async () => {
   const { connection, token } = await resolveInstagramLogin();
-  if (resolveInstagramPage(connection)) {
-    // Facebook-Login path: Page subscription (needs pages_manage_metadata)
-    await subscribePageWebhook();
-    return MetaConnection.getSingleton();
+
+  const page = resolveInstagramPage(connection);
+
+  // Facebook Page subscription path
+  if (page) {
+    const result = await subscribePageWebhook();
+
+    if (result?.success !== true) {
+      throw fail("Meta did not confirm Instagram Page webhook subscription");
+    }
+
+    return connection;
   }
-  if (!token) throw fail("Instagram is not connected for this workspace");
-  connection.instagramLogin.webhookSubscribed = await subscribeWebhook(token);
+
+  // Instagram Login path
+  if (!token) {
+    throw fail("Instagram is not connected for this workspace");
+  }
+
+  // Verify token belongs to the expected Instagram account
+  const profile = await readProfile(token);
+
+  const profileId = String(profile?.user_id || "");
+  const expectedId = String(
+    connection.instagramLogin?.id ||
+    connection.instagram?.id ||
+    ""
+  );
+
+  if (!profileId || !expectedId || profileId !== expectedId) {
+    throw fail(
+      "Instagram account ID mismatch. Reconnect the correct Instagram account before subscribing."
+    );
+  }
+
+  const subscribed = await subscribeWebhook(token);
+
+  if (subscribed !== true) {
+    throw fail(
+      "Instagram Login webhook subscription was not confirmed by Meta"
+    );
+  }
+
+  connection.instagramLogin.webhookSubscribed = true;
+  connection.instagramLogin.lastError = null;
+
   await connection.save();
+
   return connection;
 };
+
+
 
 export const disconnectInstagramConnection = async () => {
   const connection = await MetaConnection.getSingleton();

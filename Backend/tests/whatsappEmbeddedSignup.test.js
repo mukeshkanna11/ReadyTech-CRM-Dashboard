@@ -295,3 +295,73 @@ test("platform number: disconnect keeps it off, Connect Another Number works, ot
     delete process.env.WHATSAPP_ACCESS_TOKEN;
   }
 });
+
+/* ---------- Restore platform (.env) number — default workspace only ---------- */
+const withPlatformEnv = async (fn) => {
+  process.env.WHATSAPP_WABA_ID = "888";
+  process.env.WHATSAPP_ACCESS_TOKEN = "PLATFORM_TOKEN";
+  try {
+    return await fn();
+  } finally {
+    delete process.env.WHATSAPP_WABA_ID;
+    delete process.env.WHATSAPP_ACCESS_TOKEN;
+  }
+};
+
+test("restore platform: tenant workspace is rejected and nothing changes", () =>
+  withPlatformEnv(async () => {
+    const docs = fakeDocs();
+    const calls = fakeGraph();
+    await ctx.runWithWorkspace(SIVA, async () => ((await MetaConnection.getSingleton()).whatsapp.platformDisabled = true));
+
+    await assert.rejects(ctx.runWithWorkspace(SARA, () => wa.restorePlatformWhatsApp()), (e) => e.status === 403);
+    assert.equal(docs.default.whatsapp.platformDisabled, true);
+    assert.ok(!docs[SARA]?.whatsapp?.platformDisabled);
+    assert.equal(calls.length, 0);
+  }));
+
+test("restore platform: default workspace re-enables the .env number for send + webhook routing", () =>
+  withPlatformEnv(async () => {
+    const docs = fakeDocs();
+    const calls = fakeGraph();
+    await ctx.runWithWorkspace(SIVA, async () => ((await MetaConnection.getSingleton()).whatsapp.platformDisabled = true));
+    await signup(SARA, "u1"); // another workspace with its own number
+    const saraBefore = JSON.stringify(docs[SARA].whatsapp);
+
+    await ctx.runWithWorkspace(SIVA, () => wa.restorePlatformWhatsApp());
+
+    const siva = docs.default.whatsapp;
+    assert.equal(siva.platformDisabled, false);
+    assert.equal(siva.encryptedToken ?? null, null); // no duplicate token stored
+    assert.equal(siva.phoneNumberId ?? null, null);
+    // Only one read-only Meta call, on the platform number
+    const restoreCalls = calls.filter((c) => c.path.endsWith("/999"));
+    assert.equal(restoreCalls.length, 1);
+    assert.equal(restoreCalls[0].method, "GET");
+
+    const account = await ctx.runWithWorkspace(SIVA, () => wa.resolveWhatsAppAccount());
+    assert.equal(account.source, "platform");
+    assert.equal(account.phoneNumberId, "999");
+
+    stub(MetaConnection, "findOne", (filter) => ({
+      select: () => ({
+        lean: async () =>
+          filter.key === "default"
+            ? docs.default
+            : Object.values(docs).find((d) => d.whatsapp.phoneNumberId === filter["whatsapp.phoneNumberId"]) || null,
+      }),
+    }));
+    assert.equal(await wa.workspaceForPhoneNumberId("999"), SIVA);
+    assert.equal(await wa.workspaceForPhoneNumberId("111"), SARA);
+    assert.equal(JSON.stringify(docs[SARA].whatsapp), saraBefore);
+  }));
+
+test("restore platform: Meta rejecting the .env credentials keeps it disabled", () =>
+  withPlatformEnv(async () => {
+    const docs = fakeDocs();
+    stub(globalThis, "fetch", async () => ({ ok: false, status: 401, json: async () => ({ error: { message: "Token expired", code: 190 } }) }));
+    await ctx.runWithWorkspace(SIVA, async () => ((await MetaConnection.getSingleton()).whatsapp.platformDisabled = true));
+
+    await assert.rejects(ctx.runWithWorkspace(SIVA, () => wa.restorePlatformWhatsApp()));
+    assert.equal(docs.default.whatsapp.platformDisabled, true);
+  }));
