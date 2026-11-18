@@ -1,4 +1,5 @@
 import API from "./api";
+import { buildEmbeddedSignupLoginOptions } from "./whatsappSignupOptions.js";
 
 /* =========================================================
    WHATSAPP INBOX API
@@ -266,19 +267,7 @@ export const runEmbeddedSignup = async ({ coexistence = false } = {}) => {
           15000
         );
       },
-      {
-        config_id: cfg.configId,
-        response_type: "code",
-        override_default_response_type: true,
-        extras: {
-          setup: {},
-          sessionInfoVersion: cfg.sessionInfoVersion,
-          // v4 is Meta's default (selected by the Login for Business
-          // configuration) — only non-default versions are sent explicitly
-          ...(cfg.esVersion && cfg.esVersion !== "v4" ? { version: cfg.esVersion } : {}),
-          ...(coexistence ? { featureType: "whatsapp_business_app_onboarding" } : {}),
-        },
-      }
+      buildEmbeddedSignupLoginOptions(cfg, { coexistence })
     );
   });
 };

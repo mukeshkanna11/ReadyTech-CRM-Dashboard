@@ -273,22 +273,36 @@ function WhatsAppCard({ wa, busy, onSync, platform, onConnect, onSignup, onDisco
               ? "This workspace's WhatsApp connection is no longer active. Reconnect to resume messaging — the inbox history is kept."
               : "Connect this workspace's own WhatsApp Business number with Meta's secure signup. You'll sign in with Facebook, pick or create a WhatsApp Business Account, and verify a number. Tokens stay on the server."}
           </p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs">
-            <button
-              onClick={() => signup({ coexistence: true }, "WhatsApp Business app number connected successfully")}
-              {...warm}
-              disabled={working}
-              className="font-medium underline text-emerald-700 disabled:opacity-50"
-            >
-              Use my existing WhatsApp Business app number
-            </button>
+          <div className="grid gap-3 mt-3 sm:grid-cols-2">
+            <div className="p-3 bg-white border rounded-lg border-slate-200">
+              <p className="text-xs font-semibold text-slate-800">New or unused number</p>
+              <p className="mt-1 text-[11px] text-slate-500">Sign in with Meta and add or verify a number.</p>
+              <p className="mt-2 text-[11px] font-medium text-slate-600">Use “Connect WhatsApp” above.</p>
+            </div>
+            <div className="p-3 bg-white border rounded-lg border-emerald-200">
+              <p className="text-xs font-semibold text-slate-800">Already use the WhatsApp Business app?</p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Keep using the WhatsApp Business app on your phone after connecting, and also use the number in the CRM.
+              </p>
+              <button
+                onClick={() => signup({ coexistence: true }, "WhatsApp Business app number connected successfully")}
+                {...warm}
+                disabled={working}
+                className={`${outline} mt-2`}
+              >
+                {busy === "wa-signup" ? <RefreshCw size={13} className="animate-spin" /> : <Smartphone size={13} />}
+                {busy === "wa-signup" ? "Waiting for Meta…" : "Connect existing app number"}
+              </button>
+              <p className="mt-1.5 text-[11px] text-slate-400">
+                Needs WhatsApp Business app 2.24.17+ and a number Meta marks eligible.
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 text-xs">
             <button onClick={() => setShowForm((v) => !v)} className="font-medium underline text-slate-500">
               {showForm ? "Hide advanced" : "Advanced: connect with a System User token"}
             </button>
           </div>
-          <p className="mt-1 text-[11px] text-slate-400">
-            Existing app numbers (Coexistence) need WhatsApp Business app 2.24.17+ and are offered only when Meta marks the number eligible.
-          </p>
         </div>
       )}
 
