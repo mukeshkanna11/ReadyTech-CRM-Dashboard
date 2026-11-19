@@ -6,7 +6,7 @@ import { RefreshCw, Link2, Unlink, AlertTriangle, CheckCircle2, XCircle } from "
 import WhatsAppInbox from "./WhatsAppInbox";
 import {
   getMetaStatus,
-  getInstagramOAuthUrl,
+  getMetaOAuthUrl,
   refreshInstagram,
   subscribeInstagram,
   disconnectInstagram,
@@ -27,8 +27,10 @@ export default function InstagramInbox() {
 
   const load = useCallback(async () => {
     try {
-      setIg((await getMetaStatus())?.instagramInbox || null);
+      const status = (await getMetaStatus())?.instagramInbox || null;
+      setIg(status);
       setLoadFailed(false);
+      return status;
     } catch (err) {
       setIg(null);
       setLoadFailed(true);
@@ -44,10 +46,15 @@ export default function InstagramInbox() {
   useEffect(() => {
     const connected = params.get("connected");
     if (connected === null) return;
-    if (connected === "1") toast.success("Instagram account connected");
-    else setError(params.get("message") || "Instagram connection failed");
+    // "Connected" only when the refreshed backend status confirms it
+    if (connected === "1") {
+      load().then((s) => {
+        if (s?.connected) toast.success("Instagram account connected");
+        else if (s) setError(s.lastError || "Instagram is not connected yet. Make sure you granted access to your Page and its Instagram account.");
+      });
+    } else setError(params.get("message") || "Instagram connection failed");
     setParams({}, { replace: true });
-  }, [params, setParams]);
+  }, [params, setParams, load]);
 
   // `mustConnect`: success only when the backend status confirms connected
   const run = async (key, fn, ok, mustConnect = false) => {
@@ -65,7 +72,10 @@ export default function InstagramInbox() {
         toast.success(ok);
       }
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Request failed");
+      // Server/config failures (5xx) are never shown verbatim to clients
+      setError(err?.response?.status >= 500
+        ? "Instagram connection is temporarily unavailable. Please try again or contact support."
+        : err?.response?.data?.message || err?.message || "Request failed");
       load();
     } finally {
       setBusy("");
@@ -76,7 +86,8 @@ export default function InstagramInbox() {
     ig?.pageReconnectable
       ? run("connect", reconnectInstagramPage, "Instagram reconnected", true)
       : run("connect", async () => {
-      const url = await getInstagramOAuthUrl();
+      // Existing Meta Facebook Login → client picks their own Page + linked IG
+      const url = await getMetaOAuthUrl(true);
       if (url) window.location.href = url;
     });
 
@@ -101,8 +112,6 @@ function DisconnectedState({ ig, loading, busy, error, onConnect, onCheck }) {
     return <div className="flex items-center justify-center p-10 text-sm text-slate-500">Loading Instagram status…</div>;
   }
 
-  const canConnect = !ig || ig.pageReconnectable || ig.oauthConfigured;
-
   return (
     <div className="flex items-center justify-center p-6 min-h-[60vh]">
       <div className="w-full max-w-md p-8 text-center bg-white border shadow-sm rounded-2xl border-slate-200">
@@ -119,13 +128,9 @@ function DisconnectedState({ ig, loading, busy, error, onConnect, onCheck }) {
             <XCircle size={14} className="mt-0.5 shrink-0" /> <span>{error}</span>
           </p>
         )}
-        {ig && !ig.pageReconnectable && !ig.oauthConfigured && (
-          <p className="mt-3 text-xs text-amber-600">Server missing: {ig.missingEnv?.join(", ")}</p>
-        )}
-
         <button
           onClick={onConnect}
-          disabled={!!busy || !canConnect}
+          disabled={!!busy}
           className="inline-flex items-center justify-center w-full gap-2 px-4 py-2.5 mt-6 text-sm font-semibold text-white transition rounded-xl bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:opacity-90 disabled:opacity-50"
         >
           <Link2 size={16} className={busy === "connect" ? "animate-pulse" : ""} />
@@ -196,7 +201,6 @@ function ConnectionBanner({ ig, busy, onConnect, onCheck, onSubscribe, onDisconn
           {ig.connected && (ig.lastInboundAt
             ? `Last DM ${new Date(ig.lastInboundAt).toLocaleString()}.`
             : "No DM received yet.")}
-          {!ig.oauthConfigured && ` Server missing: ${ig.missingEnv.join(", ")}.`}
           {ig.lastError && state !== "ok" && ` ${ig.lastError}`}
         </p>
       </div>
@@ -217,8 +221,7 @@ function ConnectionBanner({ ig, busy, onConnect, onCheck, onSubscribe, onDisconn
         {ig.method !== "facebook_page" && (
           <button
             onClick={onConnect}
-            disabled={!!busy || (!ig.oauthConfigured && !ig.pageReconnectable)}
-            title={ig.oauthConfigured || ig.pageReconnectable ? "" : "Instagram Login is not configured on the server"}
+            disabled={!!busy}
             className={`${btn} border-transparent text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:opacity-90`}
           >
             <Link2 size={13} /> {ig.source ? "Reconnect" : "Connect Instagram"}

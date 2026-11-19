@@ -100,11 +100,13 @@ const graphRequest = async (path, params = {}) => {
 /* =========================================================
    OAUTH — STATE (CSRF protection, signed with JWT_SECRET)
 ========================================================= */
-export const createOAuthState = (userId) =>
+// `ig`: started from Instagram Inbox → Connect (explicit Instagram connect)
+export const createOAuthState = (userId, { ig = false } = {}) =>
   jwt.sign(
     {
       purpose: STATE_PURPOSE,
       uid: String(userId),
+      ...(ig ? { ig: true } : {}),
       nonce: crypto.randomBytes(12).toString("hex"),
     },
     process.env.JWT_SECRET,
@@ -326,9 +328,18 @@ export const explainMetaError = (err, fallback = "Meta request failed") => {
 /* =========================================================
    CONNECT (OAuth callback)
 ========================================================= */
-export const completeConnection = async ({ code, userId }) => {
+export const completeConnection = async ({ code, userId, enableInstagram = false }) => {
   const { accessToken, expiresAt } = await exchangeCodeForToken(code);
   const assets = await fetchLinkedAssets(accessToken);
+
+  // Instagram Inbox → Connect needs a Page with a linked IG Business account
+  if (enableInstagram && !assets.instagram?.id) {
+    const error = new Error(
+      "The selected Facebook Page has no linked Instagram Business account. Link one in Meta Business Suite, then connect again."
+    );
+    error.status = 400;
+    throw error;
+  }
 
   // Public callback has no request workspace — use the connecting admin's
   const owner = userId
@@ -348,6 +359,15 @@ export const completeConnection = async ({ code, userId }) => {
 
   await assertAssetsUnclaimed(connection.key, assets);
 
+  // Instagram connect must never swap out this workspace's Messenger Page
+  if (enableInstagram && connection.facebookPage?.id && connection.facebookPage.id !== assets.facebookPage.id) {
+    const error = new Error(
+      `Select your connected Facebook Page "${connection.facebookPage.name || connection.facebookPage.id}" and its linked Instagram account. To use a different Page, disconnect Meta first.`
+    );
+    error.status = 409;
+    throw error;
+  }
+
   connection.status = "connected";
   connection.scopes = (await fetchGrantedScopes(accessToken)) || [];
   connection.userToken = {
@@ -355,7 +375,8 @@ export const completeConnection = async ({ code, userId }) => {
     expiresAt,
   };
   // Meta connect affects Page/Messenger only: a manually disconnected
-  // Instagram stays off until Instagram Inbox → Connect
+  // Instagram stays off until Instagram Inbox → Connect (enableInstagram)
+  if (enableInstagram) connection.instagramDisabled = false;
   applyAssets(connection, assets);
   connection.lastSyncedAt = new Date();
   connection.lastError = null;

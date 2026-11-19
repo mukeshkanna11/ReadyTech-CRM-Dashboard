@@ -247,7 +247,8 @@ export const getMetaOAuthUrl = async (req, res) => {
       });
     }
 
-    const state = createOAuthState(req.user._id);
+    // ?for=instagram: Instagram Inbox → Connect (Page-linked Instagram)
+    const state = createOAuthState(req.user._id, { ig: req.query?.for === "instagram" });
 
     res.json({
       success: true,
@@ -269,29 +270,40 @@ export const getMetaOAuthUrl = async (req, res) => {
 export const handleMetaOAuthCallback = async (req, res) => {
   const { code, state, error_description: errorDescription, error } = req.query;
 
+  // Return to the page that started the flow (Instagram Inbox or Meta)
+  let ig = false;
+  try {
+    ig = !!verifyOAuthState(state)?.ig;
+  } catch {
+    ig = false;
+  }
+  const page = ig ? "instagram" : "meta";
+
   if (error || !code) {
     return res.redirect(
       clientRedirect({
         connected: "0",
-        message: errorDescription || error || "Meta authorization was cancelled",
-      })
+        message: ig && error === "access_denied"
+          ? "Instagram connection was cancelled. Press Connect Instagram to try again."
+          : errorDescription || error || "Meta authorization was cancelled",
+      }, page)
     );
   }
 
   try {
     const { uid } = verifyOAuthState(state);
 
-    await completeConnection({ code, userId: uid });
+    await completeConnection({ code, userId: uid, enableInstagram: ig });
 
-    return res.redirect(clientRedirect({ connected: "1" }));
+    return res.redirect(clientRedirect({ connected: "1" }, page));
   } catch (err) {
-    console.error("Meta OAuth callback error:", err);
+    console.error("Meta OAuth callback error:", err.message);
 
     return res.redirect(
       clientRedirect({
         connected: "0",
         message: err.message || "Meta connection failed",
-      })
+      }, page)
     );
   }
 };

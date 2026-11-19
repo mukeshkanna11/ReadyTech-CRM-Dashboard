@@ -11,8 +11,9 @@ export const getMetaStatus = async () => {
   return data?.data;
 };
 
-export const getMetaOAuthUrl = async () => {
-  const { data } = await API.get("/meta/oauth/url");
+// forInstagram: started from Instagram Inbox → Connect (returns there)
+export const getMetaOAuthUrl = async (forInstagram = false) => {
+  const { data } = await API.get("/meta/oauth/url", forInstagram ? { params: { for: "instagram" } } : undefined);
   return data?.data?.url;
 };
 

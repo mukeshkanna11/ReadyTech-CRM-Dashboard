@@ -642,3 +642,76 @@ test("Instagram webhook: unsigned/invalid rejected unprocessed; Meta- and Instag
   assert.equal(await call(igSign), 200, "Instagram app secret (Instagram Login)");
   assert.ok(lookups > 0, "valid events are processed");
 });
+
+/* -------- Client Instagram connect via Meta Facebook Login (Page) -------- */
+const metaOAuthGraph = (igId) => (globalThis.fetch = async (u) => ({ ok: true, status: 200, json: async () => {
+  const url = String(u);
+  if (url.includes("oauth/access_token")) return { access_token: "USER_TOKEN", expires_in: 5184000 };
+  if (url.includes("/permissions")) return { data: [{ permission: "instagram_manage_messages", status: "granted" }] };
+  if (url.includes("/me/accounts")) return { data: [{ id: `${SARA}_PAGE`, name: "P", access_token: "pt",
+    ...(igId ? { instagram_business_account: { id: igId, username: "sara_ig" } } : {}) }] };
+  return { data: [] };
+} }));
+
+test("Instagram Connect uses Meta Page OAuth, saves the client's own Page+IG, re-enables IG, returns to Instagram", async () => {
+  const metaCtl = await import("../controllers/meta.controller.js");
+  let r = res();
+  await metaCtl.getMetaOAuthUrl({ user: { _id: "u1" }, query: { for: "instagram" } }, r);
+  const url = new URL(r.body.data.url);
+  assert.match(url.origin, /facebook\.com/, "Facebook Login, not instagram.com");
+  const state = url.searchParams.get("state");
+  assert.equal(meta.verifyOAuthState(state).ig, true);
+
+  const doc = new MetaConnection({ key: SARA, instagramDisabled: true,
+    whatsapp: { connected: true, phoneNumberId: "SARA_PN", encryptedToken: encryptToken("WA") } });
+  doc.save = async () => doc;
+  const keys = [];
+  stub(MetaConnection, "findOne", (f) => (typeof f.key === "string" ? (keys.push(f.key), Promise.resolve(doc)) : chain(null)));
+  stub(User, "findById", () => chain({ _id: "u1", workspace: SARA, role: "admin" }));
+  metaOAuthGraph(`${SARA}_IG`);
+
+  let redirect = null;
+  await metaCtl.handleMetaOAuthCallback({ query: { code: "c", state } }, { redirect: (u) => (redirect = u) });
+  assert.match(redirect, /\/integrations\/instagram\?connected=1$/);
+  assert.deepEqual([...new Set(keys)], [SARA], "client's own workspace doc only");
+  assert.equal(doc.instagramDisabled, false);
+  assert.equal(doc.instagram.id, `${SARA}_IG`);
+  assert.equal(doc.facebookPage.id, `${SARA}_PAGE`);
+  assert.equal(doc.whatsapp.phoneNumberId, "SARA_PN", "WhatsApp untouched");
+
+  r = res();
+  await ctx.runWithWorkspace(SARA, () => metaCtl.getMetaStatus({}, r));
+  assert.equal(r.body.data.instagramInbox.connected, true);
+  assert.equal(r.body.data.instagramInbox.method, "facebook_page");
+});
+
+test("Instagram Connect with a Page lacking linked IG saves nothing and returns a clear error", async () => {
+  const metaCtl = await import("../controllers/meta.controller.js");
+  const state = meta.createOAuthState("u1", { ig: true });
+  let saved = false;
+  stub(MetaConnection, "findOne", (f) => (typeof f.key === "string" ? Promise.resolve({ key: SARA, save: async () => (saved = true) }) : chain(null)));
+  stub(User, "findById", () => chain({ _id: "u1", workspace: SARA, role: "admin" }));
+  metaOAuthGraph(null);
+  let redirect = null;
+  await metaCtl.handleMetaOAuthCallback({ query: { code: "c", state } }, { redirect: (u) => (redirect = u) });
+  assert.match(redirect, /\/integrations\/instagram\?connected=0&message=.*Instagram\+Business/);
+  assert.equal(saved, false);
+});
+
+test("Instagram connect never replaces the workspace's Messenger Page; cancel returns to Instagram", async () => {
+  const metaCtl = await import("../controllers/meta.controller.js");
+  const state = meta.createOAuthState("u1", { ig: true });
+  let saved = false;
+  stub(MetaConnection, "findOne", (f) => (typeof f.key === "string"
+    ? Promise.resolve({ key: SARA, facebookPage: { id: "MESSENGER_PAGE", name: "Shop" }, save: async () => (saved = true) })
+    : chain(null)));
+  stub(User, "findById", () => chain({ _id: "u1", workspace: SARA, role: "admin" }));
+  metaOAuthGraph(`${SARA}_IG`);
+  let redirect = null;
+  await metaCtl.handleMetaOAuthCallback({ query: { code: "c", state } }, { redirect: (u) => (redirect = u) });
+  assert.match(redirect, /\/integrations\/instagram\?connected=0&message=Select\+your\+connected/);
+  assert.equal(saved, false, "Messenger Page untouched");
+
+  await metaCtl.handleMetaOAuthCallback({ query: { error: "access_denied", error_description: "Permissions error", state } }, { redirect: (u) => (redirect = u) });
+  assert.match(redirect, /\/integrations\/instagram\?connected=0&message=Instagram\+connection\+was\+cancelled/);
+});
