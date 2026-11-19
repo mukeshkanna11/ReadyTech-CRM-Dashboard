@@ -21,13 +21,18 @@ export default function InstagramInbox() {
   const [ig, setIg] = useState(null);
   const [busy, setBusy] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [error, setError] = useState("");
+  const [loadFailed, setLoadFailed] = useState(false);
   const [params, setParams] = useSearchParams();
 
   const load = useCallback(async () => {
     try {
       setIg((await getMetaStatus())?.instagramInbox || null);
-    } catch {
+      setLoadFailed(false);
+    } catch (err) {
       setIg(null);
+      setLoadFailed(true);
+      setError(err?.response?.data?.message || err?.message || "Could not load Instagram status");
     }
   }, []);
 
@@ -40,21 +45,28 @@ export default function InstagramInbox() {
     const connected = params.get("connected");
     if (connected === null) return;
     if (connected === "1") toast.success("Instagram account connected");
-    else toast.error(params.get("message") || "Instagram connection failed");
+    else setError(params.get("message") || "Instagram connection failed");
     setParams({}, { replace: true });
   }, [params, setParams]);
 
-  const run = async (key, fn, ok) => {
+  // `mustConnect`: success only when the backend status confirms connected
+  const run = async (key, fn, ok, mustConnect = false) => {
     try {
       setBusy(key);
+      setError("");
       const data = await fn();
       if (data) {
         setIg(data);
         setRefreshKey((k) => k + 1); // reload the conversation list too
       }
-      if (ok) toast.success(ok);
-    } catch {
-      load(); // error toast comes from the API interceptor
+      if (mustConnect && data && !data.connected) {
+        setError(data.lastError || "Instagram is still not connected for this workspace");
+      } else if (ok) {
+        toast.success(ok);
+      }
+    } catch (err) {
+      setError(err?.response?.data?.message || err?.message || "Request failed");
+      load();
     } finally {
       setBusy("");
     }
@@ -62,18 +74,73 @@ export default function InstagramInbox() {
 
   const connect = () =>
     ig?.pageReconnectable
-      ? run("connect", reconnectInstagramPage, "Instagram reconnected")
+      ? run("connect", reconnectInstagramPage, "Instagram reconnected", true)
       : run("connect", async () => {
       const url = await getInstagramOAuthUrl();
       if (url) window.location.href = url;
     });
 
+  const check = () => run("check", refreshInstagram, "Instagram status verified", true);
+
+  /* Not confirmed connected by the backend: no list, filters, previews or
+     chat panel — only the connect state. History stays in the database. */
+  if (!ig || !ig.connected) {
+    return <DisconnectedState ig={ig} loading={!ig && !loadFailed} busy={busy} error={error}
+      onConnect={ig ? connect : load} onCheck={check} />;
+  }
+
   return <WhatsAppInbox channel="instagram" refreshKey={refreshKey} banner={<ConnectionBanner ig={ig} busy={busy} onConnect={connect}
-    onCheck={() => run("check", refreshInstagram, "Instagram status verified")}
+    onCheck={check}
     onSubscribe={() => run("sub", subscribeInstagram, "Webhook subscribed")}
     onDisconnect={() => window.confirm("Disconnect this workspace's Instagram account?") && run("disc", disconnectInstagram, "Instagram disconnected")} />} />;
 }
 
+
+function DisconnectedState({ ig, loading, busy, error, onConnect, onCheck }) {
+  if (loading) {
+    return <div className="flex items-center justify-center p-10 text-sm text-slate-500">Loading Instagram status…</div>;
+  }
+
+  const canConnect = !ig || ig.pageReconnectable || ig.oauthConfigured;
+
+  return (
+    <div className="flex items-center justify-center p-6 min-h-[60vh]">
+      <div className="w-full max-w-md p-8 text-center bg-white border shadow-sm rounded-2xl border-slate-200">
+        <div className="flex items-center justify-center mx-auto mb-4 text-white rounded-full w-14 h-14 bg-gradient-to-r from-fuchsia-500 to-pink-500">
+          <Link2 size={24} />
+        </div>
+        <h2 className="text-lg font-semibold text-slate-900">Instagram is disconnected</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Connect your Instagram Business account to view and manage Instagram DMs.
+        </p>
+
+        {error && (
+          <p className="flex items-start gap-2 p-3 mt-4 text-xs text-left border rounded-xl border-rose-200 bg-rose-50 text-rose-700">
+            <XCircle size={14} className="mt-0.5 shrink-0" /> <span>{error}</span>
+          </p>
+        )}
+        {ig && !ig.pageReconnectable && !ig.oauthConfigured && (
+          <p className="mt-3 text-xs text-amber-600">Server missing: {ig.missingEnv?.join(", ")}</p>
+        )}
+
+        <button
+          onClick={onConnect}
+          disabled={!!busy || !canConnect}
+          className="inline-flex items-center justify-center w-full gap-2 px-4 py-2.5 mt-6 text-sm font-semibold text-white transition rounded-xl bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:opacity-90 disabled:opacity-50"
+        >
+          <Link2 size={16} className={busy === "connect" ? "animate-pulse" : ""} />
+          {!ig ? "Retry" : busy === "connect" ? "Connecting…" : "Connect Instagram"}
+        </button>
+
+        {ig?.source && (
+          <button onClick={onCheck} disabled={!!busy} className="inline-flex items-center gap-1.5 mt-3 text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50">
+            <RefreshCw size={12} className={busy === "check" ? "animate-spin" : ""} /> Check status
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function ConnectionBanner({ ig, busy, onConnect, onCheck, onSubscribe, onDisconnect }) {
   const [imageFailed, setImageFailed] = useState(false);
