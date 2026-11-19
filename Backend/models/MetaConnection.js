@@ -82,6 +82,12 @@ const metaConnectionSchema = new mongoose.Schema(
        are dropped instead of falling into the default workspace. */
     releasedAssetIds: { type: [String], default: [] },
 
+    /* Admin disconnected Instagram for this workspace. Until an explicit
+       reconnect (Instagram Login or Meta OAuth): no env-token fallback,
+       Meta refresh does not re-add the Page-linked Instagram account,
+       and the default workspace takes no legacy-routed IG webhooks. */
+    instagramDisabled: { type: Boolean, default: false },
+
     /* 💬 WhatsApp Cloud API
        Authenticated with its own System User token (env), NOT the
        Facebook OAuth user token — so it survives an FB/IG disconnect. */
@@ -208,6 +214,8 @@ metaConnectionSchema.methods.toSafeJSON = function () {
       lastSyncedAt: this.instagramLogin?.lastSyncedAt || null,
       lastError: this.instagramLogin?.lastError || null,
     },
+
+    instagramDisabled: !!this.instagramDisabled,
 
     whatsapp: {
       connected: !!this.whatsapp?.connected,

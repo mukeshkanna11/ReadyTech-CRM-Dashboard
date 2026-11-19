@@ -265,6 +265,8 @@ const fetchGrantedScopes = async (userAccessToken) => {
 const applyAssets = (connection, assets) => {
   const samePage = connection.facebookPage?.id === assets.facebookPage.id;
   const sameIg = connection.instagram?.id === assets.instagram.id;
+  // Instagram disconnected on its own: keep it off; the Page still updates
+  const igOff = !!connection.instagramDisabled;
 
   connection.businessPortfolioId = assets.businessPortfolioId;
   connection.facebookPage = {
@@ -272,12 +274,14 @@ const applyAssets = (connection, assets) => {
     webhookSubscribed: samePage ? !!connection.facebookPage?.webhookSubscribed : false,
     lastInboundAt: samePage ? connection.facebookPage?.lastInboundAt || null : null,
   };
-  connection.instagram = {
-    ...assets.instagram,
-    lastInboundAt: sameIg ? connection.instagram?.lastInboundAt || null : null,
-  };
+  if (!igOff) {
+    connection.instagram = {
+      ...assets.instagram,
+      lastInboundAt: sameIg ? connection.instagram?.lastInboundAt || null : null,
+    };
+  }
   connection.releasedAssetIds = (connection.releasedAssetIds || []).filter(
-    (id) => id !== assets.facebookPage.id && id !== assets.instagram.id
+    (id) => id !== assets.facebookPage.id && (igOff || id !== assets.instagram.id)
   );
 };
 
@@ -350,6 +354,7 @@ export const completeConnection = async ({ code, userId }) => {
     encrypted: encryptToken(accessToken),
     expiresAt,
   };
+  connection.instagramDisabled = false; // explicit Meta reconnect restores the Page-linked IG
   applyAssets(connection, assets);
   connection.lastSyncedAt = new Date();
   connection.lastError = null;
@@ -377,7 +382,11 @@ export const refreshConnection = async () => {
   try {
     const userToken = decryptToken(connection.userToken.encrypted);
     const assets = await fetchLinkedAssets(userToken);
-    await assertAssetsUnclaimed(connection.key, assets);
+    // A disabled Instagram is not re-claimed; its owner check is skipped too
+    await assertAssetsUnclaimed(
+      connection.key,
+      connection.instagramDisabled ? { ...assets, instagram: {} } : assets
+    );
 
     connection.status = "connected";
     const granted = await fetchGrantedScopes(userToken);
@@ -394,6 +403,34 @@ export const refreshConnection = async () => {
 
   await connection.save();
 
+  return connection;
+};
+
+/* =========================================================
+   RE-ENABLE PAGE-LINKED INSTAGRAM (Instagram Inbox → Connect)
+   Explicit admin action after an Instagram-only disconnect. Re-reads
+   the Page's linked IG with the stored Meta token. Only the IG account
+   ownership is checked; on any failure nothing is saved, so the Page /
+   Messenger connection state is never changed.
+========================================================= */
+export const enableInstagramFromPage = async () => {
+  const connection = await MetaConnection.getSingleton();
+  const fail = (message, status = 400) => Object.assign(new Error(message), { status });
+
+  if (connection.status !== "connected" || !connection.userToken?.encrypted || !connection.facebookPage?.id) {
+    throw fail("No connected Facebook Page to restore Instagram from — use Connect Instagram");
+  }
+
+  const assets = await fetchLinkedAssets(decryptToken(connection.userToken.encrypted));
+  if (!assets.instagram?.id) {
+    throw fail("The connected Facebook Page has no linked Instagram Business account");
+  }
+  await assertAssetsUnclaimed(connection.key, { facebookPage: {}, instagram: assets.instagram });
+
+  connection.instagramDisabled = false;
+  applyAssets(connection, assets);
+  connection.lastSyncedAt = new Date();
+  await connection.save();
   return connection;
 };
 

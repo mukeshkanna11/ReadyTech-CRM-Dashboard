@@ -10,6 +10,7 @@ import {
   refreshInstagram,
   subscribeInstagram,
   disconnectInstagram,
+  reconnectInstagramPage,
 } from "../../services/metaService";
 
 /* =========================================================
@@ -19,6 +20,7 @@ import {
 export default function InstagramInbox() {
   const [ig, setIg] = useState(null);
   const [busy, setBusy] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
   const [params, setParams] = useSearchParams();
 
   const load = useCallback(async () => {
@@ -46,7 +48,10 @@ export default function InstagramInbox() {
     try {
       setBusy(key);
       const data = await fn();
-      if (data) setIg(data);
+      if (data) {
+        setIg(data);
+        setRefreshKey((k) => k + 1); // reload the conversation list too
+      }
       if (ok) toast.success(ok);
     } catch {
       load(); // error toast comes from the API interceptor
@@ -56,12 +61,14 @@ export default function InstagramInbox() {
   };
 
   const connect = () =>
-    run("connect", async () => {
+    ig?.pageReconnectable
+      ? run("connect", reconnectInstagramPage, "Instagram reconnected")
+      : run("connect", async () => {
       const url = await getInstagramOAuthUrl();
       if (url) window.location.href = url;
     });
 
-  return <WhatsAppInbox channel="instagram" banner={<ConnectionBanner ig={ig} busy={busy} onConnect={connect}
+  return <WhatsAppInbox channel="instagram" refreshKey={refreshKey} banner={<ConnectionBanner ig={ig} busy={busy} onConnect={connect}
     onCheck={() => run("check", refreshInstagram, "Instagram status verified")}
     onSubscribe={() => run("sub", subscribeInstagram, "Webhook subscribed")}
     onDisconnect={() => window.confirm("Disconnect this workspace's Instagram account?") && run("disc", disconnectInstagram, "Instagram disconnected")} />} />;
@@ -143,15 +150,15 @@ function ConnectionBanner({ ig, busy, onConnect, onCheck, onSubscribe, onDisconn
         {ig.method !== "facebook_page" && (
           <button
             onClick={onConnect}
-            disabled={!!busy || !ig.oauthConfigured}
-            title={ig.oauthConfigured ? "" : "Instagram Login is not configured on the server"}
+            disabled={!!busy || (!ig.oauthConfigured && !ig.pageReconnectable)}
+            title={ig.oauthConfigured || ig.pageReconnectable ? "" : "Instagram Login is not configured on the server"}
             className={`${btn} border-transparent text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:opacity-90`}
           >
             <Link2 size={13} /> {ig.source ? "Reconnect" : "Connect Instagram"}
           </button>
         )}
 
-        {ig.tokenPresent && (
+        {(ig.connected || ig.source || ig.tokenPresent) && (
           <button onClick={onDisconnect} disabled={!!busy} className={`${btn} border-rose-200 bg-white text-rose-600 hover:bg-rose-50`}>
             <Unlink size={13} /> Disconnect
           </button>

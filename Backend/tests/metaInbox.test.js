@@ -186,7 +186,7 @@ test("Signed Messenger webhook lands in the Page owner's workspace", async () =>
 
 test("Tenant's released IG account never falls back to Siva's workspace", async () => {
   stub(MetaConnection, "findOne", (f) =>
-    chain(f.releasedAssetIds === "OLD_IG" ? { _id: "x" } : null));
+    chain(f.$or?.some((c) => c.releasedAssetIds === "OLD_IG") ? { _id: "x" } : null));
   assert.equal(await inbox.workspaceForMetaAsset("instagram.id", "OLD_IG", { legacyDefault: true }), null);
   assert.equal(await inbox.workspaceForMetaAsset("instagram.id", "LEGACY_IG", { legacyDefault: true }), SIVA);
 });
@@ -372,4 +372,188 @@ test("Status: Page path reports connected; tenant without anything reports disco
   await ctx.runWithWorkspace(SARA, () => metaCtl.getMetaStatus({}, r));
   assert.equal(r.body.data.instagramInbox.connected, false);
   assert.equal(r.body.data.instagramInbox.source, null, "never Siva's env token");
+});
+
+/* -------- Instagram disconnect / reconnect -------- */
+const pageLinkedDoc = (key) => {
+  const doc = new MetaConnection({
+    key, status: "connected", scopes: ["instagram_manage_messages"],
+    facebookPage: { id: `${key}_PAGE`, name: "P", encryptedToken: encryptToken("PAGE_TOKEN"), webhookSubscribed: true },
+    instagram: { id: `${key}_IG`, username: "acct" },
+    instagramLogin: { id: `${key}_IGL`, encryptedToken: encryptToken("IGL_TOKEN") },
+    whatsapp: { connected: true, phoneNumberId: `${key}_PN`, encryptedToken: encryptToken("WA_TOKEN") },
+  });
+  doc.save = async () => doc;
+  return doc;
+};
+
+test("Disconnect Instagram clears only this workspace's IG; Page and WhatsApp stay", async () => {
+  const doc = pageLinkedDoc(SARA);
+  const queried = [];
+  stub(MetaConnection, "findOne", async (f) => (queried.push(f.key), doc));
+  await ctx.runWithWorkspace(SARA, () => igl.disconnectInstagramConnection());
+  assert.deepEqual(queried, [SARA], "only the active workspace's doc");
+  assert.equal(doc.instagram.id, null);
+  assert.equal(!!doc.instagramLogin?.encryptedToken, false, "IG Login token removed");
+  assert.equal(doc.instagramDisabled, true);
+  assert.deepEqual([...doc.releasedAssetIds].sort(), [`${SARA}_IG`, `${SARA}_IGL`]);
+  assert.equal(doc.facebookPage.id, `${SARA}_PAGE`, "Messenger Page kept");
+  assert.equal(doc.facebookPage.encryptedToken !== null, true);
+  assert.equal(doc.whatsapp.phoneNumberId, `${SARA}_PN`, "WhatsApp untouched");
+  assert.equal(doc.whatsapp.connected, true);
+});
+
+test("Status after disconnect: not connected, no Check status source, no env token", async () => {
+  const metaCtl = await import("../controllers/meta.controller.js");
+  process.env.INSTAGRAM_ACCESS_TOKEN = "SIVA_IG_TOKEN";
+  const doc = pageLinkedDoc("default");
+  stub(MetaConnection, "findOne", async () => doc);
+  await ctx.runWithWorkspace(SIVA, () => igl.disconnectInstagramConnection());
+  const r = res();
+  await ctx.runWithWorkspace(SIVA, () => metaCtl.getMetaStatus({}, r));
+  const s = r.body.data.instagramInbox;
+  assert.equal(s.connected, false);
+  assert.equal(s.method, null);
+  assert.equal(s.source, null, "env token not offered after disconnect");
+  assert.equal(r.body.data.facebookPage.connected, true);
+  assert.equal(r.body.data.whatsapp.connected, true);
+  assert.equal(JSON.stringify(r.body).includes("IGL_TOKEN"), false, "no token in payload");
+});
+
+test("Disconnected default workspace: env token unused, Check status fails, legacy webhooks dropped", async () => {
+  process.env.INSTAGRAM_ACCESS_TOKEN = "SIVA_IG_TOKEN";
+  const doc = pageLinkedDoc("default");
+  stub(MetaConnection, "findOne", async () => doc);
+  await ctx.runWithWorkspace(SIVA, () => igl.disconnectInstagramConnection());
+  await ctx.runWithWorkspace(SIVA, async () => {
+    assert.equal((await igl.resolveInstagramLogin()).token, null);
+    await assert.rejects(igl.refreshInstagramConnection(), /not connected/);
+  });
+
+  const q = [];
+  stub(MetaConnection, "findOne", (f) => {
+    q.push(f);
+    const hit = f.$or?.some((c) => c.key === "default" && c.instagramDisabled === true);
+    return chain(hit ? { _id: "siva" } : null);
+  });
+  assert.equal(await inbox.workspaceForMetaAsset(["instagram.id", "instagramLogin.id"], "default_IG", { legacyDefault: true }), null);
+});
+
+test("Instagram reply is blocked after disconnect even though the Page is still connected", async () => {
+  const doc = pageLinkedDoc(SARA);
+  stub(MetaConnection, "findOne", async () => doc);
+  const calls = [];
+  graphMock(calls, () => ({ message_id: "m" }));
+  stub(Msg, "create", async (d) => ({ ...d, save: async () => {} }));
+  await ctx.runWithWorkspace(SARA, async () => {
+    await igl.disconnectInstagramConnection();
+    await assert.rejects(
+      inbox.sendSocialMessage({ conversation: fakeConv({ channel: "instagram", phoneNumber: "ig:7", externalId: "7" }), text: "hi" }),
+      { status: 400 }
+    );
+    // Messenger on the same Page still works
+    await inbox.sendSocialMessage({ conversation: fakeConv({ channel: "messenger", phoneNumber: "fb:7", externalId: "7" }), text: "hi" });
+  });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, new RegExp(`/${SARA}_PAGE/messages$`));
+});
+
+test("Meta refresh keeps a disconnected IG off; Meta OAuth reconnect restores it", async () => {
+  const doc = pageLinkedDoc(SARA);
+  stub(MetaConnection, "findOne", (f) => (typeof f.key === "string" ? Promise.resolve(doc) : chain(null)));
+  await ctx.runWithWorkspace(SARA, () => igl.disconnectInstagramConnection());
+  doc.userToken = { encrypted: encryptToken("USER_TOKEN"), expiresAt: null };
+
+  globalThis.fetch = async (u) => ({ ok: true, status: 200, json: async () => {
+    const url = String(u);
+    if (url.includes("/permissions")) return { data: [{ permission: "instagram_manage_messages", status: "granted" }] };
+    if (url.includes("oauth/access_token")) return { access_token: "USER_TOKEN", expires_in: 5184000 };
+    if (url.includes("/me/accounts")) return { data: [{ id: `${SARA}_PAGE`, name: "P", access_token: "pt",
+      instagram_business_account: { id: `${SARA}_IG`, username: "acct" } }] };
+    return { data: [] };
+  } });
+
+  await ctx.runWithWorkspace(SARA, () => meta.refreshConnection());
+  assert.equal(doc.instagram.id, null, "refresh does not re-add Instagram");
+  assert.equal(doc.facebookPage.id, `${SARA}_PAGE`);
+  assert.ok(doc.releasedAssetIds.includes(`${SARA}_IG`), "IG stays released");
+
+  stub(User, "findById", () => chain({ _id: SARA, workspace: SARA, role: "admin" }));
+  await meta.completeConnection({ code: "c", userId: SARA });
+  assert.equal(doc.instagramDisabled, false);
+  assert.equal(doc.instagram.id, `${SARA}_IG`, "explicit Meta reconnect restores Instagram");
+});
+
+test("Instagram Login reconnect saves to the connecting admin's workspace and clears the disabled flag", async () => {
+  process.env.INSTAGRAM_APP_ID = "ia"; process.env.INSTAGRAM_APP_SECRET = "is";
+  const doc = pageLinkedDoc(SARA);
+  doc.instagramDisabled = true;
+  doc.instagram = { id: null };
+  doc.instagramLogin = {};
+  doc.releasedAssetIds = [`${SARA}_IGL`];
+  const keys = [];
+  stub(MetaConnection, "findOne", (f) => (typeof f.key === "string"
+    ? (keys.push(f.key), Promise.resolve(doc))
+    : chain(null)));
+  globalThis.fetch = async (u) => ({ ok: true, status: 200, json: async () =>
+    String(u).includes("api.instagram.com") ? { access_token: "s", user_id: `${SARA}_IGL`, permissions: "instagram_business_basic,instagram_business_manage_messages" }
+    : String(u).includes("/access_token") ? { access_token: "LONG", expires_in: 5184000 }
+    : String(u).includes("subscribed_apps") ? { success: true }
+    : { user_id: `${SARA}_IGL`, username: "sara" } });
+  stub(User, "findById", () => chain({ _id: "u1", workspace: SARA, role: "admin" }));
+
+  await igl.completeInstagramConnection({ code: "c#_", userId: "u1" });
+  assert.deepEqual(keys, [SARA], "saved on the admin's workspace doc only");
+  assert.equal(doc.instagramDisabled, false);
+  assert.equal(doc.instagramLogin.id, `${SARA}_IGL`);
+  assert.equal(doc.instagramLogin.webhookSubscribed, true);
+  assert.equal(doc.releasedAssetIds.includes(`${SARA}_IGL`), false);
+  assert.notEqual(doc.instagramLogin.encryptedToken, "LONG", "token stored encrypted");
+});
+
+const pageGraph = (igId) => (globalThis.fetch = async (u) => ({ ok: true, status: 200, json: async () =>
+  String(u).includes("/me/accounts")
+    ? { data: [{ id: `${SARA}_PAGE`, name: "P", access_token: "pt", instagram_business_account: { id: igId, username: "acct" } }] }
+    : { data: [] } }));
+
+test("Instagram Inbox Connect re-enables the Page-linked IG; Page, WhatsApp and history kept", async () => {
+  const metaCtl = await import("../controllers/meta.controller.js");
+  const doc = pageLinkedDoc(SARA);
+  doc.userToken = { encrypted: encryptToken("USER_TOKEN"), expiresAt: null };
+  doc.instagram.lastInboundAt = new Date("2026-01-01");
+  stub(MetaConnection, "findOne", (f) => (typeof f.key === "string" ? Promise.resolve(doc) : chain(null)));
+  await ctx.runWithWorkspace(SARA, () => igl.disconnectInstagramConnection());
+
+  let r = res();
+  await ctx.runWithWorkspace(SARA, () => metaCtl.getMetaStatus({}, r));
+  assert.equal(r.body.data.instagramInbox.pageReconnectable, true);
+
+  pageGraph(`${SARA}_IG`);
+  r = res();
+  await ctx.runWithWorkspace(SARA, () => metaCtl.reconnectInstagramPage({}, r));
+  assert.equal(r.statusCode, 200);
+  assert.equal(r.body.data.connected, true);
+  assert.equal(r.body.data.method, "facebook_page");
+  assert.equal(r.body.data.pageReconnectable, false);
+  assert.equal(doc.instagramDisabled, false);
+  assert.equal(doc.instagram.id, `${SARA}_IG`);
+  assert.equal(doc.facebookPage.id, `${SARA}_PAGE`);
+  assert.equal(doc.whatsapp.phoneNumberId, `${SARA}_PN`);
+  assert.equal(doc.releasedAssetIds.includes(`${SARA}_IG`), false);
+});
+
+test("Page-linked IG reconnect is refused when another workspace owns it; nothing saved", async () => {
+  const doc = pageLinkedDoc(SARA);
+  doc.userToken = { encrypted: encryptToken("USER_TOKEN"), expiresAt: null };
+  stub(MetaConnection, "findOne", (f) => (typeof f.key === "string" ? Promise.resolve(doc) : chain({ _id: "siva" })));
+  await ctx.runWithWorkspace(SARA, () => igl.disconnectInstagramConnection());
+  let saves = 0;
+  doc.save = async () => (saves++, doc);
+  pageGraph("SIVA_IG");
+  await ctx.runWithWorkspace(SARA, async () => {
+    await assert.rejects(meta.enableInstagramFromPage(), { status: 409 });
+  });
+  assert.equal(saves, 0);
+  assert.equal(doc.instagramDisabled, true);
+  assert.equal(doc.status, "connected", "Page / Messenger state untouched");
 });

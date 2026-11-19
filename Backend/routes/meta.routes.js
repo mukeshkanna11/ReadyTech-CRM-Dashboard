@@ -13,6 +13,7 @@ import {
   refreshInstagram,
   subscribeInstagram,
   disconnectInstagram,
+  reconnectInstagramPage,
 } from "../controllers/meta.controller.js";
 
 import auth from "../middlewares/auth.js";
@@ -48,5 +49,6 @@ router.get("/instagram/oauth/url", auth, role("admin"), getInstagramOAuthUrl);
 router.post("/instagram/refresh", auth, role("admin"), refreshInstagram);
 router.post("/instagram/subscribe", auth, role("admin"), subscribeInstagram);
 router.post("/instagram/disconnect", auth, role("admin"), disconnectInstagram);
+router.post("/instagram/reconnect", auth, role("admin"), reconnectInstagramPage);
 
 export default router;

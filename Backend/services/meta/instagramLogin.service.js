@@ -76,7 +76,8 @@ export const resolveInstagramLogin = async () => {
   if (il.encryptedToken) {
     return { connection, token: decryptToken(il.encryptedToken), source: "workspace" };
   }
-  if (usesPlatformCredentials() && process.env.INSTAGRAM_ACCESS_TOKEN) {
+  // A disconnected default workspace must not silently fall back to the env token
+  if (usesPlatformCredentials() && process.env.INSTAGRAM_ACCESS_TOKEN && !connection.instagramDisabled) {
     return { connection, token: process.env.INSTAGRAM_ACCESS_TOKEN, source: "platform" };
   }
   return { connection, token: null, source: null };
@@ -204,6 +205,7 @@ export const completeInstagramConnection = async ({ code, userId }) => {
     lastError,
   };
   connection.releasedAssetIds = (connection.releasedAssetIds || []).filter((id) => id !== igId);
+  connection.instagramDisabled = false; // explicit reconnect
   await connection.save();
   return connection;
 };
@@ -342,13 +344,18 @@ export const subscribeInstagramWebhook = async () => {
 
 
 
+/* Removes ONLY this workspace's Instagram: the Instagram-Login token and
+   the Page-linked Instagram account. The Facebook Page (Messenger),
+   WhatsApp and every other workspace are untouched. */
 export const disconnectInstagramConnection = async () => {
   const connection = await MetaConnection.getSingleton();
-  const id = connection.instagramLogin?.id;
-  if (connection.key !== "default" && id) {
-    connection.releasedAssetIds = [...new Set([...(connection.releasedAssetIds || []), id])];
+  const ids = [connection.instagramLogin?.id, connection.instagram?.id].filter(Boolean);
+  if (connection.key !== "default" && ids.length) {
+    connection.releasedAssetIds = [...new Set([...(connection.releasedAssetIds || []), ...ids])];
   }
   connection.instagramLogin = {};
+  connection.instagram = { id: null, username: null, name: null, profilePictureUrl: null, lastInboundAt: null };
+  connection.instagramDisabled = true;
   await connection.save();
   return connection;
 };

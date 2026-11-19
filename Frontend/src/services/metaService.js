@@ -47,6 +47,12 @@ export const subscribeInstagram = async () => {
   return data?.data;
 };
 
+/* Restores the Page-linked Instagram after an Instagram-only disconnect */
+export const reconnectInstagramPage = async () => {
+  const { data } = await API.post("/meta/instagram/reconnect");
+  return data?.data;
+};
+
 export const disconnectInstagram = async () => {
   const { data } = await API.post("/meta/instagram/disconnect");
   return data?.data;

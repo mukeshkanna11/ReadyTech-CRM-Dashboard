@@ -9,6 +9,7 @@ import {
   refreshConnection,
   disconnectConnection,
   subscribePageWebhook,
+  enableInstagramFromPage,
 } from "../services/meta/meta.service.js";
 import { verifyWebhookSignature } from "../services/meta/whatsapp.service.js";
 import {
@@ -109,7 +110,7 @@ const buildSetup = (safe, { configured, missing, redirectUri }, platformWhatsApp
 const buildInstagramStatus = (safe) => {
   const il = safe.instagramLogin;
   const { configured, missing, redirectUri } = getInstagramConfig();
-  const platform = usesPlatformCredentials() && !!process.env.INSTAGRAM_ACCESS_TOKEN;
+  const platform = usesPlatformCredentials() && !!process.env.INSTAGRAM_ACCESS_TOKEN && !safe.instagramDisabled;
   const loginSource = il.tokenPresent ? "workspace" : platform ? "platform" : null;
   const loginExpired = (!!il.expiresAt && new Date(il.expiresAt) <= new Date()) || il.tokenInvalid;
   const loginConnected = !!loginSource && !!il.id && !loginExpired;
@@ -140,6 +141,8 @@ const buildInstagramStatus = (safe) => {
     requiredScopes: IG_SCOPES,
     // Facebook-Page login can also deliver/reply to Instagram DMs
     viaFacebookPage: viaPage,
+    // Instagram-only disconnect on a live Page: Connect restores the Page-linked IG
+    pageReconnectable: !method && !!safe.instagramDisabled && safe.connected && safe.facebookPage.tokenPresent,
     connected: !!method,
     // "expired" only when nothing usable remains
     expired: !method && !!loginSource && loginExpired,
@@ -190,6 +193,7 @@ const igAction = (fn, okMessage) => async (req, res) => {
 export const refreshInstagram = igAction(refreshInstagramConnection, "Instagram status verified");
 export const subscribeInstagram = igAction(subscribeInstagramWebhook, "Instagram webhook subscribed");
 export const disconnectInstagram = igAction(disconnectInstagramConnection, "Instagram disconnected");
+export const reconnectInstagramPage = igAction(enableInstagramFromPage, "Instagram reconnected");
 
 /* ================= GET CONNECTION STATUS ================= */
 export const getMetaStatus = async (req, res) => {

@@ -41,10 +41,13 @@ export const workspaceForMetaAsset = async (field, assetId, { legacyDefault = fa
 
   if (!doc) {
     if (!legacyDefault) return null;
-    // A tenant's disconnected account must never fall into Siva's workspace
+    // A tenant's disconnected account must never fall into Siva's workspace,
+    // and nothing falls back once Siva has disconnected Instagram
     const released = await MetaConnection.findOne({
-      key: { $ne: "default" },
-      releasedAssetIds: id,
+      $or: [
+        { key: { $ne: "default" }, releasedAssetIds: id },
+        { key: "default", instagramDisabled: true },
+      ],
     }).select("_id").lean();
     return released ? null : getDefaultWorkspaceId();
   }
@@ -181,7 +184,11 @@ export const sendSocialMessage = async ({ conversation, text, user }) => {
     ? decryptToken(connection.facebookPage.encryptedToken)
     : null;
 
-  if (!pageId || !pageToken) {
+  // Instagram via the Page only while the Page-linked IG is connected —
+  // a Messenger-only Page must not reply to Instagram threads
+  const igUnavailable = conversation.channel === "instagram" && !resolveInstagramPage(connection);
+
+  if (!pageId || !pageToken || igUnavailable) {
     const error = new Error(
       conversation.channel === "instagram"
         ? "Connect this workspace's Instagram account (Instagram Inbox → Connect) to reply"
