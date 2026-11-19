@@ -38,6 +38,13 @@ export const getInstagramConfig = () => {
     .filter(([, v]) => !v)
     .map(([k]) => k);
 
+  // instagram.com/oauth/authorize needs the Instagram app ID (App Dashboard →
+  // Instagram → API setup with Instagram login), not the Facebook app ID —
+  // otherwise Instagram shows "Invalid platform app".
+  if (config.appId && config.appId === process.env.META_APP_ID) {
+    missing.push("INSTAGRAM_APP_ID (must be the Instagram app ID, not META_APP_ID)");
+  }
+
   return { ...config, missing, configured: missing.length === 0 };
 };
 

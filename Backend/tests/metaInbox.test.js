@@ -458,7 +458,7 @@ test("Instagram reply is blocked after disconnect even though the Page is still 
   assert.match(calls[0].url, new RegExp(`/${SARA}_PAGE/messages$`));
 });
 
-test("Meta refresh keeps a disconnected IG off; Meta OAuth reconnect restores it", async () => {
+test("Meta refresh and Meta OAuth reconnect keep a disconnected IG off", async () => {
   const doc = pageLinkedDoc(SARA);
   stub(MetaConnection, "findOne", (f) => (typeof f.key === "string" ? Promise.resolve(doc) : chain(null)));
   await ctx.runWithWorkspace(SARA, () => igl.disconnectInstagramConnection());
@@ -480,8 +480,9 @@ test("Meta refresh keeps a disconnected IG off; Meta OAuth reconnect restores it
 
   stub(User, "findById", () => chain({ _id: SARA, workspace: SARA, role: "admin" }));
   await meta.completeConnection({ code: "c", userId: SARA });
-  assert.equal(doc.instagramDisabled, false);
-  assert.equal(doc.instagram.id, `${SARA}_IG`, "explicit Meta reconnect restores Instagram");
+  assert.equal(doc.instagramDisabled, true, "Meta connect affects Page/Messenger only");
+  assert.equal(doc.instagram.id, null, "Instagram stays off until Instagram Inbox -> Connect");
+  assert.equal(doc.facebookPage.id, `${SARA}_PAGE`);
 });
 
 test("Instagram Login reconnect saves to the connecting admin's workspace and clears the disabled flag", async () => {
@@ -556,4 +557,88 @@ test("Page-linked IG reconnect is refused when another workspace owns it; nothin
   assert.equal(saves, 0);
   assert.equal(doc.instagramDisabled, true);
   assert.equal(doc.status, "connected", "Page / Messenger state untouched");
+});
+
+test("Unknown IG account never falls into Siva's workspace once Siva's own IG is stored", async () => {
+  stub(MetaConnection, "findOne", (f) => chain(f.$or?.some((c) => c.key === "default" && c["instagram.id"]) ? { _id: "siva" } : null));
+  assert.equal(await inbox.workspaceForMetaAsset(["instagram.id", "instagramLogin.id"], "OTHER_CLIENT_IG", { legacyDefault: true }), null);
+});
+
+test("Instagram Login with the Facebook app ID is reported as misconfigured (Invalid platform app)", () => {
+  const save = process.env.INSTAGRAM_APP_ID;
+  process.env.INSTAGRAM_APP_ID = process.env.META_APP_ID;
+  process.env.INSTAGRAM_APP_SECRET = "is";
+  const c = igl.getInstagramConfig();
+  assert.equal(c.configured, false);
+  assert.match(c.missing.join(","), /Instagram app ID, not META_APP_ID/);
+  process.env.INSTAGRAM_APP_ID = save;
+});
+
+test("Facebook app ID misuse blocks Instagram OAuth but not Page-based Instagram reconnect", async () => {
+  const metaCtl = await import("../controllers/meta.controller.js");
+  const save = process.env.INSTAGRAM_APP_ID;
+  process.env.INSTAGRAM_APP_ID = process.env.META_APP_ID;
+  process.env.INSTAGRAM_APP_SECRET = "is";
+  try {
+    let r = res();
+    await metaCtl.getInstagramOAuthUrl({ user: { _id: SARA } }, r);
+    assert.equal(r.statusCode, 400, "no OAuth URL with the Facebook app ID");
+
+    const doc = pageLinkedDoc(SARA);
+    doc.userToken = { encrypted: encryptToken("USER_TOKEN"), expiresAt: null };
+    stub(MetaConnection, "findOne", (f) => (typeof f.key === "string" ? Promise.resolve(doc) : chain(null)));
+    await ctx.runWithWorkspace(SARA, () => igl.disconnectInstagramConnection());
+    r = res();
+    await ctx.runWithWorkspace(SARA, () => metaCtl.getMetaStatus({}, r));
+    assert.equal(r.body.data.instagramInbox.oauthConfigured, false);
+    assert.equal(r.body.data.instagramInbox.pageReconnectable, true);
+
+    pageGraph(`${SARA}_IG`);
+    r = res();
+    await ctx.runWithWorkspace(SARA, () => metaCtl.reconnectInstagramPage({}, r));
+    assert.equal(r.body.data.connected, true);
+  } finally {
+    process.env.INSTAGRAM_APP_ID = save;
+  }
+});
+
+/* -------- Security patch -------- */
+test("Siva Meta disconnect turns off the legacy env-token and webhook fallback; IG Login token keeps it on", async () => {
+  process.env.INSTAGRAM_ACCESS_TOKEN = "SIVA_IG_TOKEN";
+  const doc = pageLinkedDoc("default");
+  doc.instagramLogin = {};
+  stub(MetaConnection, "findOne", async () => doc);
+  await ctx.runWithWorkspace(SIVA, async () => {
+    assert.equal((await igl.resolveInstagramLogin()).source, "platform", "legit env setup preserved before disconnect");
+    await meta.disconnectConnection();
+    assert.equal(doc.instagramDisabled, true);
+    assert.equal((await igl.resolveInstagramLogin()).token, null, "env token not reactivated");
+  });
+  assert.equal(doc.whatsapp.phoneNumberId, "default_PN", "WhatsApp untouched");
+
+  const withLogin = pageLinkedDoc("default");
+  stub(MetaConnection, "findOne", async () => withLogin);
+  await ctx.runWithWorkspace(SIVA, () => meta.disconnectConnection());
+  assert.equal(withLogin.instagramDisabled, false, "separate Instagram-Login connection stays independent");
+});
+
+test("Instagram webhook: unsigned/invalid rejected unprocessed; Meta- and Instagram-secret signatures accepted", async () => {
+  const metaCtl = await import("../controllers/meta.controller.js");
+  process.env.INSTAGRAM_APP_SECRET = "ig-secret";
+  let lookups = 0;
+  stub(MetaConnection, "findOne", (f) => (lookups++, chain(null)));
+  const body = JSON.stringify({ object: "instagram", entry: [{ id: "IG1", messaging: [{ sender: { id: "S" }, message: { mid: "m", text: "hi" } }] }] });
+  const call = async (sig) => {
+    const r = res();
+    await metaCtl.receiveInstagramWebhook({ headers: sig ? { "x-hub-signature-256": sig } : {}, rawBody: Buffer.from(body), body: JSON.parse(body) }, r);
+    return r.statusCode;
+  };
+  const igSign = "sha256=" + crypto.createHmac("sha256", "ig-secret").update(body).digest("hex");
+
+  assert.equal(await call(null), 401);
+  assert.equal(await call("sha256=" + "0".repeat(64)), 401);
+  assert.equal(lookups, 0, "rejected payloads are never routed or saved");
+  assert.equal(await call(sign(body)), 200, "Meta app secret (Facebook Login)");
+  assert.equal(await call(igSign), 200, "Instagram app secret (Instagram Login)");
+  assert.ok(lookups > 0, "valid events are processed");
 });

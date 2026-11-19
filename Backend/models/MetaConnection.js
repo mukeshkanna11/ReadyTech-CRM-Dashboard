@@ -83,7 +83,8 @@ const metaConnectionSchema = new mongoose.Schema(
     releasedAssetIds: { type: [String], default: [] },
 
     /* Admin disconnected Instagram for this workspace. Until an explicit
-       reconnect (Instagram Login or Meta OAuth): no env-token fallback,
+       Instagram Inbox → Connect (Page reconnect or Instagram Login; never
+       Meta OAuth/refresh): no env-token fallback,
        Meta refresh does not re-add the Page-linked Instagram account,
        and the default workspace takes no legacy-routed IG webhooks. */
     instagramDisabled: { type: Boolean, default: false },

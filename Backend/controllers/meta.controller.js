@@ -323,6 +323,21 @@ export const verifyInstagramWebhook = (req, res) => {
    turn inbound DMs into CRM Leads.
 ========================================================= */
 export const receiveInstagramWebhook = async (req, res) => {
+  // Meta signs every event: X-Hub-Signature-256 = HMAC-SHA256(raw body).
+  // Facebook-Login webhooks use the Meta app secret, Instagram-Login
+  // webhooks the Instagram app secret. Unsigned/invalid → rejected, never
+  // processed (no legacy unsigned path).
+  const signature = req.headers["x-hub-signature-256"];
+  const trusted =
+    verifyWebhookSignature(req.rawBody, signature) ||
+    (!!process.env.INSTAGRAM_APP_SECRET &&
+      verifyWebhookSignature(req.rawBody, signature, process.env.INSTAGRAM_APP_SECRET));
+
+  if (!trusted) {
+    console.warn("[IG-WEBHOOK] rejected: missing or invalid signature");
+    return res.status(401).json({ success: false, message: "Invalid signature" });
+  }
+
   res.status(200).json({ success: true });
 
   const payload = req.body;
@@ -335,14 +350,7 @@ export const receiveInstagramWebhook = async (req, res) => {
   }
 
   try {
-    // Facebook-Login webhooks are signed with the Meta app secret,
-    // Instagram-Login webhooks with the Instagram app secret
-    const signature = req.headers["x-hub-signature-256"];
-    const trusted =
-      verifyWebhookSignature(req.rawBody, signature) ||
-      (!!process.env.INSTAGRAM_APP_SECRET &&
-        verifyWebhookSignature(req.rawBody, signature, process.env.INSTAGRAM_APP_SECRET));
-    const result = await processInstagramWebhook(payload, { trusted });
+    const result = await processInstagramWebhook(payload, { trusted: true });
 
     console.log("[IG-WEBHOOK] processed", JSON.stringify(result));
   } catch (error) {

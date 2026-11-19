@@ -43,10 +43,14 @@ export const workspaceForMetaAsset = async (field, assetId, { legacyDefault = fa
     if (!legacyDefault) return null;
     // A tenant's disconnected account must never fall into Siva's workspace,
     // and nothing falls back once Siva has disconnected Instagram
+    // Legacy fallback only while Siva has no stored IG id (env-token setup);
+    // once Siva's own account is known, an unknown id is another client's
     const released = await MetaConnection.findOne({
       $or: [
         { key: { $ne: "default" }, releasedAssetIds: id },
         { key: "default", instagramDisabled: true },
+        { key: "default", "instagram.id": { $nin: [null, ""] } },
+        { key: "default", "instagramLogin.id": { $nin: [null, ""] } },
       ],
     }).select("_id").lean();
     return released ? null : getDefaultWorkspaceId();

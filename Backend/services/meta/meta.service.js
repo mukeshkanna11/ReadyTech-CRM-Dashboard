@@ -354,7 +354,8 @@ export const completeConnection = async ({ code, userId }) => {
     encrypted: encryptToken(accessToken),
     expiresAt,
   };
-  connection.instagramDisabled = false; // explicit Meta reconnect restores the Page-linked IG
+  // Meta connect affects Page/Messenger only: a manually disconnected
+  // Instagram stays off until Instagram Inbox → Connect
   applyAssets(connection, assets);
   connection.lastSyncedAt = new Date();
   connection.lastError = null;
@@ -445,6 +446,13 @@ export const disconnectConnection = async () => {
   if (connection.key !== "default") {
     const ids = [connection.facebookPage?.id, connection.instagram?.id].filter(Boolean);
     connection.releasedAssetIds = [...new Set([...(connection.releasedAssetIds || []), ...ids])];
+  }
+
+  // Siva: once the Page (and its Instagram) is explicitly disconnected and no
+  // separate Instagram-Login token exists, the legacy env-token / webhook
+  // fallback must not reactivate. Instagram Inbox → Connect re-enables it.
+  if (connection.key === "default" && !connection.instagramLogin?.encryptedToken) {
+    connection.instagramDisabled = true;
   }
 
   connection.status = "disconnected";
