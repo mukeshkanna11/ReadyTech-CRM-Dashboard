@@ -5,6 +5,8 @@ import {
   receivePO,
   getAllPOs,
   getPOById,
+  updatePO,
+  deletePO,
 } from "../controllers/purchase.controller.js";
 
 const router = express.Router();
@@ -20,5 +22,9 @@ router.post("/", auth, createPO);
 
 // RECEIVE PO
 router.post("/:id/receive", auth, receivePO);
+
+// UPDATE / DELETE PO (DRAFT only — same auth as create/receive)
+router.put("/:id", auth, updatePO);
+router.delete("/:id", auth, deletePO);
 
 export default router;

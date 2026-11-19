@@ -72,6 +72,66 @@ export const receivePO = async (req, res) => {
   }
 };
 
+/* ===================== UPDATE / DELETE (DRAFT only) =====================
+   Called by the web (PUT/DELETE /purchase/:id) and mobile. A RECEIVED PO
+   has already written stock to the Inventory ledger, so it is locked.
+   Only vendor + items may change (never poNumber, status or workspace).
+   Lookups go through the workspace scope plugin like getPOById. */
+const findDraft = async (id) => {
+  if (!mongoose.isValidObjectId(id)) return { status: 404, message: "Purchase order not found" };
+  const po = await PurchaseOrder.findById(id);
+  if (!po) return { status: 404, message: "Purchase order not found" };
+  if (po.status !== "DRAFT") {
+    return { status: 400, message: "Received purchase orders cannot be changed — stock is already updated" };
+  }
+  return { po };
+};
+
+export const updatePO = async (req, res) => {
+  try {
+    const { vendor, items } = req.body || {};
+    if (!vendor || !mongoose.isValidObjectId(vendor)) {
+      return res.status(400).json({ message: "Vendor is required" });
+    }
+    const clean = Array.isArray(items) ? items.filter((i) => i?.product) : [];
+    if (!clean.length) return res.status(400).json({ message: "Add at least one product" });
+    if (clean.some((i) => !mongoose.isValidObjectId(i.product))) {
+      return res.status(400).json({ message: "Invalid product" });
+    }
+    if (clean.some((i) => !(Number(i.qty) > 0))) {
+      return res.status(400).json({ message: "Quantity must be greater than 0" });
+    }
+    if (clean.some((i) => Number(i.cost) < 0)) {
+      return res.status(400).json({ message: "Cost cannot be negative" });
+    }
+
+    const found = await findDraft(req.params.id);
+    if (!found.po) return res.status(found.status).json({ message: found.message });
+
+    found.po.vendor = vendor;
+    found.po.items = clean.map((i) => ({ product: i.product, qty: Number(i.qty), cost: Number(i.cost) || 0 }));
+    await found.po.save();
+
+    res.json(found.po);
+  } catch (err) {
+    console.error("Error updating PO:", err.message);
+    res.status(500).json({ message: "Failed to update purchase order" });
+  }
+};
+
+export const deletePO = async (req, res) => {
+  try {
+    const found = await findDraft(req.params.id);
+    if (!found.po) return res.status(found.status).json({ message: found.message });
+
+    await found.po.deleteOne();
+    res.json({ message: "Purchase order deleted" });
+  } catch (err) {
+    console.error("Error deleting PO:", err.message);
+    res.status(500).json({ message: "Failed to delete purchase order" });
+  }
+};
+
 /* ===================== GET ALL PURCHASE ORDERS ===================== */
 export const getAllPOs = async (req, res) => {
   try {
