@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { escapeRegex } from "../utils/escapeRegex.js";
 import Activity from "../models/Activity.js";
 import AuditLog from "../models/AuditLog.js";
 
@@ -80,13 +81,13 @@ export const getActivities = async (req, res) => {
       query.$or = [
         {
           notes: {
-            $regex: search.trim(),
+            $regex: escapeRegex(search.trim()),
             $options: "i",
           },
         },
         {
           outcome: {
-            $regex: search.trim(),
+            $regex: escapeRegex(search.trim()),
             $options: "i",
           },
         },

@@ -21,11 +21,18 @@ import {
 
 import auth from "../middlewares/auth.js";
 import role from "../middlewares/role.js";
+import rateLimit from "express-rate-limit";
 
 /* CRM admin routes: signed-in workspace admins only. `auth` binds the
    request to the caller's workspace, so the workspace scope plugin limits
    every Chat / ChatConversation query to that workspace. */
 const adminOnly = [auth, role("admin")];
+
+/* Public website chat: per-IP cap (LLM cost + DB spam guard) */
+const publicChatLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false,
+  message: { success: false, message: "Too many messages. Please wait a few minutes and try again." },
+});
 
 
 const router = express.Router();
@@ -39,6 +46,7 @@ const router = express.Router();
 // Website Chat Submit
 router.post(
   "/",
+  publicChatLimiter,
   createChatController
 );
 
@@ -65,10 +73,10 @@ router.get(
 ========================================================= */
 
 // Open or resume a widget session
-router.post("/conversations/start", startChatConversationController);
+router.post("/conversations/start", publicChatLimiter, startChatConversationController);
 
 // Send a customer message, get the assistant reply
-router.post("/conversations/message", sendChatMessageController);
+router.post("/conversations/message", publicChatLimiter, sendChatMessageController);
 
 // Message history for a session
 router.get(

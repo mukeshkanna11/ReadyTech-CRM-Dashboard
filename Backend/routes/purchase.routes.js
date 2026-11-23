@@ -9,6 +9,8 @@ import {
   deletePO,
 } from "../controllers/purchase.controller.js";
 
+import role from "../middlewares/role.js";
+const adminOnly = role("admin");
 const router = express.Router();
 
 // GET all POs
@@ -25,6 +27,6 @@ router.post("/:id/receive", auth, receivePO);
 
 // UPDATE / DELETE PO (DRAFT only — same auth as create/receive)
 router.put("/:id", auth, updatePO);
-router.delete("/:id", auth, deletePO);
+router.delete("/:id", auth, adminOnly, deletePO);
 
 export default router;

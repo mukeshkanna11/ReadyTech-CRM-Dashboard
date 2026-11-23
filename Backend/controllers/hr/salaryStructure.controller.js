@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+import { escapeRegex } from "../../utils/escapeRegex.js";
 import SalaryStructure from "../../models/hr/SalaryStructure.js";
 import Employee from "../../models/hr/Employee.js";
 
@@ -171,7 +172,7 @@ export const getSalaryStructures =
       if (search.trim()) {
         query.name = {
           $regex:
-            search.trim(),
+            escapeRegex(search.trim()),
           $options: "i",
         };
       }

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+import { escapeRegex } from "../../utils/escapeRegex.js";
 import Payslip from "../../models/hr/Payslip.js";
 import Payroll from "../../models/hr/Payroll.js";
 import Employee from "../../models/hr/Employee.js";
@@ -121,7 +122,7 @@ export const getPayslips = async (req, res) => {
 
     if (search?.trim()) {
       filter.payslipNumber = {
-        $regex: search.trim(),
+        $regex: escapeRegex(search.trim()),
         $options: "i",
       };
     }

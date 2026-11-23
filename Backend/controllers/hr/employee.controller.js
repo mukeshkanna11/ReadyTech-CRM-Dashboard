@@ -1,5 +1,6 @@
 
 import mongoose from "mongoose";
+import { escapeRegex } from "../../utils/escapeRegex.js";
 import Employee from "../../models/hr/Employee.js";
 // ======================================================
 // GET ALL EMPLOYEES
@@ -34,25 +35,25 @@ export const getEmployees = async (req, res) => {
       filter.$or = [
         {
           firstName: {
-            $regex: search,
+            $regex: escapeRegex(search),
             $options: "i",
           },
         },
         {
           lastName: {
-            $regex: search,
+            $regex: escapeRegex(search),
             $options: "i",
           },
         },
         {
           email: {
-            $regex: search,
+            $regex: escapeRegex(search),
             $options: "i",
           },
         },
         {
           employeeId: {
-            $regex: search,
+            $regex: escapeRegex(search),
             $options: "i",
           },
         },

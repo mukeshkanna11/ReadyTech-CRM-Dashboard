@@ -1,4 +1,5 @@
 import express from "express";
+import hrAccess from "../../middlewares/hrAccess.js";
 
 import employeeRoutes
   from "./employee.routes.js";
@@ -34,6 +35,9 @@ import hrReportRoutes
   from "./hrReport.routes.js";
 
 const router = express.Router();
+
+// Admin-only, except employee self-service on their own records
+router.use(hrAccess);
 
 router.use(
   "/employees",

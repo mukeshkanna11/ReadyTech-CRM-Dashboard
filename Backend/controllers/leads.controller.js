@@ -327,7 +327,14 @@ priority: "Medium",
       message:
         "Thank you! Your enquiry has been submitted successfully.",
 
-      lead: populatedLead,
+      // Public response: never expose the owner / workspace / audit ids
+      lead: {
+        _id: populatedLead._id,
+        name: populatedLead.name,
+        email: populatedLead.email,
+        status: populatedLead.status,
+        createdAt: populatedLead.createdAt,
+      },
     });
 
   } catch (error) {

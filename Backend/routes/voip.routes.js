@@ -8,6 +8,7 @@ import {
 } from "../controllers/voip.controller.js";
 
 import auth from "../middlewares/auth.js";
+import role from "../middlewares/role.js";
 
 const router = express.Router();
 
@@ -19,7 +20,7 @@ router.post("/voice", handleVoice);
 router.post("/status", handleCallStatus);
 
 /* Authenticated CRM endpoints */
-router.get("/token", auth, getVoiceToken);
+router.get("/token", auth, role("admin", "employee"), getVoiceToken);
 router.get("/status-config", auth, getVoipStatus);
 
 export default router;

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+import { escapeRegex } from "../../utils/escapeRegex.js";
 import Shift from "../../models/hr/Shift.js";
 import Employee from "../../models/hr/Employee.js";
 
@@ -131,14 +132,14 @@ export const getShifts = async (
         {
           name: {
             $regex:
-              search.trim(),
+              escapeRegex(search.trim()),
             $options: "i",
           },
         },
         {
           code: {
             $regex:
-              search.trim(),
+              escapeRegex(search.trim()),
             $options: "i",
           },
         },
@@ -493,7 +494,7 @@ export const createShift =
             {
               name: {
                 $regex:
-                  `^${name.trim()}$`,
+                  `^${escapeRegex(name.trim())}$`,
                 $options: "i",
               },
             },
@@ -501,7 +502,7 @@ export const createShift =
             {
               code: {
                 $regex:
-                  `^${code.trim()}$`,
+                  `^${escapeRegex(code.trim())}$`,
                 $options: "i",
               },
             },
@@ -836,7 +837,7 @@ export const updateShift =
           duplicateQuery.$or.push({
             name: {
               $regex:
-                `^${updateData.name}$`,
+                `^${escapeRegex(updateData.name)}$`,
               $options: "i",
             },
           });
@@ -846,7 +847,7 @@ export const updateShift =
           duplicateQuery.$or.push({
             code: {
               $regex:
-                `^${updateData.code}$`,
+                `^${escapeRegex(updateData.code)}$`,
               $options: "i",
             },
           });

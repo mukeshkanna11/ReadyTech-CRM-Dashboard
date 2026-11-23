@@ -186,7 +186,8 @@ export async function buildInvoicePdf(invoice = {}, res) {
       if (logo.startsWith("data:image")) {
         const b64 = logo.split(",")[1];
         if (b64) { doc.image(Buffer.from(b64, "base64"), left, 24, { fit: [56, 56] }); logoW = 66; }
-      } else if (fs.existsSync(logo)) {
+      } else if (logo === process.env.COMPANY_LOGO && fs.existsSync(logo)) {
+        // Local files: only the server-configured COMPANY_LOGO, never a client-supplied path
         doc.image(logo, left, 24, { fit: [56, 56] }); logoW = 66;
       }
     } catch { logoW = 0; }

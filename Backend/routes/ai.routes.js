@@ -15,6 +15,14 @@ const router = express.Router();
    is blocked while Claude AI Assistant is OFF for the workspace */
 router.use((req, res, next) => (req.path === "/health" ? next() : requireClaudeAi(req, res, next)));
 
+/* Per-user cap on Claude-backed calls (cost abuse guard). /help has its own limiter. */
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: (req) => `ai:${req.user?._id || req.workspace}`,
+  message: { success: false, message: "Too many AI requests. Please wait a minute and try again." },
+});
+router.use((req, res, next) => (req.path === "/health" || req.path === "/help" ? next() : aiLimiter(req, res, next)));
+
 /* ==========================================
    LEAD MANAGEMENT — AI INSIGHTS
    POST /api/ai/lead-insight  { type, lead }

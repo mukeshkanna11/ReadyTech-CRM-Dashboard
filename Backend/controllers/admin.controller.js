@@ -288,7 +288,6 @@ export const updateUser = async (req, res) => {
     console.log("=================================");
     console.log("UPDATE USER REQUEST");
     console.log("ID:", id);
-    console.log("BODY:", req.body);
     console.log("=================================");
 
     /* =====================================================

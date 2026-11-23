@@ -11,6 +11,16 @@ import {
   sendInvoiceEmail,
 } from "../controllers/invoice.controller.js";
 import auth from "../middlewares/auth.js";
+import role from "../middlewares/role.js";
+const staff = role("admin", "employee");
+const adminOnly = role("admin");
+import rateLimit from "express-rate-limit";
+/* Outbound invoice email: per-user cap (spam / phishing guard) */
+const invoiceSendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: (req) => `invoice-send:${req.user?._id}`,
+  message: { success: false, message: "Too many invoice emails sent. Please try again later." },
+});
 
 const router = express.Router();
 
@@ -22,14 +32,14 @@ const validateId = (req, res, next) => {
   next();
 };
 
-router.post("/", auth, createInvoice);
-router.get("/", auth, getInvoices);
+router.post("/", auth, staff, createInvoice);
+router.get("/", auth, staff, getInvoices);
 
-router.get("/:id", auth, validateId, getSingleInvoice);
-router.get("/:id/pdf", auth, validateId, downloadInvoicePdf);
-router.post("/:id/send", auth, validateId, sendInvoiceEmail);
-router.put("/:id/payment", auth, validateId, recordPayment);
-router.put("/:id/status", auth, validateId, updateInvoiceStatus);
-router.delete("/:id", auth, validateId, deleteInvoice);
+router.get("/:id", auth, staff, validateId, getSingleInvoice);
+router.get("/:id/pdf", auth, staff, validateId, downloadInvoicePdf);
+router.post("/:id/send", auth, staff, invoiceSendLimiter, validateId, sendInvoiceEmail);
+router.put("/:id/payment", auth, adminOnly, validateId, recordPayment);
+router.put("/:id/status", auth, adminOnly, validateId, updateInvoiceStatus);
+router.delete("/:id", auth, adminOnly, validateId, deleteInvoice);
 
 export default router;

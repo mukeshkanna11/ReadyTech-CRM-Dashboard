@@ -1,9 +1,12 @@
 import express from "express";
+import { escapeRegex } from "../utils/escapeRegex.js";
 import mongoose from "mongoose";
 import Opportunity from "../models/Opportunity.js";
 import Lead from "../models/Lead.js";
 import AuditLog from "../models/AuditLog.js";
 import auth from "../middlewares/auth.js";
+import role from "../middlewares/role.js";
+const adminOnly = role("admin");
 
 const router = express.Router();
 
@@ -103,13 +106,13 @@ router.get("/", auth, async (req, res) => {
       query.$or = [
         {
           title: {
-            $regex: search,
+            $regex: escapeRegex(search),
             $options: "i",
           },
         },
         {
           notes: {
-            $regex: search,
+            $regex: escapeRegex(search),
             $options: "i",
           },
         },
@@ -763,7 +766,7 @@ router.delete(
 /* =====================================================
    DELETE OPPORTUNITY
 ===================================================== */
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, adminOnly, async (req, res) => {
   try {
     const { id } = req.params;
 

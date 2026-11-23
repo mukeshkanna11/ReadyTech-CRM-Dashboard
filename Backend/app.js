@@ -49,6 +49,7 @@ import hrReportRoutes from "./routes/hr/hrReport.routes.js";
 /* ===================== Middlewares ===================== */
 import auth from "./middlewares/auth.js";
 import role from "./middlewares/role.js";
+import stripClientWorkspace from "./middlewares/stripClientWorkspace.js";
 
 const app = express();
 
@@ -129,6 +130,8 @@ app.use(
   })
 );
 app.use(express.urlencoded({ extended: true }));
+// Workspace comes only from the verified user — drop any client-sent value
+app.use(stripClientWorkspace);
 
 /* ======================================================
    LOGGER (dev mode)
@@ -160,21 +163,21 @@ app.use("/api/client/dashboard", auth, role("client"), clientDashboardRoutes);
 // CRM & ERP modules
 app.use("/api/products", auth, productsRoutes);
 app.use("/api/clients", auth, clientsRoutes);
-app.use("/api/inventory", auth, inventoryRoutes);
-app.use("/api/vendors", auth, vendorRoutes);
-app.use("/api/purchase", auth, purchaseRoutes);
-app.use("/api/sales", auth, salesRoutes);
-app.use("/api/warehouses", auth, warehouseRoutes);
+app.use("/api/inventory", auth, role("admin", "employee"), inventoryRoutes);
+app.use("/api/vendors", auth, role("admin", "employee"), vendorRoutes);
+app.use("/api/purchase", auth, role("admin", "employee"), purchaseRoutes);
+app.use("/api/sales", auth, role("admin", "employee"), salesRoutes);
+app.use("/api/warehouses", auth, role("admin", "employee"), warehouseRoutes);
 // HR Module
 app.use("/api/hr", auth, hrRoutes);
-app.use("/api/hr/reports", auth, hrReportRoutes);
+app.use("/api/hr/reports", auth, role("admin"), hrReportRoutes);
 // CRM Modules
 // auth is applied per-route inside leads.routes.js so that the public
 // website enquiry form (POST /api/leads/public) is not blocked by a
 // mount-level guard. Every other /api/leads route keeps its own `auth`.
 app.use("/api/leads", leadsRoutes);
-app.use("/api/opportunities", auth, opportunityRoutes);
-app.use("/api/activities", auth, activityRoutes);
+app.use("/api/opportunities", auth, role("admin", "employee"), opportunityRoutes);
+app.use("/api/activities", auth, role("admin", "employee"), activityRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/automations", automationRoutes);

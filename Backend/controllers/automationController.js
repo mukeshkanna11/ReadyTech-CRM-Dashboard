@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { escapeRegex } from "../utils/escapeRegex.js";
 import Automation from "../models/Automation.js";
 import AutomationExecution from "../models/AutomationExecution.js";
 import { triggerAutomation } from "../utils/automationEvents.js";
@@ -92,13 +93,13 @@ export const getAutomations = async (req, res) => {
       filter.$or = [
         {
           name: {
-            $regex: search,
+            $regex: escapeRegex(search),
             $options: "i",
           },
         },
         {
           description: {
-            $regex: search,
+            $regex: escapeRegex(search),
             $options: "i",
           },
         },

@@ -1,6 +1,7 @@
 // services/chat.service.js
 
 import Chat from "../models/Chat.js";
+import { escapeRegex } from "../utils/escapeRegex.js";
 import Lead from "../models/Lead.js";
 import User from "../models/User.js";
 import { activeUserScope } from "../utils/workspaceContext.js";
@@ -508,35 +509,35 @@ export const getAllChats = async (
 
           {
             name: {
-              $regex: search,
+              $regex: escapeRegex(search),
               $options: "i",
             },
           },
 
           {
             email: {
-              $regex: search,
+              $regex: escapeRegex(search),
               $options: "i",
             },
           },
 
           {
             company: {
-              $regex: search,
+              $regex: escapeRegex(search),
               $options: "i",
             },
           },
 
           {
             message: {
-              $regex: search,
+              $regex: escapeRegex(search),
               $options: "i",
             },
           },
 
           {
             subject: {
-              $regex: search,
+              $regex: escapeRegex(search),
               $options: "i",
             },
           },

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { escapeRegex } from "../../utils/escapeRegex.js";
 import Leave from "../../models/hr/Leave.js";
 import Employee from "../../models/hr/Employee.js";
 
@@ -199,25 +200,25 @@ export const getLeaves = async (
           $or: [
             {
               firstName: {
-                $regex: search.trim(),
+                $regex: escapeRegex(search.trim()),
                 $options: "i",
               },
             },
             {
               lastName: {
-                $regex: search.trim(),
+                $regex: escapeRegex(search.trim()),
                 $options: "i",
               },
             },
             {
               employeeCode: {
-                $regex: search.trim(),
+                $regex: escapeRegex(search.trim()),
                 $options: "i",
               },
             },
             {
               email: {
-                $regex: search.trim(),
+                $regex: escapeRegex(search.trim()),
                 $options: "i",
               },
             },
@@ -232,13 +233,13 @@ export const getLeaves = async (
       filter.$or = [
         {
           reason: {
-            $regex: search.trim(),
+            $regex: escapeRegex(search.trim()),
             $options: "i",
           },
         },
         {
           leaveType: {
-            $regex: search.trim(),
+            $regex: escapeRegex(search.trim()),
             $options: "i",
           },
         },

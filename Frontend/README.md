@@ -149,7 +149,7 @@ npm run dev
 
 🔑 Admin Credentials (Demo)
 Email: siva@readytechsolutions.in
-Password: siva@123
+Password: set via SUPER_ADMIN_PASSWORD in Backend/.env (first start only; never commit it)
 
 🧾 Invoice PDF Generation
 

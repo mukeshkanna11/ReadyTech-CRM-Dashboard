@@ -372,10 +372,17 @@ userSchema.statics.createAdminIfNotExists = async function () {
   });
 
   if (!existingAdmin) {
+    // Never seed a well-known password: it must come from the environment
+    const seedPassword = process.env.SUPER_ADMIN_PASSWORD;
+    if (!seedPassword || seedPassword.length < 12) {
+      console.warn("⚠️ Super Admin not created: set SUPER_ADMIN_PASSWORD (min 12 chars) to seed it");
+      return;
+    }
+
     const admin = new this({
       name: "Super Admin",
       email: adminEmail,
-      passwordHash: "siva@123",
+      passwordHash: seedPassword,
       role: "admin",
 
       // REQUIRED FIELDS

@@ -18,11 +18,13 @@ import {
 } from "../controllers/inventoryReport.controller.js";
 import auth from "../middlewares/auth.js";
 
+import role from "../middlewares/role.js";
+const adminOnly = role("admin");
 const router = express.Router();
 
 router.post("/stock-in", auth, stockIn);
 router.post("/stock-out", auth, stockOut);
-router.post("/adjust", auth, adjustStock);
+router.post("/adjust", auth, adminOnly, adjustStock);
 router.post("/transfer", auth, transferStock);
 router.post("/reserve", auth, reserveStock);
 router.post("/release", auth, releaseStock);

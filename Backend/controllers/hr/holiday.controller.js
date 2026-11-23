@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { escapeRegex } from "../../utils/escapeRegex.js";
 import Holiday from "../../models/hr/Holiday.js";
 
 // ======================================================
@@ -97,14 +98,14 @@ export const getHolidays = async (
         {
           name: {
             $regex:
-              search.trim(),
+              escapeRegex(search.trim()),
             $options: "i",
           },
         },
         {
           description: {
             $regex:
-              search.trim(),
+              escapeRegex(search.trim()),
             $options: "i",
           },
         },
@@ -563,7 +564,7 @@ export const createHoliday =
 
           name: {
             $regex:
-              `^${name.trim()}$`,
+              `^${escapeRegex(name.trim())}$`,
             $options: "i",
           },
 

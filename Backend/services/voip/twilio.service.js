@@ -142,8 +142,8 @@ export const buildDialTwiml = ({ to, leadId, userId }) => {
 export const validateTwilioRequest = (req) => {
   const { authToken } = getVoipConfig();
 
-  // Without an auth token we cannot verify. Fail closed in production.
-  if (!authToken) return process.env.NODE_ENV !== "production";
+  // Without an auth token we cannot verify → always fail closed.
+  if (!authToken) return false;
 
   const signature = req.headers["x-twilio-signature"];
   if (!signature) return false;

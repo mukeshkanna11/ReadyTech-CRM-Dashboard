@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { escapeRegex } from "../../utils/escapeRegex.js";
 import Attendance from "../../models/hr/Attendance.js";
 import Employee from "../../models/hr/Employee.js";
 
@@ -120,19 +121,19 @@ export const getAttendance = async (params = {}) => {
       $or: [
         {
           firstName: {
-            $regex: search.trim(),
+            $regex: escapeRegex(search.trim()),
             $options: "i",
           },
         },
         {
           lastName: {
-            $regex: search.trim(),
+            $regex: escapeRegex(search.trim()),
             $options: "i",
           },
         },
         {
           employeeCode: {
-            $regex: search.trim(),
+            $regex: escapeRegex(search.trim()),
             $options: "i",
           },
         },

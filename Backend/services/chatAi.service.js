@@ -22,6 +22,7 @@ import ChatConversation, {
   CHAT_INTENTS,
   CHAT_PRIORITIES,
 } from "../models/ChatConversation.js";
+import { escapeRegex } from "../utils/escapeRegex.js";
 import { askClaudeStructured } from "./claudeService.js";
 import { getAiSettings } from "../utils/aiSettings.js";
 
@@ -581,9 +582,9 @@ export const listConversations = async (filters = {}) => {
 
   if (filters.search) {
     query.$or = [
-      { "visitor.name": { $regex: filters.search, $options: "i" } },
-      { "visitor.email": { $regex: filters.search, $options: "i" } },
-      { summary: { $regex: filters.search, $options: "i" } },
+      { "visitor.name": { $regex: escapeRegex(filters.search), $options: "i" } },
+      { "visitor.email": { $regex: escapeRegex(filters.search), $options: "i" } },
+      { summary: { $regex: escapeRegex(filters.search), $options: "i" } },
     ];
   }
 

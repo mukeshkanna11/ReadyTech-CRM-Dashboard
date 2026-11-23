@@ -1,5 +1,7 @@
 import express from "express";
 import auth from "../middlewares/auth.js";
+import role from "../middlewares/role.js";
+const adminOnly = role("admin");
 
 import {
   getActivities,
@@ -110,6 +112,7 @@ router.patch(
 router.delete(
   "/:id",
   auth,
+  adminOnly,
   deleteActivity
 );
 

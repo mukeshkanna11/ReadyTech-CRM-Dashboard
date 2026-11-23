@@ -8,6 +8,8 @@ import {
 } from "../controllers/warehouse.controller.js";
 import auth from "../middlewares/auth.js";
 
+import role from "../middlewares/role.js";
+const adminOnly = role("admin");
 const router = express.Router();
 
 /* ================= GET ALL ================= */
@@ -23,6 +25,6 @@ router.post("/", auth, createWarehouse);
 router.put("/:id", auth, updateWarehouse);
 
 /* ================= DELETE ================= */
-router.delete("/:id", auth, deleteWarehouse);
+router.delete("/:id", auth, adminOnly, deleteWarehouse);
 
 export default router;

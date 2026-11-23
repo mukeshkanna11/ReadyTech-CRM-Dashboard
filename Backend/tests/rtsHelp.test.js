@@ -86,7 +86,7 @@ test("rejects empty conversation; AI failure returns safe message", async () => 
 
 test("manual enquiry flow unchanged: POST /api/chat still wired + validates", async () => {
   const routes = fs.readFileSync(new URL("../routes/chat.routes.js", import.meta.url), "utf8");
-  assert.match(routes, /router\.post\(\s*"\/",\s*createChatController/);
+  assert.match(routes, /router\.post\(\s*"\/",\s*publicChatLimiter,\s*createChatController/);
   process.env.RESEND_API_KEY ||= "test";
   process.env.RESEND_FROM_EMAIL ||= "test@example.com";
   process.env.COMPANY_EMAIL ||= "team@example.com";

@@ -8,6 +8,24 @@ import { createChallenge, readChallenge, verifySecondFactor } from "../utils/two
 
 const router = express.Router();
 
+/* Brute-force guard for password sign-in / sign-up (per IP).
+   Successful sign-ins don't count, so normal use is unaffected. */
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many sign-in attempts. Please try again later." },
+});
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many sign-up attempts. Please try again later." },
+});
+
 
 /* =========================================================
    TOKEN
@@ -33,7 +51,7 @@ const generateToken = (user) => {
    ADMIN LOGIN
    POST /api/auth/login
 ========================================================= */
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -100,7 +118,7 @@ router.post("/login", async (req, res) => {
    USER LOGIN
    POST /api/auth/user-login
 ========================================================= */
-router.post("/user-login", async (req, res) => {
+router.post("/user-login", loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -238,7 +256,7 @@ router.post("/2fa/verify", twoFactorLimiter, async (req, res) => {
    REGISTER
    POST /api/auth/register
 ========================================================= */
-router.post("/register", async (req, res) => {
+router.post("/register", registerLimiter, async (req, res) => {
   try {
     const {
       name,
