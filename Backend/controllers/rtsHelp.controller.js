@@ -3,7 +3,7 @@
 // pages and reads LIVE workspace figures through fixed read-only tools
 // (services/rtsAssistant/rtsTools.js). It never creates, updates or
 // deletes anything — no leads, enquiries, chats or any other record.
-import { createClaudeMessage } from "../services/claudeService.js";
+import { createRtsMessage } from "../services/llm/rtsProvider.js";
 import { toolDefinitions, runTool, NAV_ROUTES, PAGE_GUIDE } from "../services/rtsAssistant/rtsTools.js";
 import { runWithWorkspace } from "../utils/workspaceContext.js";
 
@@ -165,4 +165,5 @@ export const makeRtsHelp = (createMessage, tools = { toolDefinitions, runTool })
   }
 };
 
-export const rtsHelp = makeRtsHelp(createClaudeMessage);
+// Model calls go through the provider interface (LLM_PROVIDER: claude default | local)
+export const rtsHelp = makeRtsHelp(createRtsMessage);

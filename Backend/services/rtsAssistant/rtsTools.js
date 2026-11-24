@@ -115,8 +115,10 @@ export const METRICS = [
 export const PERIODS = ["today", "yesterday", "this_week", "this_month", "last_month", "this_year", "all_time"];
 
 /* Mirrors the API route guards: /api/clients is admin-only; client-role
-   users get no workspace business data through the assistant. */
-const ADMIN_ONLY = new Set(["clients"]);
+   users get no workspace business data through the assistant.
+   HR metrics are workspace-wide aggregates; /api/hr (middlewares/hrAccess.js)
+   gives employees only their OWN HR records, so these are admin-only here. */
+const ADMIN_ONLY = new Set(["clients", "employees", "attendance", "leaves", "expenses"]);
 export const canAccessMetric = (role, metric) => {
   if (role === "admin") return true;
   if (role === "employee") return !ADMIN_ONLY.has(metric);
@@ -408,6 +410,8 @@ export const ENTITIES = {
     list: () => "/stocks/warehouses",
   },
   employee: {
+    // Staff directory search: /api/hr has no employee-role directory listing
+    adminOnly: true,
     statuses: ["Active", "Inactive", "On Leave"],
     // Directory fields only — never salary, bank, documents or personal data
     async find(q, status) {

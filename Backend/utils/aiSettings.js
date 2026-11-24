@@ -1,6 +1,7 @@
 // utils/aiSettings.js
 import User from "../models/User.js";
 import { getWorkspaceId } from "./workspaceContext.js";
+import { isRtsProviderConfigured } from "../services/llm/rtsProvider.js";
 
 /* =========================================================
    WORKSPACE AI PREFERENCES (Admin Settings → AI Settings)
@@ -39,6 +40,26 @@ export const requireClaudeAi = async (req, res, next) => {
     }
     if (!process.env.CLAUDE_API_KEY?.trim()) {
       return res.status(503).json({ success: false, code: "AI_NOT_CONFIGURED", message: "Claude API key is not configured on the server." });
+    }
+    next();
+  } catch (error) {
+    console.error("AI settings check failed:", error.message);
+    res.status(500).json({ success: false, message: "Failed to verify AI settings" });
+  }
+};
+
+/* RTS Assistant (/api/ai/help) gate: same workspace "AI Assistant" toggle and
+   error codes as requireClaudeAi, but checks the provider selected by
+   LLM_PROVIDER instead of always requiring a Claude key. */
+export const requireRtsAi = async (req, res, next) => {
+  try {
+    const { claude } = await getAiSettings(req.workspace);
+    if (!claude) {
+      return disabled(res, "AI_DISABLED",
+        "Claude AI Assistant is disabled for this workspace. An admin can enable it in Settings → AI Settings.");
+    }
+    if (!isRtsProviderConfigured()) {
+      return res.status(503).json({ success: false, code: "AI_NOT_CONFIGURED", message: "RTS AI is not configured on the server." });
     }
     next();
   } catch (error) {

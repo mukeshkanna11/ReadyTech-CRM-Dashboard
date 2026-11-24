@@ -145,6 +145,34 @@ test("endpoint + real runTool: role permissions enforced", async () => {
   assert.match(r3.body.data.text, /அனுமதி இல்லை/);
 });
 
+test("endpoint + real runTool: HR data is admin-only, like /api/hr", async () => {
+  const handler = makeRtsCommand();
+  for (const text of ["how many employees", "attendance today", "leaves this month", "expenses this year", "find employee Ram"]) {
+    const res = mockRes();
+    await handler({ user: { role: "employee" }, workspace: WS_A, body: { text } }, res);
+    assert.equal(res.body.data.text, "Your role cannot view this data.", text);
+    assert.equal(res.body.data.error, true, text);
+    assert.deepEqual(res.body.data.cards, [], text);
+  }
+  const tl = mockRes();
+  await handler({ user: { role: "employee" }, workspace: WS_A, body: { text: "inniku evlo leave" } }, tl);
+  assert.equal(tl.body.data.text, "Unga role-ku indha data paaka permission illa.");
+  const ta = mockRes();
+  await handler({ user: { role: "employee" }, workspace: WS_A, body: { text: "எத்தனை ஊழியர்கள்" } }, ta);
+  assert.match(ta.body.data.text, /அனுமதி இல்லை/);
+
+  // admin: the HR reader actually runs (stubbed — DB-free) inside the workspace
+  const orig = tools.ENTITIES.employee.find;
+  let ws;
+  tools.ENTITIES.employee.find = async () => ((ws = String(getWorkspaceId())), [{ code: "E1", name: "Ram", status: "Active", _open: "/hr" }]);
+  try {
+    const res = mockRes();
+    await handler({ user: { role: "admin" }, workspace: WS_B, body: { text: "find employee Ram" } }, res);
+    assert.equal(ws, WS_B);
+    assert.match(res.body.data.text, /^Found 1 employee: Ram, E1/);
+  } finally { tools.ENTITIES.employee.find = orig; }
+});
+
 test("endpoint + real runTool: record search is workspace-bound and escaped", async () => {
   const orig = tools.ENTITIES.invoice.find;
   let seen;

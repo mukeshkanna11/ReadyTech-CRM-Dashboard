@@ -118,6 +118,43 @@ test("find_records: role-gated, escaped query, safe deep link", async () => {
   } finally { tools.ENTITIES.invoice.find = orig; }
 });
 
+test("HR metrics and staff directory follow /api/hr permissions (admin-only)", async () => {
+  const HR = ["employees", "attendance", "leaves", "expenses"];
+  for (const metric of HR) {
+    assert.equal(tools.canAccessMetric("admin", metric), true, metric);
+    assert.equal(tools.canAccessMetric("employee", metric), false, metric);
+    assert.equal(tools.canAccessMetric("client", metric), false, metric);
+    for (const role of ["employee", "client", undefined]) {
+      const out = await tools.runTool("get_business_data", { metric, period: "this_month" }, { role });
+      assert.match(out.content.error, /PERMISSION_DENIED/, `${role} ${metric}`);
+      assert.equal(out.card, undefined);
+    }
+  }
+  // Non-HR metrics unchanged for employees
+  assert.equal(tools.canAccessMetric("employee", "leads"), true);
+  assert.equal(tools.canAccessMetric("employee", "invoices"), true);
+
+  assert.equal(tools.canAccessEntity("admin", "employee"), true);
+  assert.equal(tools.canAccessEntity("employee", "employee"), false);
+  assert.equal(tools.canAccessEntity("client", "employee"), false);
+  assert.equal(tools.canAccessEntity("employee", "invoice"), true);
+
+  let called = false;
+  const orig = tools.ENTITIES.employee.find;
+  tools.ENTITIES.employee.find = async () => ((called = true), [{ code: "E1", name: "Ram", _open: "/hr" }]);
+  try {
+    for (const role of ["employee", "client"]) {
+      const out = await tools.runTool("find_records", { entity: "employee", query: "Ram", open: true }, { role });
+      assert.match(out.content.error, /PERMISSION_DENIED/);
+      assert.equal(out.action, undefined);
+    }
+    assert.equal(called, false, "directory must not be queried for non-admins");
+    const ok = await tools.runTool("find_records", { entity: "employee", query: "Ram" }, { role: "admin" });
+    assert.equal(ok.content.ok, true);
+    assert.equal(ok.content.records[0].name, "Ram");
+  } finally { tools.ENTITIES.employee.find = orig; }
+});
+
 test("explain-this-page context is page specific", async () => {
   const { buildSystemPrompt } = await import("../controllers/rtsHelp.controller.js");
   assert.match(buildSystemPrompt({ page: "/invoices" }), /About the current page \(Invoices\)/);

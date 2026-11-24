@@ -7,13 +7,18 @@ import {
   inventoryInsight,
 } from "../controllers/ai.controller.js";
 import { rtsHelp } from "../controllers/rtsHelp.controller.js";
-import { requireClaudeAi, requireAiSuggestions } from "../utils/aiSettings.js";
+import { requireClaudeAi, requireRtsAi, requireAiSuggestions } from "../utils/aiSettings.js";
 
 const router = express.Router();
 
 /* Admin Settings → AI Settings: every Claude route except /health
    is blocked while Claude AI Assistant is OFF for the workspace */
-router.use((req, res, next) => (req.path === "/health" ? next() : requireClaudeAi(req, res, next)));
+router.use((req, res, next) => {
+  if (req.path === "/health") return next();
+  // RTS Assistant: same workspace toggle, but checks the selected LLM_PROVIDER (claude | local)
+  if (req.path === "/help") return requireRtsAi(req, res, next);
+  return requireClaudeAi(req, res, next);
+});
 
 /* Per-user cap on Claude-backed calls (cost abuse guard). /help has its own limiter. */
 const aiLimiter = rateLimit({
