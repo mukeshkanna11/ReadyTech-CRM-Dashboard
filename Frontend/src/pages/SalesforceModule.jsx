@@ -23,10 +23,9 @@ import LeadsTab from "../components/LeadsTab";
 import OpportunitiesTab from "../components/OpportunitiesTab";
 import ActivitiesTab from "../components/ActivitiesTab";
 
+// Same backend as Leads/Users (services/api.js): never hard-code a host here.
 const API_URL =
-  import.meta.env.MODE === "development"
-    ? "http://localhost:5000/api"
-    : "https://readytech-crm-dashboard.onrender.com/api";
+  import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const tabs = [
   {
