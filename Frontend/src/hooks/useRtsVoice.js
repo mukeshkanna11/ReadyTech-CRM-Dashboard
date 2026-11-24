@@ -241,7 +241,7 @@ export default function useRtsVoice({ onCommand, onWake }) {
     for (let a = 0; a < (result.length || 1); a += 1) if (result[a]?.transcript) alts.push(result[a].transcript);
     if (!alts.length) return { text: "", wake: null };
     for (const t of alts) { const w = matchWake(t); if (w) return { text: t, wake: w }; }
-    const text = (modeRef.current === "command" && alts.find((t) => parseNavigation(t))) || alts[0];
+    const text = ((modeRef.current === "command" || result.isFinal) && alts.find((t) => parseNavigation(t))) || alts[0];
     return { text, wake: null };
   };
 
@@ -305,6 +305,11 @@ export default function useRtsVoice({ onCommand, onWake }) {
           if (wake.rest) fireCommand(wake.rest); // "Hey RTS, go to invoice"
           else enterCommand(); // "Hey RTS" … wait for the next utterance
         } else if (modeRef.current === "command") {
+          fireCommand(text);
+        } else if (parseNavigation(text)) {
+          // Complete page command without "Hey RTS" ("go to leads"): final
+          // transcripts only; fireCommand applies the echo + duplicate guards
+          rtsLog("page command without wake word:", JSON.stringify(text));
           fireCommand(text);
         } else {
           rtsLog("ignored (no wake word):", JSON.stringify(text)); // ordinary speech

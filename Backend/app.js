@@ -32,6 +32,7 @@ import employeeDashboardRoutes from "./routes/employee.dashboard.routes.js";
 import clientDashboardRoutes from "./routes/client.dashboard.routes.js";
 import invoiceRoutes from "./routes/invoice.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
+import rtsRoutes from "./routes/rts.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
 import automationRoutes from "./routes/automationRoutes.js";
 // Meta Integration Module (centralized for CRM / ERP / AI Content)
@@ -193,6 +194,8 @@ app.use("/api/shopify", shopifyRoutes);
 // User profile
 app.use("/api/user", auth, userRoutes);
 app.use("/api/ai", auth, aiRoutes);
+// RTS structured voice/text commands — read-only, no Claude required
+app.use("/api/rts", auth, rtsRoutes);
 
 app.get("/api", (req, res) => {
   res.status(200).json({

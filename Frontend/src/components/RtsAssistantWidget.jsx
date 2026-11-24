@@ -6,6 +6,7 @@ import API from "../services/api";
 import useRtsVoice, { rtsLog } from "../hooks/useRtsVoice";
 import RtsAssistantPanel, { RtsWave } from "./RtsAssistantPanel";
 import { STATE_LABEL, isTamil, parseNavigation } from "./rtsCommands";
+import { askRts, isCanceled } from "./rtsAsk";
 
 /* ======================================================
    RTS AI ASSISTANT WIDGET (Siri-style)
@@ -13,9 +14,9 @@ import { STATE_LABEL, isTamil, parseNavigation } from "./rtsCommands";
    DashboardLayout, so "Hey RTS" works on every authenticated page,
    panel open or closed.
    - Page commands ("go to invoice") run on-device → React Router.
-   - Everything else → /api/ai/help (live read-only data, record
-     search, page help). Latest command wins; stale replies are
-     dropped and never spoken.
+   - Everything else → /api/rts/command (rule-based, read-only, no
+     Claude); unhandled → /api/ai/help (only when Claude is enabled).
+     Latest command wins; stale replies are dropped and never spoken.
    Never creates, converts or modifies leads/enquiries/records.
 ====================================================== */
 
@@ -65,32 +66,19 @@ export default function RtsAssistantWidget() {
 
     let reply;
     try {
-      const { data } = await API.post(
-        "/ai/help",
-        {
-          product: ERP_PATHS.test(pathname) ? "ERP" : "CRM",
-          page: pathname,
-          tzOffset: new Date().getTimezoneOffset(),
-          messages: historyRef.current.filter((m) => !m.error).map(({ role, text }) => ({ role, text })),
-        },
-        { timeout: 60000, silent: true, signal: controller.signal } // tool lookups can exceed the 15s default
-      );
-      const d = data?.data || {};
-      reply = {
-        role: "assistant",
-        text: d.text || "Sorry, I have no answer for that.",
-        cards: Array.isArray(d.cards) ? d.cards : [],
-        actions: Array.isArray(d.actions) ? d.actions : [],
-      };
+      // Structured command first (no Claude credits); /ai/help only as fallback
+      reply = await askRts({
+        api: API,
+        question,
+        product: ERP_PATHS.test(pathname) ? "ERP" : "CRM",
+        page: pathname,
+        tzOffset: new Date().getTimezoneOffset(),
+        history: historyRef.current.filter((m) => !m.error).map(({ role, text }) => ({ role, text })),
+        signal: controller.signal,
+      });
     } catch (err) {
-      if (err?.code === "ERR_CANCELED" || controller.signal.aborted) return; // superseded / cancelled
-      reply = {
-        role: "assistant",
-        error: true,
-        text:
-          err?.response?.data?.message ||
-          (err?.code === "ECONNABORTED" ? "RTS AI took too long to answer. Please try again." : "RTS AI is unavailable right now. Please try again."),
-      };
+      if (isCanceled(err, controller.signal)) return; // superseded / cancelled
+      reply = { role: "assistant", error: true, text: "RTS AI is unavailable right now. Please try again." };
     }
     if (id !== reqId.current) return; // a newer command arrived meanwhile
 
@@ -110,7 +98,7 @@ export default function RtsAssistantWidget() {
     voiceRef.current?.stopSpeaking?.(); // new command interrupts speech
 
     const nav = parseNavigation(text);
-    rtsLog("parsed:", JSON.stringify(text), nav ? `→ page ${nav.path}` : "→ /ai/help (live data / help)");
+    rtsLog("parsed:", JSON.stringify(text), nav ? `→ page ${nav.path}` : "→ /rts/command (then /ai/help if unhandled)");
     if (nav) {
       abortRef.current?.abort();
       reqId.current += 1;

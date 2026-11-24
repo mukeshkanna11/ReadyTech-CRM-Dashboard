@@ -131,6 +131,26 @@ test("Enable starts continuous wake listening; 'Hey RTS, go to Leads' still reac
   assert.deepEqual(commands, ["go to leads"]);
 });
 
+test("wake mode: final page commands without 'Hey RTS' navigate once; interim and other speech ignored", async () => {
+  const commands = [];
+  const voice = await mount({ onCommand: (c) => commands.push(c) });
+  await voice.enable();
+  const [rec] = live();
+  const say = (transcripts, isFinal) => rec.onresult({ resultIndex: 0, results: [Object.assign(transcripts.map((t) => ({ transcript: t })), { isFinal })] });
+
+  say(["go to leads"], false); // interim → never navigates
+  assert.deepEqual(commands, []);
+  say(["go to leads"], true);
+  say(["go to leads"], true); // repeated recognition result → duplicate guard
+  assert.deepEqual(commands, ["go to leads"]);
+  say(["go to usher", "go to users"], true); // page command found in a later alternative
+  assert.deepEqual(commands, ["go to leads", "go to users"]);
+  say(["how many leads today"], true); // not a page command → ignored, no API
+  say(["we talked about the meeting"], true);
+  assert.deepEqual(commands, ["go to leads", "go to users"]);
+  assert.equal(live()[0], rec, "same recognition session keeps running");
+});
+
 test("Disable stops at once and nothing restarts it (session end, visibility, permission, clicks, keys)", async () => {
   const voice = await mount();
   await voice.enable();
