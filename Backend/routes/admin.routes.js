@@ -19,6 +19,7 @@ import {
   createRestorePoint, listRestorePoints, validateRestorePoint, restoreFromPoint, RESTORE_POINT_RETENTION,
 } from "../services/backup.service.js";
 import { schedulerState } from "../services/scheduler.js";
+import { isS3Configured, uploadRestorePoint, listS3Backups, restoreFromS3 } from "../services/s3Backup.service.js";
 
 const router = express.Router();
 
@@ -255,21 +256,22 @@ router.put("/settings/security", async (req, res) => {
 
 /* =========================================================
    BACKUP & RECOVERY (per workspace)
-   - Automatic Backup needs off-site storage, which is not configured
-     in this project → it cannot be enabled (no fake backups).
+   - Automatic Backup: daily restore point uploaded to a private S3 bucket
+     (services/s3Backup.service.js). Only available when S3 is configured.
    - Restore Points: in-database workspace snapshots (services/backup.service.js)
 ========================================================= */
 
 const BACKUP_STORAGE_GAP =
-  "No off-site backup storage is configured (no S3 / cloud storage credentials or SDK in this project). Automatic Backup cannot be enabled.";
+  "No off-site backup storage is configured (AWS_S3_BUCKET, AWS_REGION, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required). Automatic Backup cannot be enabled.";
 
 const backupPayload = async (workspaceId) => {
   const owner = await User.findById(workspaceId).select("backupSettings").lean();
   const points = await listRestorePoints(workspaceId);
+  const s3 = isS3Configured();
   return {
-    autoBackup: false,
-    autoBackupAvailable: false,
-    autoBackupReason: BACKUP_STORAGE_GAP,
+    autoBackup: s3 && owner?.backupSettings?.autoBackup === true,
+    autoBackupAvailable: s3,
+    autoBackupReason: s3 ? null : BACKUP_STORAGE_GAP,
     restorePoints: owner?.backupSettings?.restorePoints === true,
     retention: RESTORE_POINT_RETENTION,
     scheduler: { running: schedulerState.running, lastRunAt: schedulerState.lastRunAt, lastError: schedulerState.lastError },
@@ -306,14 +308,16 @@ router.put("/settings/backup", async (req, res) => {
     if (restorePoints !== undefined && typeof restorePoints !== "boolean") {
       return res.status(400).json({ success: false, message: "restorePoints must be true or false" });
     }
-    if (autoBackup === true) {
+    if (autoBackup === true && !isS3Configured()) {
       return res.status(409).json({ success: false, code: "BACKUP_STORAGE_NOT_CONFIGURED", message: BACKUP_STORAGE_GAP });
     }
     if (restorePoints === undefined && autoBackup === undefined) {
       return res.status(400).json({ success: false, message: "No backup settings provided" });
     }
+    const owner = await User.findById(req.workspace).select("backupSettings").lean();
 
-    const $set = { "backupSettings.autoBackup": false };
+    // Without S3, Automatic Backup stays OFF (no fake backups)
+    const $set = { "backupSettings.autoBackup": isS3Configured() ? autoBackup ?? owner?.backupSettings?.autoBackup === true : false };
     if (restorePoints !== undefined) $set["backupSettings.restorePoints"] = restorePoints;
     const { matchedCount } = await User.updateOne({ _id: req.workspace }, { $set });
     if (!matchedCount) return res.status(404).json({ success: false, message: "Workspace not found" });
@@ -332,7 +336,20 @@ router.post("/backup/restore-points", async (req, res) => {
       return res.status(409).json({ success: false, message: "Restore Points are disabled. Enable them first." });
     }
     const rp = await createRestorePoint(req.workspace, { trigger: "manual", createdBy: req.user._id });
-    res.status(201).json({ success: true, message: `Restore point created (${rp.totalDocs} records)`, data: await backupPayload(req.workspace) });
+    // Automatic Backup ON → also keep an off-site copy. An upload failure
+    // does not undo the (already saved) restore point.
+    let s3 = null;
+    if (isS3Configured() && owner?.backupSettings?.autoBackup === true) {
+      try {
+        const up = await uploadRestorePoint(req.workspace, rp._id);
+        s3 = { uploaded: up.uploaded === true };
+      } catch (error) {
+        console.error("Manual restore point S3 upload failed:", error.message);
+        s3 = { uploaded: false, error: error.statusCode ? error.message : "S3 upload failed" };
+      }
+    }
+    const note = s3 ? (s3.uploaded ? " and uploaded to S3" : ` (S3 upload failed: ${s3.error})`) : "";
+    res.status(201).json({ success: true, message: `Restore point created (${rp.totalDocs} records)${note}`, ...(s3 ? { s3 } : {}), data: await backupPayload(req.workspace) });
   } catch (error) {
     sendError(res, error, "Failed to create restore point");
   }
@@ -372,6 +389,46 @@ router.post("/backup/restore-points/:id/restore", async (req, res) => {
     });
   } catch (error) {
     sendError(res, error, "Restore failed");
+  }
+});
+
+/* S3 backups of THIS workspace (keys are built server-side from req.workspace) */
+router.get("/backup/s3", async (req, res) => {
+  try {
+    if (!isS3Configured()) {
+      return res.status(409).json({ success: false, code: "BACKUP_STORAGE_NOT_CONFIGURED", message: BACKUP_STORAGE_GAP });
+    }
+    res.json({ success: true, data: await listS3Backups(req.workspace) });
+  } catch (error) {
+    sendError(res, error, "Failed to list S3 backups");
+  }
+});
+
+/* Restore from S3 — requires { confirm: "RESTORE" }. Imported as an
+   "s3-import" restore point, then the normal restore flow runs
+   (validation, pre-restore snapshot, rollback). */
+router.post("/backup/s3/:id/restore", async (req, res) => {
+  try {
+    if (req.body?.confirm !== "RESTORE") {
+      return res.status(400).json({
+        success: false,
+        message: 'Restoring replaces this workspace\'s current CRM data. Send { "confirm": "RESTORE" } to proceed.',
+      });
+    }
+    if (!isS3Configured()) {
+      return res.status(409).json({ success: false, code: "BACKUP_STORAGE_NOT_CONFIGURED", message: BACKUP_STORAGE_GAP });
+    }
+    if (!/^[a-f0-9]{24}$/i.test(req.params.id)) {
+      return res.status(404).json({ success: false, message: "Backup not found" });
+    }
+    const { backup, safetyPoint } = await restoreFromS3(req.workspace, req.params.id, { createdBy: req.user._id });
+    res.json({
+      success: true,
+      message: `Restored ${backup.totalDocs} records from the S3 backup of ${new Date(backup.createdAt).toISOString()}. Previous data saved as restore point ${safetyPoint._id}.`,
+      data: await backupPayload(req.workspace),
+    });
+  } catch (error) {
+    sendError(res, error, "Restore from S3 failed");
   }
 });
 

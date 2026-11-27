@@ -4,6 +4,7 @@
 import User from "../models/User.js";
 import RestorePoint from "../models/RestorePoint.js";
 import { createRestorePoint } from "./backup.service.js";
+import { isS3Configured, uploadRestorePoint } from "./s3Backup.service.js";
 import { sendLeadEmail } from "./email.service.js";
 import { getNotificationSettings } from "../utils/notificationSettings.js";
 import { passwordStatus } from "../utils/securitySettings.js";
@@ -26,6 +27,35 @@ const runRestorePoints = async () => {
     } catch (err) {
       schedulerState.lastError = `Restore point for ${_id}: ${err.message}`;
       console.error("❌ Scheduled restore point failed:", _id, err.message);
+    }
+  }
+};
+
+/* Backup & Recovery → Automatic Backup ON (S3 configured): upload today's
+   scheduled restore point (created now if missing). Re-runs are safe: an
+   already-uploaded restore point is skipped. Never throws. */
+const runAutoBackups = async () => {
+  if (!isS3Configured()) return;
+  let owners = [];
+  try {
+    owners = await User.find({ "backupSettings.autoBackup": true }).select("_id").lean();
+  } catch (err) {
+    schedulerState.lastError = `Automatic backup: ${err.message}`;
+    console.error("❌ Automatic backup lookup failed:", err.message);
+    return;
+  }
+  for (const { _id } of owners) {
+    try {
+      let rp = await RestorePoint.findOne({
+        workspace: _id, trigger: "scheduled", status: "completed",
+        createdAt: { $gt: new Date(Date.now() - (DAY - 60 * 60 * 1000)) },
+      }).sort({ createdAt: -1 }).select("_id").lean();
+      if (!rp) rp = await createRestorePoint(_id, { trigger: "scheduled" });
+      const up = await uploadRestorePoint(_id, rp._id);
+      if (up.uploaded) console.log("☁️ S3 backup uploaded:", String(_id), String(rp._id));
+    } catch (err) {
+      schedulerState.lastError = `S3 backup for ${_id}: ${err.message}`;
+      console.error("❌ Scheduled S3 backup failed:", _id, err.message);
     }
   }
 };
@@ -63,6 +93,7 @@ const runPasswordReminders = async () => {
 export const runScheduledJobs = async () => {
   schedulerState.lastError = null;
   await runRestorePoints();
+  await runAutoBackups();
   await runPasswordReminders();
   schedulerState.lastRunAt = new Date();
 };
@@ -78,5 +109,5 @@ export const startScheduler = () => {
     });
   setTimeout(tick, 60 * 1000).unref();
   setInterval(tick, 60 * 60 * 1000).unref();
-  console.log("⏰ Scheduler started (hourly: restore points, password reminders)");
+  console.log("⏰ Scheduler started (hourly: restore points, S3 backups, password reminders)");
 };

@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 
 const restorePointSchema = new mongoose.Schema(
   {
-    trigger: { type: String, enum: ["manual", "scheduled", "pre-restore"], required: true },
+    trigger: { type: String, enum: ["manual", "scheduled", "pre-restore", "s3-import"], required: true },
     status: { type: String, enum: ["in_progress", "completed", "failed"], default: "in_progress" },
     error: { type: String, default: null },
     collections: [{ _id: false, name: String, model: String, count: Number, chunks: Number }],
